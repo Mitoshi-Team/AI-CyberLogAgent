@@ -1,60 +1,145 @@
-name: Простой пример использования GitVerse CI/CD
+version: '1.0'
 
-# Управляет триггерами запуска workflow
-on:
+# ============================================
+# НАСТРОЙКИ ПАЙПЛАЙНА
+# ============================================
 
-  # Запускает workflow при пушах или пул реквестах, но только для ветки master
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+stages:
+  - lint   # Проверка кода
+  - test   # Запуск тестов
 
-  # Позволяет запускать этот workflow вручную c вкладки CI/CD
-  workflow_dispatch:
+# ============================================
+# ОБЩИЕ НАСТРОЙКИ
+# ============================================
 
-# Workflow состоит из одной или нескольких задач (job), выполняемых последовательно или параллельно
-jobs:
+variables:
+  PYTHON_VERSION: "3.11"
 
-  # Этот workflow содержит одну задачу под названием "hello_gitverse"
-  hello_gitverse:
+# Кэширование для ускорения
+cache:
+  paths:
+    - .cache/pip
+    - .venv/
+  key: "$CI_COMMIT_REF_SLUG"
 
-    name: Hello GitVerse
+# ============================================
+# 1. ПРОВЕРКА КОДА С RUFF
+# ============================================
 
-    # Раннер на котором будет выполняться workflow, в данном случае это облачный раннер GitVerse https://gitverse.ru/docs/knowledge-base/actions/cloud-runners/
-    runs-on: ubuntu-latest
+ruff-lint:
+  stage: lint
+  image: python:$PYTHON_VERSION-slim
 
-    # Шаги представляют собой последовательность действий, выполняемых в рамках задачи
-    steps:
+  before_script:
+    # Установка Python зависимостей
+    - pip install ruff
 
-      # Клонирует ваш репозиторий в рабочую директорию раннера
-      - name: Checkout your code
-        uses: actions/checkout@v4
+  script:
+    # Проверка синтаксиса
+    - echo "🔍 Проверка кода с Ruff..."
+    - ruff check .
 
-      # Выполняет одну команду
-      - name: Run single shell command
-        run: echo Hello, GitVerse!
+    # Проверка форматирования
+    - echo "🎨 Проверка форматирования..."
+    - ruff format --check .
 
-      # Выполняет набор команд - выводит "Hello, GitVerse!" и содержимое репозитория
-      - name: Run multiple shell commands
-        run: |
-          echo Hello, GitVerse!
-          echo "Repository contents"
-          ls -la
+  # Автоматический запуск при:
+  rules:
+    # 1. В Merge Request
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:  # Только при изменении Python файлов
+        - "**/*.py"
+        - "pyproject.toml"
+        - ".ruff.toml"
+        - "requirements*.txt"
+        - ".gitverse-ci.yml"
 
-      # У GitVerse есть контекст, в командах ниже мы выведем несколько значений из него
-      - name: Display event name
-        run: echo ${{ gitverse.event_name }}
+    # 2. В ветках main и develop
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
 
-      - name: Display Workflow
-        run: echo ${{ gitverse.workflow }}
+    # 3. В тегах (релизы)
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
 
-      - name: Display repository name
-        run: echo ${{ gitverse.Repository }}
+# ============================================
+# 2. ЗАПУСК АВТОТЕСТОВ
+# ============================================
 
-      - name: Display repository owner
-        run: echo ${{ gitverse.repository_owner }}
+run-tests:
+  stage: test
+  image: python:$PYTHON_VERSION-slim
+  needs: ["ruff-lint"]  # Запускаем после успешной проверки кода
 
-      - name: Display actor
-        run: echo ${{ gitverse.actor }}
+  before_script:
+    # Установка зависимостей для тестов
+    - pip install pytest pytest-cov
+
+  script:
+    # Поиск и запуск тестов
+    - |
+      echo "🧪 Поиск тестовых файлов..."
+      
+      # Ищем все файлы с тестами
+      if find . -name "*test*.py" -type f | grep -q .; then
+        echo "📁 Найдены тестовые файлы:"
+        find . -name "*test*.py" -type f
+        
+        echo "🚀 Запуск тестов..."
+        # Запускаем все найденные тесты
+        python -m pytest \
+          --tb=short \
+          --cov=. \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term-missing \
+          $(find . -name "*test*.py" -type f -not -path "./.venv/*" -not -path "*/__pycache__/*")
+      else
+        echo "⚠️ Тестовые файлы не найдены"
+        # Создаем пустой отчет для пайплайна
+        echo '<?xml version="1.0" ?><coverage></coverage>' > coverage.xml
+      fi
+
+  # Сохраняем отчеты
+  artifacts:
+    paths:
+      - coverage.xml
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+
+  # Автоматический запуск при тех же условиях
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.py"
+        - "tests/**"
+        - "requirements*.txt"
+        - ".gitverse-ci.yml"
+
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+
+# ============================================
+# 3. АВТОФИКС КОДА (опционально, ручной запуск)
+# ============================================
+
+ruff-autofix:
+  stage: lint
+  image: python:$PYTHON_VERSION-slim
+
+  before_script:
+    - pip install ruff
+
+  script:
+    - echo "🔧 Применение автоматических исправлений..."
+    - ruff check --fix .
+    - ruff format .
+    - echo "✅ Исправления применены"
+
+  # Только ручной запуск из интерфейса Gitverse
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
