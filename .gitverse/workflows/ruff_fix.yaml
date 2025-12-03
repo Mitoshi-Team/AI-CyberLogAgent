@@ -1,4 +1,4 @@
-name: Fix Ruff Issues
+name: Run Ruff Check + Fix Issues
 
 on:
   push:
