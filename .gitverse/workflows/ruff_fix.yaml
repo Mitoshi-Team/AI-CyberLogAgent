@@ -43,6 +43,7 @@ jobs:
           if ! ruff check . --select E,W; then
             echo "❌ PEP 8 checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ PEP 8 checks passed after fix."
           fi
@@ -57,7 +58,7 @@ jobs:
           if ! ruff check . --select F,I; then
             echo "❌ flake8 checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
-            error
+            exit 1
           else
             echo "✅ flake8 checks passed after fix."
           fi
@@ -72,7 +73,7 @@ jobs:
           if ! ruff check . --select B; then
             echo "❌ flake8-bugbear checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
-          error
+            exit 1
           else
             echo "✅ flake8-bugbear checks passed after fix."
           fi
@@ -87,6 +88,7 @@ jobs:
           if ! ruff check . --select C4; then
             echo "❌ comprehension checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ comprehension checks passed after fix."
           fi
@@ -101,6 +103,7 @@ jobs:
           if ! ruff check . --select UP; then
             echo "❌ pyupgrade checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ pyupgrade checks passed after fix."
           fi
@@ -115,6 +118,7 @@ jobs:
           if ! ruff check . --select S; then
             echo "❌ security checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ security checks passed after fix."
           fi
@@ -129,6 +133,7 @@ jobs:
           if ! ruff check . --select D --extend-ignore=D100; then
             echo "❌ docstring checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ docstring checks passed after fix."
           fi
@@ -143,6 +148,7 @@ jobs:
           if ! ruff check . --select ISC; then
             echo "❌ import sorting checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ import sorting checks passed after fix."
           fi
@@ -157,6 +163,7 @@ jobs:
           if ! ruff format . --check; then
             echo "❌ Formatting FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            exit 1
           else
             echo "✅ Formatting passed."
           fi
@@ -186,7 +193,7 @@ jobs:
       - name: Check for overall errors
         run: |
           if [ "$OVERALL_ERRORS" = "1" ]; then
-            echo "\n\n❌ ОБНАРУЖЕНЫ ОШИБКИ, КОТОРЫЕ ТРЕБУЮТ ВНИМАНИЯ!\n"
+            echo "❌ ОБНАРУЖЕНЫ ОШИБКИ, КОТОРЫЕ ТРЕБУЮТ ВНИМАНИЯ!\n"
             echo "Пожалуйста, проверьте логи и исправьте указанные проблемы."
             exit 1
           else
