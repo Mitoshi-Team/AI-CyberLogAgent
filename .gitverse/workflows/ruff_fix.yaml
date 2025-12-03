@@ -57,6 +57,7 @@ jobs:
           if ! ruff check . --select F,I; then
             echo "❌ flake8 checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+            error
           else
             echo "✅ flake8 checks passed after fix."
           fi
@@ -71,6 +72,7 @@ jobs:
           if ! ruff check . --select B; then
             echo "❌ flake8-bugbear checks FAILED after fix!"
             echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          error
           else
             echo "✅ flake8-bugbear checks passed after fix."
           fi
