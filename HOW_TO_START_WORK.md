@@ -70,6 +70,11 @@ uv run log_manage.py start_bot
 uv run ruff check .
 ```
 
+Полная проверка:
+```bash
+ruff check . --select=E,W,F,I,B,C4,UP,S,D,ISC
+```
+
 **!** Если есть ошибки, исправьте их:
 
 ```bash
