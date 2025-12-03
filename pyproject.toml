@@ -6,3 +6,51 @@ requires-python = ">=3.13"
 dependencies = [
     "ruff>=0.14.7",
 ]
+
+
+# Совместимо с Ruff 0.4.0+
+
+[lint]
+select = [
+  "E",   # PEP 8 (pycodestyle)
+  "W",
+  "F",   # flake8
+  "I",   # flake8-import-checker
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade — важно: включено
+  "S",   # bandit
+  "D",   # pydocstyle
+  "ISC", # isort
+]
+# Включаем режим предварительного просмотра для всех новых правил
+preview = true
+ignore = []  # игнорируем длину строки
+
+exclude = [
+  ".venv",
+  "venv",
+  "__pycache__",
+  "*.pyc",
+  "dist",
+  "build",
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  "*.pyi",
+]
+
+# Настройки pycodestyle
+[lint.pycodestyle]
+max-line-length = 79
+
+# Исключения для __init__.py
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+# Форматирование
+[format]
+indent-style = "space"
+# Используем black-совместимые настройки форматирования
+quote-style = "double"
+line-ending = "auto"
