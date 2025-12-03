@@ -8,7 +8,7 @@ on:
   workflow_dispatch:  # Позволяет запускать вручную через интерфейс CI/CD
 
 jobs:
-  ruff-fix:
+  ruff-check-fix:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -178,3 +178,39 @@ jobs:
           else
             echo "\n\n✅ Все проверки пройдены успешно!"
           fi
+
+      # Вывод всех неисправленных ошибок
+      - name: Show all remaining errors
+        if: failure()
+        run: |
+          echo "\n\n📋 ПОДРОБНЫЙ ОТЧЁТ О НЕИСПРАВЛЕННЫХ ОШИБКАХ:\n"
+          echo "========================================"
+
+          echo "\n🔹 PEP 8 (E, W):"
+          ruff check . --select E,W --format=concise || echo "  No PEP 8 issues."
+
+          echo "\n🔹 flake8 (F, I):"
+          ruff check . --select F,I --format=concise || echo "  No flake8 issues."
+
+          echo "\n🔹 flake8-bugbear (B):"
+          ruff check . --select B --format=concise || echo "  No flake8-bugbear issues."
+
+          echo "\n🔹 Comprehensions (C4):"
+          ruff check . --select C4 --format=concise || echo "  No comprehension issues."
+
+          echo "\n🔹 pyupgrade (UP):"
+          ruff check . --select UP --format=concise || echo "  No pyupgrade issues."
+
+          echo "\n🔹 Security (S):"
+          ruff check . --select S --format=concise || echo "  No security issues."
+
+          echo "\n🔹 Docstrings (D):"
+          ruff check . --select D --extend-ignore=D100 --format=concise || echo "  No docstring issues."
+
+          echo "\n🔹 Import sorting (ISC):"
+          ruff check . --select ISC --format=concise || echo "  No import sorting issues."
+
+          echo "\n🔹 Formatting issues:"
+          ruff format . --check --diff || echo "  No formatting issues."
+
+          echo "\n✅ Проверка завершена. Исправьте указанные ошибки и запустите снова."
