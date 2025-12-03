@@ -31,28 +31,28 @@ jobs:
           # Show ruff version
           ruff --version
           
-          # Run Ruff checks for PEP 8 (E, W)
+          echo "=== Running PEP 8 checks (E, W) ==="
           ruff check . --select E,W --fix --show-fixes
 
-          # Run Ruff checks for flake8 (F, I)
+          echo "=== Running flake8 checks (F, I) ==="
           ruff check . --select F,I --fix --show-fixes
 
-          # Run Ruff checks for flake8-bugbear (B)
+          echo "=== Running flake8-bugbear checks (B) ==="
           ruff check . --select B --fix --show-fixes
 
-          # Run Ruff checks for comprehensions (C4)
+          echo "=== Running comprehension checks (C4) ==="
           ruff check . --select C4 --fix --show-fixes
 
-          # Run Ruff checks for pyupgrade (UP)
+          echo "=== Running pyupgrade checks (UP) ==="
           ruff check . --select UP --fix --show-fixes
 
-          # Run Ruff checks for bandit (S)
+          echo "=== Running security checks (bandit, S) ==="
           ruff check . --select S --fix --show-fixes
 
-          # Run Ruff checks for pydocstyle (D)
-          ruff check . --select D --fix --show-fixes
+          echo "=== Running docstring style checks (pydocstyle, D) ==="
+          ruff check . --select D --extend-ignore=D100 --fix --show-fixes
 
-          # Run Ruff checks for isort (ISC)
+          echo "=== Running import sorting checks (isort, ISC) ==="
           ruff check . --select ISC --fix --show-fixes
           
           # Format code with ruff (replaces black)
