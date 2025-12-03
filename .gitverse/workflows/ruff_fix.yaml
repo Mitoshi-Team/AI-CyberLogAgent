@@ -26,50 +26,133 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
 
-      # Флаг для отслеживания наличия ошибок
+      # Флаг для отслеживания общего статуса
       - name: Initialize error flag
         run: |
-          echo "ERRORS_FOUND=0" >> $GITHUB_ENV
+          echo "OVERALL_ERRORS=0" >> $GITHUB_ENV
 
-      # Объединённый список всех правил
-      - name: Run full ruff check
+      # === PEP 8 checks (E, W) ===
+      - name: Run PEP 8 checks (E, W)
+        continue-on-error: true
         run: |
-          echo "=== Running full ruff check (E,W,F,I,B,C4,UP,S,D,ISC) ==="
-          if ruff check . --select E,W,F,I,B,C4,UP,S,D,ISC --extend-ignore=D100; then
-            echo "✅ No issues found."
+          echo "=== Running PEP 8 checks (E, W) ==="
+          # Сначала пытаемся исправить
+          ruff check . --select E,W --fix --show-fixes
+          # Повторная проверка без --fix
+          if ruff check . --select E,W; then
+            echo "✅ PEP 8 checks passed after fix."
           else
-            echo "⚠️ Issues detected. Attempting to fix..."
-            echo "ERRORS_FOUND=1" >> $GITHUB_ENV
+            echo "❌ PEP 8 checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
           fi
 
-      # Шаг исправления, только если были найдены ошибки
-      - name: Fix code style issues
-        if: env.ERRORS_FOUND == '1'
+      # === flake8 checks (F, I) ===
+      - name: Run flake8 checks (F, I)
+        continue-on-error: true
         run: |
-          echo "=== Fixing issues with ruff --fix ==="
-          ruff check . --select E,W,F,I,B,C4,UP,S,D,ISC --extend-ignore=D100 --fix --show-fixes
-
-      # Повторная проверка после исправления
-      - name: Re-check after fixes
-        run: |
-          echo "=== Re-running ruff check after fixes ==="
-          if ruff check . --select E,W,F,I,B,C4,UP,S,D,ISC --extend-ignore=D100; then
-            echo "✅ All issues fixed or no new issues found."
-            echo "ERRORS_FOUND=0" >> $GITHUB_ENV
+          echo "=== Running flake8 checks (F, I) ==="
+          ruff check . --select F,I --fix --show-fixes
+          if ruff check . --select F,I; then
+            echo "✅ flake8 checks passed after fix."
           else
-            echo "❌ Some issues remain after autofix and require manual attention!"
-            echo "ERRORS_FOUND=1" >> $GITHUB_ENV
+            echo "❌ flake8 checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
           fi
 
-      # Форматирование кода
+      # === flake8-bugbear checks (B) ===
+      - name: Run flake8-bugbear checks (B)
+        continue-on-error: true
+        run: |
+          echo "=== Running flake8-bugbear checks (B) ==="
+          ruff check . --select B --fix --show-fixes
+          if ruff check . --select B; then
+            echo "✅ flake8-bugbear checks passed after fix."
+          else
+            echo "❌ flake8-bugbear checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
+
+      # === comprehension checks (C4) ===
+      - name: Run comprehension checks (C4)
+        continue-on-error: true
+        run: |
+          echo "=== Running comprehension checks (C4) ==="
+          ruff check . --select C4 --fix --show-fixes
+          if ruff check . --select C4; then
+            echo "✅ comprehension checks passed after fix."
+          else
+            echo "❌ comprehension checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
+
+      # === pyupgrade checks (UP) ===
+      - name: Run pyupgrade checks (UP)
+        continue-on-error: true
+        run: |
+          echo "=== Running pyupgrade checks (UP) ==="
+          ruff check . --select UP --fix --show-fixes
+          if ruff check . --select UP; then
+            echo "✅ pyupgrade checks passed after fix."
+          else
+            echo "❌ pyupgrade checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
+
+      # === security checks (S) ===
+      - name: Run security checks (bandit, S)
+        continue-on-error: true
+        run: |
+          echo "=== Running security checks (bandit, S) ==="
+          ruff check . --select S --fix --show-fixes
+          if ruff check . --select S; then
+            echo "✅ security checks passed after fix."
+          else
+            echo "❌ security checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
+
+      # === docstring style checks (D) ===
+      - name: Run docstring style checks (pydocstyle, D)
+        continue-on-error: true
+        run: |
+          echo "=== Running docstring style checks (pydocstyle, D) ==="
+          ruff check . --select D --extend-ignore=D100 --fix --show-fixes
+          if ruff check . --select D --extend-ignore=D100; then
+            echo "✅ docstring checks passed after fix."
+          else
+            echo "❌ docstring checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
+
+      # === import sorting checks (ISC) ===
+      - name: Run import sorting checks (isort, ISC)
+        continue-on-error: true
+        run: |
+          echo "=== Running import sorting checks (isort, ISC) ==="
+          ruff check . --select ISC --fix --show-fixes
+          if ruff check . --select ISC; then
+            echo "✅ import sorting checks passed after fix."
+          else
+            echo "❌ import sorting checks FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
+
+      # === Format code ===
       - name: Format code with ruff
+        continue-on-error: true
         run: |
           echo "=== Formatting code with ruff ==="
           ruff format .
+          if ruff format . --check; then
+            echo "✅ Formatting passed."
+          else
+            echo "❌ Formatting FAILED after fix!"
+            echo "OVERALL_ERRORS=1" >> $GITHUB_ENV
+          fi
 
       # Сбор изменений и коммит
       - name: Commit and push changes
-        if: env.ERRORS_FOUND == '0'
+        if: env.OVERALL_ERRORS == '0'
         run: |
           if git diff --quiet; then
             echo "No changes needed after ruff fix and format."
@@ -85,10 +168,10 @@ jobs:
           # Prevent CI from triggering on its own push
           CI: true
 
-      # Финальная проверка: если ошибки были, завершаем с ошибкой
-      - name: Check for errors
+      # Финальная проверка: если были ошибки, завершаем с ошибкой
+      - name: Check for overall errors
         run: |
-          if [ "$ERRORS_FOUND" = "1" ]; then
+          if [ "$OVERALL_ERRORS" = "1" ]; then
             echo "\n\n❌ ОБНАРУЖЕНЫ ОШИБКИ, КОТОРЫЕ ТРЕБУЮТ ВНИМАНИЯ!\n"
             echo "Пожалуйста, проверьте логи и исправьте указанные проблемы."
             exit 1
