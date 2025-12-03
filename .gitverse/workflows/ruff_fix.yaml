@@ -161,16 +161,19 @@ jobs:
 
       # Сбор изменений и коммит
       - name: Commit and push changes
-        if: env.OVERALL_ERRORS == '0'
+        if: env.OVERALL_ERRORS == '1'
         run: |
           if git diff --quiet; then
             echo "No changes needed after ruff fix and format."
           else
             echo "Changes were made by ruff. Committing and pushing..."
-            git config user.name "gitverse-actions[bot]"
-            git config user.email "gitverse-actions[bot]@users.noreply.gitverse.com"
+            # Получаем информацию о последнем коммите
+            ORIGINAL_AUTHOR_NAME="$(git log -1 --pretty=format:'%an' HEAD)"
+            ORIGINAL_AUTHOR_EMAIL="$(git log -1 --pretty=format:'%ae' HEAD)"
+            git config user.name "${ORIGINAL_AUTHOR_NAME}"
+            git config user.email "${ORIGINAL_AUTHOR_EMAIL}"
             git add .
-            git commit -m "style: auto-fix code style issues with ruff [skip ci]"
+            git commit -m "style: auto-fix code style issues with ruff [skip ci]\n\nEdited by Ruff Auto-Formatter"
             git push
           fi
         env:
