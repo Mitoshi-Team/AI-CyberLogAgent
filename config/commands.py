@@ -21,7 +21,7 @@ def show_logs():
 
 def get_history():
     """Retrieve the incident history."""
-    print('Incidents history shown\n')  # ЗАГЛУШКА >>>
+    print("Incidents history shown\n")  # ЗАГЛУШКА >>>
 
 
 def register():
@@ -34,28 +34,31 @@ def register():
     Note:
         This is a placeholder implementation. In production, use proper
         database operations and environment variables for security.
+
     """
-    login = input('Login: ')
-    password = input('Password: ')
+    login = input("Login: ")
+    password = input("Password: ")
 
     # Check if user exists
     user_exists = False
     for user in BD:
-        if user['login'] == login:
+        if user["login"] == login:
             user_exists = True
             # Verify current password before allowing change
-            if bcrypt.checkpw(password.encode('utf-8'), user['hashed_password']):
-                new_password = input('Enter new password: ')
-                user['hashed_password'] = bcrypt.hashpw(new_password.encode('utf-8'), SALT)
-                print(f'Password changed successfully for user: {login}')
+            if bcrypt.checkpw(password.encode("utf-8"), user["hashed_password"]):
+                new_password = input("Enter new password: ")
+                user["hashed_password"] = bcrypt.hashpw(
+                    new_password.encode("utf-8"), SALT
+                )
+                print(f"Password changed successfully for user: {login}")
             else:
-                print('Incorrect password')
+                print("Incorrect password")
             break
-    
+
     # Register new user
     if not user_exists:
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), SALT)
-        BD.append({'login': login, 'hashed_password': hashed_password})
-        print(f'User registered successfully: {login}')
+        hashed_password = bcrypt.hashpw(password.encode("utf-8"), SALT)
+        BD.append({"login": login, "hashed_password": hashed_password})
+        print(f"User registered successfully: {login}")
 
     # ЗАГЛУШКА: Сохранение в БД (реализация зависит от используемой базы данных)

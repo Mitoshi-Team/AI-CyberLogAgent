@@ -2,7 +2,6 @@ import sys
 
 from config import commands
 
-
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "collect_logs":
         commands.collect_logs()
