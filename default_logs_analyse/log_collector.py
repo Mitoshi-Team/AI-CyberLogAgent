@@ -1,15 +1,13 @@
-"""
-Module for collecting logs from another application.
-"""
+"""Module for collecting logs from another application."""
+
 import shutil
 from pathlib import Path
 
-from settings_analyse import SOURCE_LOG_PATH, PROCESSED_LOG_PATH, LOG_FILE_PATTERN
+from settings_analyse import LOG_FILE_PATTERN, PROCESSED_LOG_PATH, SOURCE_LOG_PATH
 
 
 def collect_logs():
-    """
-    Collects log files from the source directory and copies them
+    """Collects log files from the source directory and copies them
     to the processed logs directory.
     """
     source_path = Path(SOURCE_LOG_PATH)

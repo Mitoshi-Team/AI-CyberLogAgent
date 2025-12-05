@@ -1,6 +1,4 @@
-"""
-Settings for the log analysis module.
-"""
+"""Settings for the log analysis module."""
 
 # Path to collect logs from
 SOURCE_LOG_PATH = "../other_project/logs/"
@@ -15,13 +13,7 @@ INCIDENTS_OUTPUT_PATH = "incidents"
 LOG_FILE_PATTERN = "*.log"
 
 # Keywords that indicate an incident
-INCIDENT_KEYWORDS = [
-    "ERROR",
-    "CRITICAL",
-    "EXCEPTION",
-    "FATAL",
-    "WARNING"
-]
+INCIDENT_KEYWORDS = ["ERROR", "CRITICAL", "EXCEPTION", "FATAL", "WARNING"]
 
 # File encoding
 LOG_FILE_ENCODING = "utf-8"
