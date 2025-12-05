@@ -41,7 +41,7 @@ def register():
     )
 
     login = input("Login: ")
-    if login.lower() in "":
+    if login.lower() == "":
         print("Registration process cancelled.")
         return
 
@@ -58,7 +58,7 @@ def register():
             # Verify current password before allowing change
             if bcrypt.checkpw(password.encode("utf-8"), user["hashed_password"]):
                 new_password = input("Enter new password (or 'q' to cancel): ")
-                if new_password.lower() == "q":
+                if new_password.lower() == "":
                     print("Password change cancelled.")
                     return
                 user["hashed_password"] = bcrypt.hashpw(
