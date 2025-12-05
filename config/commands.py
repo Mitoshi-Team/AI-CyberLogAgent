@@ -37,17 +37,17 @@ def register():
 
     """
     print('To cancel registration at any time, enter "q" and press Enter')
-    
+
     login = input("Login: ")
-    if login.lower() == 'q':
+    if login.lower() == "q":
         print("Registration process cancelled.")
         return
-        
+
     password = input("Password: ")
-    if password.lower() == 'q':
+    if password.lower() == "q":
         print("Registration process cancelled.")
         return
-    
+
     # Check if user exists
     user_exists = False
     for user in BD:
@@ -56,7 +56,7 @@ def register():
             # Verify current password before allowing change
             if bcrypt.checkpw(password.encode("utf-8"), user["hashed_password"]):
                 new_password = input("Enter new password (or 'q' to cancel): ")
-                if new_password.lower() == 'q':
+                if new_password.lower() == "q":
                     print("Password change cancelled.")
                     return
                 user["hashed_password"] = bcrypt.hashpw(
