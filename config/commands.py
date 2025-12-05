@@ -36,9 +36,11 @@ def register():
         database operations and environment variables for security.
 
     """
+    print('Enter "q" and send it to exit')
     login = input("Login: ")
     password = input("Password: ")
-
+    if login == 'q' or password == 'q':
+        exit(1)
     # Check if user exists
     user_exists = False
     for user in BD:
