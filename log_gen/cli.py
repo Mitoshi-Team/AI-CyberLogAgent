@@ -7,7 +7,6 @@ CLI интерфейс для генератора логов.
 
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from log_gen import GeneratorConfig, IncidentType, LogGenerator, ConfigLoader

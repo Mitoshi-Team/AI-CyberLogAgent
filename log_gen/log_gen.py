@@ -532,7 +532,9 @@ class LogGenerator:
             LogType.MOD_JK_WORKER_ERROR: self.generate_mod_jk_worker_error,
             LogType.JK2_CHILD_INIT: self.generate_jk2_child_init,
             LogType.JK2_CHILD_ERROR: self.generate_jk2_child_error,
-            LogType.CLIENT_DIRECTORY_FORBIDDEN: self.generate_client_directory_forbidden,
+            LogType.CLIENT_DIRECTORY_FORBIDDEN: (
+                self.generate_client_directory_forbidden
+            ),
             LogType.CLIENT_FILE_NOT_FOUND: self.generate_client_file_not_found,
             LogType.SYSTEM_NOTICE: self.generate_system_notice,
         }
@@ -550,7 +552,7 @@ class LogGenerator:
             else:
                 # Выбираем тип лога на основе весов
                 selected_type = random.choices(log_types, weights=weights, k=1)[0]
-                
+
                 # Генерируем соответствующий лог
                 generator_method = log_type_generators.get(selected_type)
                 if generator_method:
