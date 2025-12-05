@@ -1,16 +1,15 @@
-"""
-Генератор логов для симуляции Apache/mod_jk логов и инцидентов.
+"""Генератор логов для симуляции Apache/mod_jk логов и инцидентов.
 
 Модуль предоставляет гибкую систему генерации реалистичных логов веб-сервера
 с возможностью создания нормальных событий и инцидентов безопасности.
 """
 
 import random
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Dict
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 
 class LogLevel(Enum):
@@ -66,15 +65,15 @@ class LogEntry:
     timestamp: datetime
     level: LogLevel
     message: str
-    process_id: Optional[int] = None
-    slot: Optional[int] = None
+    process_id: int | None = None
+    slot: int | None = None
 
     def format(self) -> str:
-        """
-        Форматирует запись лога в Apache формат.
+        """Форматирует запись лога в Apache формат.
 
         Returns:
             Отформатированная строка лога
+
         """
         # Форматируем timestamp в Apache формате: [Sun Dec 04 04:47:44 2005]
         time_str = self.timestamp.strftime("[%a %b %d %H:%M:%S %Y]")
@@ -101,42 +100,47 @@ class GeneratorConfig:
     incident_probability: float = 0.05
 
     # Параметры инцидентов
-    incident_types: List[IncidentType] = field(
+    incident_types: list[IncidentType] = field(
         default_factory=lambda: list(IncidentType)
     )
     incident_duration_logs: tuple[int, int] = (3, 10)
 
     # Веса для типов логов (определяет частоту каждого типа)
-    log_type_weights: Dict[str, float] = field(default_factory=lambda: {
-        "mod_jk_worker_init": 0.25,
-        "mod_jk_worker_error": 0.10,
-        "jk2_child_init": 0.25,
-        "client_directory_forbidden": 0.15,
-        "system_notice": 0.15,
-        "incidents": 0.10,
-    })
+    log_type_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "mod_jk_worker_init": 0.25,
+            "mod_jk_worker_error": 0.10,
+            "jk2_child_init": 0.25,
+            "client_directory_forbidden": 0.15,
+            "system_notice": 0.15,
+            "incidents": 0.10,
+        }
+    )
 
     # Параметры client IP адресов
-    client_ip_ranges: List[str] = field(default_factory=lambda: [
-        "192.168.0.0/16",
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "public",  # случайные публичные IP
-    ])
+    client_ip_ranges: list[str] = field(
+        default_factory=lambda: [
+            "192.168.0.0/16",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "public",  # случайные публичные IP
+        ]
+    )
 
     # Пути к ресурсам для client errors
-    forbidden_paths: List[str] = field(default_factory=lambda: [
-        "/var/www/html/",
-        "/admin/",
-        "/config/",
-        "/etc/passwd",
-        "/var/log/",
-    ])
+    forbidden_paths: list[str] = field(
+        default_factory=lambda: [
+            "/var/www/html/",
+            "/admin/",
+            "/config/",
+            "/etc/passwd",
+            "/var/log/",
+        ]
+    )
 
 
 class LogGenerator:
-    """
-    Генератор реалистичных Apache/mod_jk логов.
+    """Генератор реалистичных Apache/mod_jk логов.
 
     Класс предоставляет методы для генерации нормальных логов работы сервера
     и различных типов инцидентов с настраиваемыми параметрами.
@@ -239,16 +243,16 @@ class LogGenerator:
         ],
     }
 
-    def __init__(self, config: Optional[GeneratorConfig] = None) -> None:
-        """
-        Инициализация генератора логов.
+    def __init__(self, config: GeneratorConfig | None = None) -> None:
+        """Инициализация генератора логов.
 
         Args:
             config: Конфигурация генератора. Если None, используются
                    значения по умолчанию.
+
         """
         self.config = config or GeneratorConfig()
-        self.logs: List[LogEntry] = []
+        self.logs: list[LogEntry] = []
         self.current_time = self.config.start_time
 
     def _increment_time(self) -> None:
@@ -267,19 +271,21 @@ class LogGenerator:
 
     def _generate_random_ip(self) -> str:
         """Генерирует случайный IP адрес."""
-        return f"{random.randint(1, 255)}.{random.randint(1, 255)}." \
-               f"{random.randint(1, 255)}.{random.randint(1, 255)}"
+        return (
+            f"{random.randint(1, 255)}.{random.randint(1, 255)}."
+            f"{random.randint(1, 255)}.{random.randint(1, 255)}"
+        )
 
     def _get_random_path(self) -> str:
         """Возвращает случайный путь из списка запрещённых путей."""
         return random.choice(self.config.forbidden_paths)
 
     def generate_mod_jk_worker_init(self) -> LogEntry:
-        """
-        Генерирует лог инициализации mod_jk worker.
+        """Генерирует лог инициализации mod_jk worker.
 
         Returns:
             Сгенерированная запись лога
+
         """
         template = random.choice(self.MOD_JK_WORKER_MESSAGES)
 
@@ -290,11 +296,11 @@ class LogGenerator:
         )
 
     def generate_mod_jk_worker_error(self) -> LogEntry:
-        """
-        Генерирует лог ошибки mod_jk worker.
+        """Генерирует лог ошибки mod_jk worker.
 
         Returns:
             Сгенерированная запись об ошибке
+
         """
         template = random.choice(self.MOD_JK_WORKER_ERROR_MESSAGES)
         message = template.format(
@@ -309,11 +315,11 @@ class LogGenerator:
         )
 
     def generate_jk2_child_init(self) -> LogEntry:
-        """
-        Генерирует лог инициализации jk2 child процесса.
+        """Генерирует лог инициализации jk2 child процесса.
 
         Returns:
             Сгенерированная запись лога
+
         """
         template = random.choice(self.JK2_CHILD_INIT_MESSAGES)
         message = template.format(
@@ -328,11 +334,11 @@ class LogGenerator:
         )
 
     def generate_jk2_child_error(self) -> LogEntry:
-        """
-        Генерирует лог ошибки jk2 child процесса.
+        """Генерирует лог ошибки jk2 child процесса.
 
         Returns:
             Сгенерированная запись об ошибке
+
         """
         template = random.choice(self.JK2_CHILD_ERROR_MESSAGES)
         message = template.format(
@@ -346,11 +352,11 @@ class LogGenerator:
         )
 
     def generate_client_directory_forbidden(self) -> LogEntry:
-        """
-        Генерирует лог запрещённого доступа клиента к директории.
+        """Генерирует лог запрещённого доступа клиента к директории.
 
         Returns:
             Сгенерированная запись об ошибке
+
         """
         template = random.choice(self.CLIENT_DIRECTORY_FORBIDDEN_MESSAGES)
         message = template.format(
@@ -365,11 +371,11 @@ class LogGenerator:
         )
 
     def generate_client_file_not_found(self) -> LogEntry:
-        """
-        Генерирует лог файла не найденного клиентом.
+        """Генерирует лог файла не найденного клиентом.
 
         Returns:
             Сгенерированная запись об ошибке
+
         """
         template = random.choice(self.CLIENT_FILE_NOT_FOUND_MESSAGES)
         message = template.format(
@@ -384,11 +390,11 @@ class LogGenerator:
         )
 
     def generate_system_notice(self) -> LogEntry:
-        """
-        Генерирует системный notice лог.
+        """Генерирует системный notice лог.
 
         Returns:
             Сгенерированная запись лога
+
         """
         template = random.choice(self.SYSTEM_NOTICE_MESSAGES)
         message = template.format(
@@ -402,11 +408,11 @@ class LogGenerator:
         )
 
     def generate_normal_log(self) -> LogEntry:
-        """
-        Генерирует нормальную запись лога (notice или info).
+        """Генерирует нормальную запись лога (notice или info).
 
         Returns:
             Сгенерированная запись лога
+
         """
         level = LogLevel.NOTICE
         template = random.choice(self.NORMAL_MESSAGES)
@@ -425,11 +431,11 @@ class LogGenerator:
         )
 
     def generate_error_log(self) -> LogEntry:
-        """
-        Генерирует запись об ошибке.
+        """Генерирует запись об ошибке.
 
         Returns:
             Сгенерированная запись об ошибке
+
         """
         level = LogLevel.ERROR
         template = random.choice(self.ERROR_MESSAGES)
@@ -448,21 +454,21 @@ class LogGenerator:
 
     def generate_incident(
         self,
-        incident_type: Optional[IncidentType] = None,
-    ) -> List[LogEntry]:
-        """
-        Генерирует серию логов, представляющих инцидент.
+        incident_type: IncidentType | None = None,
+    ) -> list[LogEntry]:
+        """Генерирует серию логов, представляющих инцидент.
 
         Args:
             incident_type: Тип инцидента. Если None, выбирается случайно.
 
         Returns:
             Список записей логов, составляющих инцидент
+
         """
         if incident_type is None:
             incident_type = random.choice(self.config.incident_types)
 
-        incident_logs: List[LogEntry] = []
+        incident_logs: list[LogEntry] = []
         templates = self.INCIDENT_MESSAGES[incident_type]
 
         # Определяем количество логов в инциденте
@@ -482,10 +488,10 @@ class LogGenerator:
                 "signal": random.choice([11, 9, 15, 6]),
                 "user": random.choice(["admin", "user", "guest", "root"]),
                 "ip": f"{random.randint(1, 255)}.{random.randint(1, 255)}"
-                     f".{random.randint(1, 255)}.{random.randint(1, 255)}",
-                "resource": random.choice([
-                    "/admin", "/config", "/etc/passwd", "/var/log"
-                ]),
+                f".{random.randint(1, 255)}.{random.randint(1, 255)}",
+                "resource": random.choice(
+                    ["/admin", "/config", "/etc/passwd", "/var/log"]
+                ),
             }
 
             message = template.format(**params)
@@ -511,12 +517,12 @@ class LogGenerator:
 
         return incident_logs
 
-    def generate_logs(self) -> List[LogEntry]:
-        """
-        Генерирует набор логов согласно конфигурации.
+    def generate_logs(self) -> list[LogEntry]:
+        """Генерирует набор логов согласно конфигурации.
 
         Returns:
             Список сгенерированных записей логов
+
         """
         self.logs = []
 
@@ -564,11 +570,11 @@ class LogGenerator:
         return self.logs
 
     def save_to_file(self, filepath: Path | str) -> None:
-        """
-        Сохраняет сгенерированные логи в файл.
+        """Сохраняет сгенерированные логи в файл.
 
         Args:
             filepath: Путь к файлу для сохранения логов
+
         """
         filepath = Path(filepath)
 
@@ -580,11 +586,11 @@ class LogGenerator:
                 file.write(log.format() + "\n")
 
     def get_formatted_logs(self) -> str:
-        """
-        Возвращает все логи в виде отформатированной строки.
+        """Возвращает все логи в виде отформатированной строки.
 
         Returns:
             Строка со всеми логами
+
         """
         return "\n".join(log.format() for log in self.logs)
 

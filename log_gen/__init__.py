@@ -1,10 +1,10 @@
-"""
-Модуль генерации логов AI-CyberLogAgent.
+"""Модуль генерации логов AI-CyberLogAgent.
 
 Предоставляет инструменты для генерации реалистичных логов веб-сервера
 Apache/mod_jk с возможностью симуляции различных инцидентов безопасности.
 """
 
+from .config_loader import ConfigLoader
 from .log_gen import (
     GeneratorConfig,
     IncidentType,
@@ -13,7 +13,6 @@ from .log_gen import (
     LogLevel,
     LogType,
 )
-from .config_loader import ConfigLoader
 
 __all__ = [
     "LogGenerator",

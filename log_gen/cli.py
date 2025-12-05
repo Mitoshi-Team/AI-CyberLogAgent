@@ -1,5 +1,4 @@
-"""
-CLI интерфейс для генератора логов.
+"""CLI интерфейс для генератора логов.
 
 Предоставляет удобный интерфейс командной строки для генерации логов
 с различными параметрами.
@@ -9,15 +8,15 @@ import argparse
 import sys
 from pathlib import Path
 
-from log_gen import GeneratorConfig, IncidentType, LogGenerator, ConfigLoader
+from log_gen import ConfigLoader, GeneratorConfig, IncidentType, LogGenerator
 
 
 def create_parser() -> argparse.ArgumentParser:
-    """
-    Создаёт парсер аргументов командной строки.
+    """Создаёт парсер аргументов командной строки.
 
     Returns:
         Настроенный ArgumentParser
+
     """
     parser = argparse.ArgumentParser(
         description="Генератор реалистичных Apache/mod_jk логов с инцидентами",
@@ -119,14 +118,14 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    """
-    Валидирует аргументы командной строки.
+    """Валидирует аргументы командной строки.
 
     Args:
         args: Аргументы командной строки
 
     Raises:
         ValueError: Если аргументы некорректны
+
     """
     if args.error_probability < 0 or args.error_probability > 1:
         raise ValueError("error_probability должна быть от 0.0 до 1.0")
@@ -142,11 +141,11 @@ def validate_args(args: argparse.Namespace) -> None:
 
 
 def generate_logs(args: argparse.Namespace) -> None:
-    """
-    Генерирует логи на основе аргументов командной строки.
+    """Генерирует логи на основе аргументов командной строки.
 
     Args:
         args: Аргументы командной строки
+
     """
     # Загружаем конфигурацию
     if args.config:
@@ -201,11 +200,11 @@ def generate_logs(args: argparse.Namespace) -> None:
 
 
 def show_statistics(generator: LogGenerator) -> None:
-    """
-    Показывает статистику по сгенерированным логам.
+    """Показывает статистику по сгенерированным логам.
 
     Args:
         generator: Генератор с созданными логами
+
     """
     from collections import Counter
 
@@ -217,16 +216,13 @@ def show_statistics(generator: LogGenerator) -> None:
 
     if generator.logs:
         print(
-            f"  Период: {generator.logs[0].timestamp} - "
-            f"{generator.logs[-1].timestamp}"
+            f"  Период: {generator.logs[0].timestamp} - {generator.logs[-1].timestamp}"
         )
         duration = generator.logs[-1].timestamp - generator.logs[0].timestamp
         print(f"  Длительность: {duration}")
 
     print("\n  Распределение по уровням:")
-    for level, count in sorted(
-        level_counts.items(), key=lambda x: x[1], reverse=True
-    ):
+    for level, count in sorted(level_counts.items(), key=lambda x: x[1], reverse=True):
         percentage = (count / len(generator.logs)) * 100
         print(f"    {level.value:8s}: {count:5d} ({percentage:5.1f}%)")
 
@@ -249,9 +245,7 @@ def main() -> None:
 
         # Проверяем, что указан выходной файл или режим предпросмотра
         if not args.output and not args.preview:
-            parser.error(
-                "Требуется указать -o/--output или использовать --preview"
-            )
+            parser.error("Требуется указать -o/--output или использовать --preview")
 
         # Валидируем аргументы
         validate_args(args)
