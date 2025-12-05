@@ -36,7 +36,9 @@ def register():
         database operations and environment variables for security.
 
     """
-    print('\nTo cancel registration at any time, simply press Enter without typing anything')
+    print(
+        "\nTo cancel registration at any time, simply press Enter without typing anything"
+    )
 
     login = input("Login: ")
     if login.lower() == "":
@@ -55,7 +57,9 @@ def register():
             user_exists = True
             # Verify current password before allowing change
             if bcrypt.checkpw(password.encode("utf-8"), user["hashed_password"]):
-                new_password = input("Enter new password (or just press Enter to cancel): ")
+                new_password = input(
+                    "Enter new password (or just press Enter to cancel): "
+                )
                 if new_password.lower() == "":
                     print("Password change cancelled.")
                     return
