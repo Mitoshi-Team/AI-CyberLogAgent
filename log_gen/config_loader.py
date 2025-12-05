@@ -7,7 +7,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from log_gen import GeneratorConfig, IncidentType, LogType
 
@@ -158,22 +158,22 @@ class ConfigLoader:
                 "10.0.0.0/8",
                 "public",
             ],
-        "forbidden_paths": [
-            "/var/www/html/",
-            "/var/www/html/admin/",
-            "/var/www/html/images/",
-            "/usr/local/apache/htdocs/",
-        ],
-        "_comment": "Конфигурация генератора Apache логов",
-        "_log_type_weights_info": (
-            "Веса определяют вероятность генерации каждого типа лога. "
-            "Сумма весов должна быть 1.0"
-        ),
-        "_client_ip_ranges_info": (
-            "Диапазоны IP адресов: 'public' для публичных IP, "
-            "или CIDR нотация (192.168.0.0/16)"
-        ),
-        "_forbidden_paths_info": "Список путей для генерации ошибок доступа",
+            "forbidden_paths": [
+                "/var/www/html/",
+                "/var/www/html/admin/",
+                "/var/www/html/images/",
+                "/usr/local/apache/htdocs/",
+            ],
+            "_comment": "Конфигурация генератора Apache логов",
+            "_log_type_weights_info": (
+                "Веса определяют вероятность генерации каждого типа лога. "
+                "Сумма весов должна быть 1.0"
+            ),
+            "_client_ip_ranges_info": (
+                "Диапазоны IP адресов: 'public' для публичных IP, "
+                "или CIDR нотация (192.168.0.0/16)"
+            ),
+            "_forbidden_paths_info": "Список путей для генерации ошибок доступа",
         }
 
         filepath.parent.mkdir(parents=True, exist_ok=True)
