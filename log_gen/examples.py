@@ -1,15 +1,15 @@
-"""
-Примеры использования генератора логов.
+"""Примеры использования генератора логов.
 
 Демонстрирует различные способы генерации логов и инцидентов.
 """
 
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
+
 from log_gen import (
-    LogGenerator,
     GeneratorConfig,
     IncidentType,
+    LogGenerator,
     LogLevel,
 )
 
@@ -72,9 +72,7 @@ def example_specific_incident() -> None:
     # Генерируем несколько инцидентов с утечками памяти
     all_logs = []
     for i in range(3):
-        incident_logs = generator.generate_incident(
-            IncidentType.MEMORY_LEAK
-        )
+        incident_logs = generator.generate_incident(IncidentType.MEMORY_LEAK)
         all_logs.extend(incident_logs)
         print(f"✓ Инцидент {i + 1}: {len(incident_logs)} записей")
 
@@ -131,9 +129,7 @@ def example_time_series() -> None:
     print(f"✓ Сгенерировано {len(logs)} логов")
     print(f"  Начало: {logs[0].timestamp}")
     print(f"  Конец: {logs[-1].timestamp}")
-    print(
-        f"  Длительность: {logs[-1].timestamp - logs[0].timestamp}"
-    )
+    print(f"  Длительность: {logs[-1].timestamp - logs[0].timestamp}")
 
     generator.save_to_file("examples/24_hour_timeline.log")
     print("\n✓ Сохранено в examples/24_hour_timeline.log\n")

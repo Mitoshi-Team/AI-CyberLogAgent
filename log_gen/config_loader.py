@@ -1,5 +1,4 @@
-"""
-Загрузчик конфигурации для генератора логов.
+"""Загрузчик конфигурации для генератора логов.
 
 Модуль предоставляет функции для загрузки конфигурации из YAML/JSON файлов
 и валидации параметров.
@@ -18,8 +17,7 @@ class ConfigLoader:
 
     @staticmethod
     def load_from_json(filepath: Path | str) -> GeneratorConfig:
-        """
-        Загружает конфигурацию из JSON файла.
+        """Загружает конфигурацию из JSON файла.
 
         Args:
             filepath: Путь к JSON файлу с конфигурацией
@@ -30,6 +28,7 @@ class ConfigLoader:
         Raises:
             FileNotFoundError: Если файл не найден
             ValueError: Если формат файла некорректен
+
         """
         filepath = Path(filepath)
 
@@ -42,15 +41,15 @@ class ConfigLoader:
         return ConfigLoader._parse_config(config_data)
 
     @staticmethod
-    def _parse_config(config_data: Dict[str, Any]) -> GeneratorConfig:
-        """
-        Парсит словарь конфигурации и создаёт объект GeneratorConfig.
+    def _parse_config(config_data: dict[str, Any]) -> GeneratorConfig:
+        """Парсит словарь конфигурации и создаёт объект GeneratorConfig.
 
         Args:
             config_data: Словарь с параметрами конфигурации
 
         Returns:
             Объект GeneratorConfig
+
         """
         # Парсим временные параметры
         start_time = datetime.now()
@@ -61,8 +60,7 @@ class ConfigLoader:
         incident_types = []
         if "incident_types" in config_data:
             incident_types = [
-                IncidentType(inc_type)
-                for inc_type in config_data["incident_types"]
+                IncidentType(inc_type) for inc_type in config_data["incident_types"]
             ]
         else:
             incident_types = list(IncidentType)
@@ -112,9 +110,7 @@ class ConfigLoader:
             time_increment_seconds=tuple(
                 config_data.get("time_increment_seconds", [1, 30])
             ),
-            process_id_range=tuple(
-                config_data.get("process_id_range", [6000, 7000])
-            ),
+            process_id_range=tuple(config_data.get("process_id_range", [6000, 7000])),
             slot_range=tuple(config_data.get("slot_range", [1, 10])),
             error_probability=config_data.get("error_probability", 0.15),
             incident_probability=config_data.get("incident_probability", 0.05),
@@ -129,11 +125,11 @@ class ConfigLoader:
 
     @staticmethod
     def create_default_config(filepath: Path | str) -> None:
-        """
-        Создаёт файл конфигурации по умолчанию.
+        """Создаёт файл конфигурации по умолчанию.
 
         Args:
             filepath: Путь к файлу для сохранения конфигурации
+
         """
         filepath = Path(filepath)
 
