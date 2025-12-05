@@ -8,7 +8,7 @@ AVAILABLE_COMMANDS = {
     "show_logs": "Show logs",
     "hide_logs": "Hide logs",
     "get_history": "Get incident history",
-    "register": "Register a new user or modify an existing one"
+    "register": "Register a new user or modify an existing one",
 }
 
 
@@ -27,9 +27,9 @@ if __name__ == "__main__":
         print("\nError: command not specified")
         show_help()
         sys.exit(1)
-    
+
     command = sys.argv[1]
-    
+
     if command == "collect_logs":
         commands.collect_logs()
     elif command == "show_logs":
