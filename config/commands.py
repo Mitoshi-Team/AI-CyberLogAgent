@@ -36,15 +36,15 @@ def register():
         database operations and environment variables for security.
 
     """
-    print('To cancel registration at any time, enter "q" and press Enter')
+    print('\nTo cancel registration at any time, simply press Enter without typing anything')
 
     login = input("Login: ")
-    if login.lower() == "q":
+    if login.lower() in "":
         print("Registration process cancelled.")
         return
 
     password = input("Password: ")
-    if password.lower() == "q":
+    if password.lower() == "":
         print("Registration process cancelled.")
         return
 
