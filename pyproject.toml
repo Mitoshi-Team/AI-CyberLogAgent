@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
+    "bcrypt>=5.0.0",
     "ruff>=0.14.7",
 ]
 
