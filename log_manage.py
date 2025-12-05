@@ -11,5 +11,5 @@ if __name__ == "__main__":
         commands.hide_logs()
     if len(sys.argv) > 1 and sys.argv[1] == "get_history":
         commands.get_history()
-    if len(sys.argv) > 1 and sys.argv[1] == "edit_pass":
-        commands.edit_pass()
+    if len(sys.argv) > 1 and sys.argv[1] == "register":
+        commands.register()
