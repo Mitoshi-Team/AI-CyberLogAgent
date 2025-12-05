@@ -36,7 +36,9 @@ def register():
         database operations and environment variables for security.
 
     """
-    print('\nTo cancel registration at any time, simply press Enter without typing anything')
+    print(
+        "\nTo cancel registration at any time, simply press Enter without typing anything"
+    )
 
     login = input("Login: ")
     if login.lower() in "":
