@@ -37,7 +37,7 @@ def register():
 
     """
     print(
-        "To cancel registration at any time, simply press Enter without typing anything"
+        "\nTo cancel registration at any time, simply press Enter without typing anything"
     )
 
     login = input("Login: ")
