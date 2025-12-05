@@ -8,7 +8,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from log_gen import ConfigLoader, GeneratorConfig, IncidentType, LogGenerator
+from .config_loader import ConfigLoader
+from .log_gen import GeneratorConfig, IncidentType, LogGenerator
 
 
 def create_parser() -> argparse.ArgumentParser:
