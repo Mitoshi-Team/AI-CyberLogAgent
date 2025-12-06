@@ -10,7 +10,7 @@
 
 ## Usage
 
-python log_manage.py <command>
+python log_manage.py <`command`>
 
 ## Example
 
