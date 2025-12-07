@@ -3,7 +3,12 @@
 import shutil
 from pathlib import Path
 
-from settings_analyse import LOG_FILE_PATTERN, PROCESSED_LOG_PATH, SOURCE_LOG_PATH, IGNORED_PATHS
+from settings_analyse import (
+    IGNORED_PATHS,
+    LOG_FILE_PATTERN,
+    PROCESSED_LOG_PATH,
+    SOURCE_LOG_PATH,
+)
 
 
 def is_subpath_of(parent: Path, child: Path) -> bool:
@@ -22,7 +27,9 @@ def collect_logs():
     Also ignores logs from app_simulation/log_gen/examples.
     """
     # Определяем путь к текущей директории проекта
-    current_dir = Path(__file__).parent.parent  # ai_cyberlogagent/default_logs_analyse → ai_cyberlogagent
+    current_dir = Path(
+        __file__
+    ).parent.parent  # ai_cyberlogagent/default_logs_analyse → ai_cyberlogagent
     parent_dir = current_dir.parent  # Родитель ai_cyberlogagent
 
     # Paths to ignore
@@ -48,7 +55,11 @@ def collect_logs():
                     ignored = False
                     for ignore_path in ignored_paths:
                         if is_subpath_of(ignore_path, log_file.resolve()):
-                            rel_part = log_file.relative_to(ignore_path) if ignore_path != log_file else log_file.name
+                            rel_part = (
+                                log_file.relative_to(ignore_path)
+                                if ignore_path != log_file
+                                else log_file.name
+                            )
                             print(f"  ⚠️  Ignored (in {ignore_path.name}): {rel_part}")
                             ignored = True
                             break
@@ -69,7 +80,10 @@ def collect_logs():
             print(f"\n🔍 Checking custom source path: {source_path}")
 
             # Проверяем, не находится ли SOURCE_LOG_PATH внутри ai_cyberlogagent
-            source_in_ignored = any(is_subpath_of(ignore_path, source_path.resolve()) for ignore_path in ignored_paths)
+            source_in_ignored = any(
+                is_subpath_of(ignore_path, source_path.resolve())
+                for ignore_path in ignored_paths
+            )
             if source_in_ignored:
                 print(f"  ⚠️  Source path is in ignore list — ignoring: {source_path}")
             else:
@@ -78,7 +92,10 @@ def collect_logs():
                     try:
                         # Проверка на наличие в путях исключения
                         log_resolved = log_file.resolve()
-                        ignored = any(is_subpath_of(ignore_path, log_resolved) for ignore_path in ignored_paths)
+                        ignored = any(
+                            is_subpath_of(ignore_path, log_resolved)
+                            for ignore_path in ignored_paths
+                        )
                         if ignored:
                             print(f"  ⚠️  Ignored (in ignore list): {log_file.name}")
                             continue
