@@ -1,5 +1,40 @@
-.env
+# Логи — не коммитим
+*.log
+*.log.*
+logs/
+log/
+Logs/
+temp_logs/
+processed_logs/
+ai_cyberlogagent/default_logs_analyse/logs/
+ai_cyberlogagent/default_logs_analyse/processed_logs/
+**/sim.log
+**/gigachat_rag.log
+
+# Кэши и временные файлы
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
+
+# Виртуальные окружения
 venv/
 env/
+.venv/
+envs/
 
-__pycache__/
+# Конфигурационные файлы (если есть чувствительные)
+config.json
+secrets.py
+
+# Артефакты запуска
+*.tmp
+*.temp
+
+# Ruff — инструмент для проверки кода
+.ruff_cache/
+.ruff-check
+
+# IDE: PyCharm / IntelliJ
+.idea/
