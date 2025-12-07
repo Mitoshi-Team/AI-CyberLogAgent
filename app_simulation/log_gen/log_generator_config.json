@@ -1,0 +1,56 @@
+{
+  "log_count": 100,
+  "time_increment_seconds": [
+    1,
+    30
+  ],
+  "process_id_range": [
+    6000,
+    7000
+  ],
+  "slot_range": [
+    1,
+    10
+  ],
+  "error_probability": 0.15,
+  "incident_probability": 0.05,
+  "incident_duration_logs": [
+    3,
+    10
+  ],
+  "incident_types": [
+    "worker_error",
+    "connection_failed",
+    "memory_leak",
+    "service_crash",
+    "auth_failure",
+    "permission_denied",
+    "resource_exhaustion"
+  ],
+  "log_type_weights": {
+    "normal": 0.4,
+    "error": 0.1,
+    "mod_jk_worker_init": 0.05,
+    "mod_jk_worker_error": 0.05,
+    "jk2_child_init": 0.1,
+    "jk2_child_error": 0.05,
+    "client_directory_forbidden": 0.1,
+    "client_file_not_found": 0.1,
+    "system_notice": 0.05
+  },
+  "client_ip_ranges": [
+    "192.168.0.0/16",
+    "10.0.0.0/8",
+    "public"
+  ],
+  "forbidden_paths": [
+    "/var/www/html/",
+    "/var/www/html/admin/",
+    "/var/www/html/images/",
+    "/usr/local/apache/htdocs/"
+  ],
+  "_comment": "Конфигурация генератора Apache логов",
+  "_log_type_weights_info": "Веса определяют вероятность генерации каждого типа лога. Сумма весов должна быть 1.0",
+  "_client_ip_ranges_info": "Диапазоны IP адресов: 'public' для публичных IP, или CIDR нотация (192.168.0.0/16)",
+  "_forbidden_paths_info": "Список путей для генерации ошибок доступа"
+}
