@@ -20,3 +20,9 @@ LOG_FILE_ENCODING = "utf-8"
 
 # Batch size for processing logs
 BATCH_SIZE = 100
+
+# Paths to ignore during log collection
+IGNORED_PATHS = [
+    "app_simulation/log_gen/examples",
+    "ai_cyberlogagent"
+]
