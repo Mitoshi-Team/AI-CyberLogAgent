@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app_simulation.log_gen import GeneratorConfig, IncidentType, LogType
+from .log_gen import GeneratorConfig, IncidentType, LogType
 
 
 class ConfigLoader:
@@ -68,9 +68,12 @@ class ConfigLoader:
         # Парсим веса типов логов
         log_type_weights = {}
         if "log_type_weights" in config_data:
+            # Фильтруем только валидные типы логов
+            valid_log_types = {lt.value for lt in LogType}
             log_type_weights = {
                 LogType(log_type): weight
                 for log_type, weight in config_data["log_type_weights"].items()
+                if log_type in valid_log_types
             }
         else:
             # Веса по умолчанию
