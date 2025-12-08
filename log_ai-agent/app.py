@@ -1,24 +1,24 @@
-"""
-AI CyberLog Agent - Backend Application
+"""AI CyberLog Agent - Backend Application
 Заглушка для основного приложения
 """
-import os
+
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
+import os
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # Получение настроек из переменных окружения
-DATABASE_URL = os.getenv('DATABASE_URL')
-HOST = os.getenv('HOST', '0.0.0.0')
-PORT = int(os.getenv('PORT', 8000))
+DATABASE_URL = os.getenv("DATABASE_URL")
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", 8000))
 
 
 @asynccontextmanager
@@ -35,7 +35,7 @@ app = FastAPI(
     title="AI CyberLog Agent API",
     description="Backend API for AI-powered log analysis and incident monitoring",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Настройка CORS
@@ -50,14 +50,11 @@ app.add_middleware(
 
 # --- API Endpoints ---
 
+
 @app.get("/")
 async def root():
     """Главная страница API"""
-    return {
-        "message": "AI CyberLog Agent API",
-        "status": "running",
-        "version": "1.0.0"
-    }
+    return {"message": "AI CyberLog Agent API", "status": "running", "version": "1.0.0"}
 
 
 @app.get("/health")
@@ -65,7 +62,7 @@ async def health_check():
     """Проверка здоровья сервиса"""
     return {
         "status": "healthy",
-        "database": "connected"  # TODO: добавить реальную проверку БД
+        "database": "connected",  # TODO: добавить реальную проверку БД
     }
 
 
@@ -79,28 +76,22 @@ async def get_incidents():
                 "title": "Suspicious Login Activity",
                 "severity": "high",
                 "status": "active",
-                "timestamp": "2025-12-08T10:30:00Z"
+                "timestamp": "2025-12-08T10:30:00Z",
             },
             {
                 "id": 2,
                 "title": "High CPU Usage Detected",
                 "severity": "medium",
                 "status": "resolved",
-                "timestamp": "2025-12-08T09:15:00Z"
-            }
+                "timestamp": "2025-12-08T09:15:00Z",
+            },
         ],
-        "total": 2
+        "total": 2,
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     logger.info(f"Starting server on {HOST}:{PORT}")
-    uvicorn.run(
-        "app:app",
-        host=HOST,
-        port=PORT,
-        reload=True,
-        log_level="info"
-    )
+    uvicorn.run("app:app", host=HOST, port=PORT, reload=True, log_level="info")
