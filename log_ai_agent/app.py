@@ -63,7 +63,7 @@ async def health_check():
     """Проверка здоровья сервиса"""
     db_status = "disconnected"
     db_error = None
-    
+
     # Проверка подключения к базе данных
     if DATABASE_URL:
         try:
@@ -74,7 +74,7 @@ async def health_check():
         except Exception as e:
             db_error = str(e)
             logger.error(f"Database health check failed: {e}")
-    
+
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "database": db_status,
