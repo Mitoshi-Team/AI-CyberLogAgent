@@ -14,7 +14,7 @@
 
 ```bash
 # Перейти в директорию с docker-compose.yml
-cd log_ai-agent
+cd log_ai_agent
 
 # Запустить все сервисы
 docker-compose up -d

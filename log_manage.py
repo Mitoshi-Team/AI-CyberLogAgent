@@ -1,6 +1,6 @@
 import sys
 
-from ai_cyberlogagent.config import commands
+from log_ai_agent.config import commands
 
 # Dictionary of available commands
 AVAILABLE_COMMANDS = {

@@ -6,8 +6,8 @@ log/
 Logs/
 temp_logs/
 processed_logs/
-log_ai-agent/default_logs_analyse/analyse_logs/
-log_ai-agent/default_logs_analyse/processed_logs/
+log_ai_agent/default_logs_analyse/analyse_logs/
+log_ai_agent/default_logs_analyse/processed_logs/
 **/sim.log
 **/gigachat_rag.log
 

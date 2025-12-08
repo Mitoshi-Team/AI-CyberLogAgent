@@ -24,7 +24,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: log_ai-agent/Dockerfile
+      dockerfile: /Dockerfile
     container_name: ${BACKEND_CONTAINER_NAME:-cyberlog-backend}
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}
@@ -43,7 +43,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ../log_ai-agent:/app/log_ai-agent
+      - ../log_ai_agent:/app/log_ai_agent
       - app_logs:/app/logs
     networks:
       - cyberlog-network
