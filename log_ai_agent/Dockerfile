@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
 
 # Копирование файлов проекта
 COPY pyproject.toml ./
-COPY log_ai-agent/ ./log_ai-agent/
+COPY log_ai_agent/ ./log_ai_agent/
+COPY app_simulation/ ./app_simulation/
 
 # Установка Python зависимостей
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -20,7 +21,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Установка дополнительных зависимостей для веб-сервера
 RUN pip install --no-cache-dir fastapi uvicorn[standard] psycopg2-binary sqlalchemy
 
-WORKDIR /app/log_ai-agent
+WORKDIR /app/log_ai_agent
 
 # Открываем порт для API
 EXPOSE 8000

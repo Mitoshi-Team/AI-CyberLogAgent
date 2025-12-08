@@ -6,6 +6,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import asyncpg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -60,9 +61,24 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Проверка здоровья сервиса"""
+    db_status = "disconnected"
+    db_error = None
+    
+    # Проверка подключения к базе данных
+    if DATABASE_URL:
+        try:
+            conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+            await conn.execute("SELECT 1")
+            await conn.close()
+            db_status = "connected"
+        except Exception as e:
+            db_error = str(e)
+            logger.error(f"Database health check failed: {e}")
+    
     return {
-        "status": "healthy",
-        "database": "connected",  # TODO: добавить реальную проверку БД
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "database": db_status,
+        "database_error": db_error if db_error else None,
     }
 
 
