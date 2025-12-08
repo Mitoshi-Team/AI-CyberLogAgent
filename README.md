@@ -1,5 +1,34 @@
 # AI Cyber Log Agent
 
+## Начало работы
+
+1. Клонируем репозиторий
+```
+git clone https://gitverse.ru/mitoshi_team/AI-CyberLogAgent
+```
+
+2. Создаем файл `.env` в корневой директории проекта на основе `.env.example` и вносим туда свои переменные для:
+- базы данных
+- бэкенда
+- фронтенда
+
+3. Запускаем докер
+```
+docker compose up -d
+```
+
+4. Переходим на сайт (домен указывается в `.env`)
+```
+http://localhost:{FRONTEND_PORT}/
+```
+
+**Готово!**
+
+Для выключения докера пишем
+```
+docker compose down
+```
+
 ## Схема БД
 
 ### Таблица Users
@@ -39,3 +68,4 @@
 - log_id: integer (Внешний ключ на Logs, связанный лог)
 - threat_type_id: integer (Внешний ключ на ThreatTypes, тип угрозы)
 - created_at: timestamp with time zone (Дата и время создания отчета)
+
