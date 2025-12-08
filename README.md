@@ -7,7 +7,7 @@
 git clone https://gitverse.ru/mitoshi_team/AI-CyberLogAgent
 ```
 
-2. Создаем файл `.env` в папке `log_ai-agent` на основе `.env.example` и вносим туда свои переменные для:
+2. Создаем файл `.env` в папке `log_ai_agent` на основе `.env.example` и вносим туда свои переменные для:
 - базы данных
 - бэкенда
 - фронтенда
