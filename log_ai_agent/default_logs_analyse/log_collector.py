@@ -21,16 +21,16 @@ def is_subpath_of(parent: Path, child: Path) -> bool:
 
 
 def collect_logs():
-    """Collects log files from all directories adjacent to 'log_ai-agent'
+    """Collects log files from all directories adjacent to 'log_ai_agent'
     and copies them to the processed analyse_logs directory.
-    Does NOT collect analyse_logs from log_ai-agent or its subdirectories.
+    Does NOT collect analyse_logs from log_ai_agent or its subdirectories.
     Also ignores analyse_logs from app_simulation/log_gen/examples.
     """
     # Определяем путь к текущей директории проекта
     current_dir = Path(
         __file__
-    ).parent.parent  # log_ai-agent/default_logs_analyse → log_ai-agent
-    parent_dir = current_dir.parent  # Родитель log_ai-agent
+    ).parent.parent  # log_ai_agent/default_logs_analyse → log_ai_agent
+    parent_dir = current_dir.parent  # Родитель log_ai_agent
 
     # Paths to ignore
     ignored_paths = [parent_dir / ignore for ignore in IGNORED_PATHS]
@@ -107,7 +107,7 @@ def collect_logs():
         if source_path.exists():
             print(f"\n🔍 Checking custom source path: {source_path}")
 
-            # Проверяем, не находится ли SOURCE_LOG_PATH внутри log_ai-agent
+            # Проверяем, не находится ли SOURCE_LOG_PATH внутри log_ai_agent
             source_in_ignored = any(
                 is_subpath_of(ignore_path, source_path.resolve())
                 for ignore_path in ignored_paths
