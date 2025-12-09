@@ -103,54 +103,53 @@ def validate_password(password: str) -> tuple[bool, str]:
 
 def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | None]:
     """Проверка учетных данных пользователя.
-    
+
     Args:
         login: Логин пользователя.
         password: Пароль пользователя.
-        
+
     Returns:
         tuple: (успех, данные пользователя или None)
+
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
+
         # Получаем пользователя из БД
         cursor.execute(
             'SELECT user_id, login, password_hash FROM public."Users" WHERE login = %s',
-            (login,)
+            (login,),
         )
         user = cursor.fetchone()
         cursor.close()
         conn.close()
-        
+
         if not user:
             print(f"Пользователь {login} не найден")
             return False, None
-        
+
         # Проверяем пароль
-        password_bytes = password.encode('utf-8')
-        stored_hash = user['password_hash']
-        
+        password_bytes = password.encode("utf-8")
+        stored_hash = user["password_hash"]
+
         # Если хеш хранится как строка, конвертируем в bytes
         if isinstance(stored_hash, str):
-            stored_hash_bytes = stored_hash.encode('utf-8')
+            stored_hash_bytes = stored_hash.encode("utf-8")
         else:
             stored_hash_bytes = stored_hash
-        
+
         if bcrypt.checkpw(password_bytes, stored_hash_bytes):
             print(f"Успешная авторизация для {login}")
-            return True, {
-                'user_id': user['user_id'],
-                'login': user['login']
-            }
-        
+            return True, {"user_id": user["user_id"], "login": user["login"]}
+
         print(f"Неверный пароль для {login}")
         return False, None
-        
+
     except Exception as e:
         print(f"Ошибка при проверке учетных данных: {e}")
         import traceback
+
         traceback.print_exc()
         return False, None
 

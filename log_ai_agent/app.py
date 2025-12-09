@@ -57,10 +57,12 @@ app.add_middleware(
 
 # --- API Endpoints ---
 
+
 # Модели данных для API
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 class LoginResponse(BaseModel):
     success: bool
@@ -79,25 +81,28 @@ async def root():
 async def login(request: LoginRequest):
     """Аутентификация пользователя"""
     try:
-        success, user_data = commands.verify_user_credentials(request.username, request.password)
-        
+        success, user_data = commands.verify_user_credentials(
+            request.username, request.password
+        )
+
         if success:
             # Генерируем простой токен (в production использовать JWT)
             import secrets
+
             token = secrets.token_urlsafe(32)
-            
+
             return LoginResponse(
                 success=True,
                 message="Успешная авторизация",
                 user=user_data,
-                token=token
+                token=token,
             )
         else:
             return LoginResponse(
                 success=False,
                 message="Введен неверный логин или пароль",
                 user=None,
-                token=None
+                token=None,
             )
     except Exception as e:
         logger.error(f"Login error: {e}")
