@@ -38,7 +38,11 @@ onMounted(() => {
 
   // Подключение к WebSocket для получения уведомлений
   if (appStore.isAuthenticated) {
-    websocketService.connect().catch(console.error)
+    // Пытаемся подключиться, но не показываем ошибки
+    websocketService.connect().catch((error) => {
+      console.warn('WebSocket connection failed:', error)
+      // Не показываем уведомление, т.к. WebSocket не критичен для работы
+    })
 
     websocketService.on('message', (data) => {
       if (data.type === 'incident') {
@@ -46,9 +50,7 @@ onMounted(() => {
       }
     })
 
-    websocketService.on('error', (error) => {
-      appStore.addNotification('Ошибка подключения к серверу', 'danger')
-    })
+    // Убираем обработчик ошибок, чтобы не спамить уведомлениями
   }
 })
 </script>

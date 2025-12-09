@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed bottom-4 right-4 space-y-2 max-w-sm z-50">
+  <div class="fixed top-4 right-4 space-y-2 max-w-sm z-50">
     <transition-group
       name="slide"
       tag="div"

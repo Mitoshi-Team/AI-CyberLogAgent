@@ -83,6 +83,24 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8m0 8l-6-4m6 4l6-4"/>
             </svg>
           </button>
+          
+          <!-- Кнопка загрузки файла логов -->
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".log"
+            @change="handleFileUpload"
+            class="hidden"
+          />
+          <button
+            @click="$refs.fileInput.click()"
+            class="btn bg-dark-800 hover:bg-dark-700 border border-dark-700 hover:border-primary-500/50 text-dark-300 hover:text-primary-400 transition-all"
+            title="Загрузить .log файл"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -93,8 +111,10 @@
 import { ref, nextTick } from 'vue'
 
 const chatContainer = ref(null)
+const fileInput = ref(null)
 const inputMessage = ref('')
 const isLoading = ref(false)
+const uploadedLogFile = ref(null)
 const messages = ref([
   {
     role: 'ai',
@@ -139,6 +159,61 @@ const sendMessage = async () => {
 const selectQuickQuestion = (question) => {
   inputMessage.value = question
   sendMessage()
+}
+
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0]
+  
+  if (!file) return
+  
+  // Проверяем расширение файла
+  if (!file.name.endsWith('.log')) {
+    messages.value.push({
+      role: 'ai',
+      text: '❌ Ошибка: Можно загружать только файлы с расширением .log',
+    })
+    scrollToBottom()
+    event.target.value = '' // Сбрасываем input
+    return
+  }
+  
+  // Читаем содержимое файла
+  const reader = new FileReader()
+  
+  reader.onload = (e) => {
+    const fileContent = e.target.result
+    
+    // Сохраняем файл в переменную
+    uploadedLogFile.value = {
+      name: file.name,
+      size: file.size,
+      content: fileContent,
+      uploadedAt: new Date().toISOString(),
+    }
+    
+    // Уведомляем пользователя об успешной загрузке
+    messages.value.push({
+      role: 'ai',
+      text: `✅ Файл "${file.name}" успешно загружен (${(file.size / 1024).toFixed(2)} KB)`,
+    })
+    
+    scrollToBottom()
+    
+    console.log('Загруженный файл:', uploadedLogFile.value)
+  }
+  
+  reader.onerror = () => {
+    messages.value.push({
+      role: 'ai',
+      text: '❌ Ошибка при чтении файла. Попробуйте снова.',
+    })
+    scrollToBottom()
+  }
+  
+  reader.readAsText(file)
+  
+  // Сбрасываем input для возможности повторной загрузки того же файла
+  event.target.value = ''
 }
 
 const generateAIResponse = (question) => {
