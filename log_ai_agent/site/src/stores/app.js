@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { auth } from '@/services/api'
 
 /**
  * Хранилище состояния приложения
@@ -10,6 +11,26 @@ export const useAppStore = defineStore('app', () => {
   const isAuthenticated = ref(false)
   const currentUser = ref(null)
   const token = ref(localStorage.getItem('auth_token') || null)
+
+  // Инициализация: восстанавливаем сессию из localStorage
+  const initializeAuth = () => {
+    const savedToken = localStorage.getItem('auth_token')
+    const savedUser = localStorage.getItem('current_user')
+    
+    if (savedToken && savedUser) {
+      try {
+        token.value = savedToken
+        currentUser.value = JSON.parse(savedUser)
+        isAuthenticated.value = true
+      } catch (error) {
+        console.error('Error restoring session:', error)
+        logout()
+      }
+    }
+  }
+
+  // Вызываем инициализацию при создании store
+  initializeAuth()
 
   // Уведомления
   const notifications = ref([])
@@ -28,17 +49,31 @@ export const useAppStore = defineStore('app', () => {
   /**
    * Вход пользователя
    */
-  const login = (username, password) => {
-    // Имитация логирования - будет заменено на реальный API запрос
-    isAuthenticated.value = true
-    currentUser.value = {
-      id: 1,
-      username,
-      email: `${username}@cyberagent.com`,
+  const login = async (username, password) => {
+    try {
+      const { data } = await auth.login(username, password)
+      
+      if (data.success && data.user && data.token) {
+        isAuthenticated.value = true
+        currentUser.value = {
+          id: data.user.user_id,
+          username: data.user.login,
+          email: `${data.user.login}@cyberagent.com`,
+        }
+        token.value = data.token
+        
+        // Сохраняем токен и пользователя в localStorage для сессии
+        localStorage.setItem('auth_token', data.token)
+        localStorage.setItem('current_user', JSON.stringify(currentUser.value))
+        
+        return { success: true }
+      } else {
+        return { success: false, message: data.message || 'Введен неверный логин или пароль' }
+      }
+    } catch (error) {
+      console.error('Login error:', error)
+      return { success: false, message: 'Введен неверный логин или пароль' }
     }
-    token.value = 'mock_token_' + Math.random()
-    localStorage.setItem('auth_token', token.value)
-    return Promise.resolve()
   }
 
   /**
@@ -49,6 +84,7 @@ export const useAppStore = defineStore('app', () => {
     currentUser.value = null
     token.value = null
     localStorage.removeItem('auth_token')
+    localStorage.removeItem('current_user')
   }
 
   /**
