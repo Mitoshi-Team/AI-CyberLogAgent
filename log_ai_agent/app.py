@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+
 import asyncpg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -118,13 +119,13 @@ def show_help():
 def execute_command(command: str):
     """Выполнить одну CLI команду"""
     command = command.strip()
-    
+
     if not command:
         return True
-    
+
     if command in ["exit", "quit", "q"]:
         return False
-    
+
     if command in ["help", "--help", "-h", "?"]:
         show_help()
     elif command == "collect_logs":
@@ -140,7 +141,7 @@ def execute_command(command: str):
     else:
         print(f"❌ Ошибка: неизвестная команда '{command}'")
         print("💡 Введите 'help' чтобы увидеть доступные команды")
-    
+
     return True
 
 
@@ -152,7 +153,7 @@ def run_interactive():
     print("\n  Введите 'help' для просмотра доступных команд")
     print("  Введите 'exit' или 'quit' для выхода из консоли\n")
     print("=" * 60 + "\n")
-    
+
     while True:
         try:
             command = input("cyberlog> ").strip()
@@ -180,7 +181,7 @@ def run_cli():
     if command in ["--help", "-h", "help"]:
         show_help()
         sys.exit(0)
-    
+
     # Обработка консоли
     if command in ["interactive", "i", "shell"]:
         run_interactive()
@@ -193,7 +194,10 @@ def run_cli():
 
 if __name__ == "__main__":
     # Check if CLI command is provided
-    if len(sys.argv) > 1 and (sys.argv[1] in AVAILABLE_COMMANDS or sys.argv[1] in ["--help", "-h", "i", "shell"]):
+    if len(sys.argv) > 1 and (
+        sys.argv[1] in AVAILABLE_COMMANDS
+        or sys.argv[1] in ["--help", "-h", "i", "shell"]
+    ):
         run_cli()
     else:
         # Start web server
