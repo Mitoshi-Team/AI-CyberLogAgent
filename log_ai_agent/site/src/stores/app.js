@@ -12,6 +12,26 @@ export const useAppStore = defineStore('app', () => {
   const currentUser = ref(null)
   const token = ref(localStorage.getItem('auth_token') || null)
 
+  // Инициализация: восстанавливаем сессию из localStorage
+  const initializeAuth = () => {
+    const savedToken = localStorage.getItem('auth_token')
+    const savedUser = localStorage.getItem('current_user')
+    
+    if (savedToken && savedUser) {
+      try {
+        token.value = savedToken
+        currentUser.value = JSON.parse(savedUser)
+        isAuthenticated.value = true
+      } catch (error) {
+        console.error('Error restoring session:', error)
+        logout()
+      }
+    }
+  }
+
+  // Вызываем инициализацию при создании store
+  initializeAuth()
+
   // Уведомления
   const notifications = ref([])
   const incidents = ref([])
@@ -41,7 +61,11 @@ export const useAppStore = defineStore('app', () => {
           email: `${data.user.login}@cyberagent.com`,
         }
         token.value = data.token
+        
+        // Сохраняем токен и пользователя в localStorage для сессии
         localStorage.setItem('auth_token', data.token)
+        localStorage.setItem('current_user', JSON.stringify(currentUser.value))
+        
         return { success: true }
       } else {
         return { success: false, message: data.message || 'Введен неверный логин или пароль' }
@@ -60,6 +84,7 @@ export const useAppStore = defineStore('app', () => {
     currentUser.value = null
     token.value = null
     localStorage.removeItem('auth_token')
+    localStorage.removeItem('current_user')
   }
 
   /**
