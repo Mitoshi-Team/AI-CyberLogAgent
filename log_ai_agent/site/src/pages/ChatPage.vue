@@ -33,7 +33,7 @@
         </div>
 
         <!-- Быстрые вопросы (компактные плашки над полем ввода) -->
-        <div class="flex flex-wrap gap-2 px-4 py-3">
+        <div class="flex flex-wrap gap-2 px-4 py-2 mt-4">
           <button
             @click="selectQuickQuestion('Сколько критичных инцидентов за последнее время?')"
             class="px-3 py-1.5 bg-dark-800/50 hover:bg-dark-800 border border-dark-700 hover:border-primary-500/50 rounded-lg text-xs text-dark-300 hover:text-primary-400 transition-all flex items-center gap-1.5"
@@ -65,42 +65,57 @@
         </div>
 
         <!-- Ввод сообщения -->
-        <div class="flex gap-3 p-4 border-t border-dark-800 bg-dark-900/50">
-          <input
-            v-model="inputMessage"
-            @keyup.enter="sendMessage"
-            type="text"
-            class="input flex-1"
-            placeholder="Напишите вопрос об инцидентах..."
-            :disabled="isLoading"
-          />
-          <button
-            @click="sendMessage"
-            :disabled="!inputMessage || isLoading"
-            class="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8m0 8l-6-4m6 4l6-4"/>
-            </svg>
-          </button>
-          
-          <!-- Кнопка загрузки файла логов -->
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".log"
-            @change="handleFileUpload"
-            class="hidden"
-          />
-          <button
-            @click="$refs.fileInput.click()"
-            class="btn bg-dark-800 hover:bg-dark-700 border border-dark-700 hover:border-primary-500/50 text-dark-300 hover:text-primary-400 transition-all"
-            title="Загрузить .log файл"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
-            </svg>
-          </button>
+        <div class="flex gap-3 p-4 items-start min-h-[116px]">
+          <div class="flex-1 relative">
+            <textarea
+              v-model="inputMessage"
+              @keydown.enter.exact.prevent="sendMessage"
+              ref="messageInput"
+              maxlength="500"
+              rows="1"
+              class="input w-full resize-none overflow-y-auto pr-32 pb-10 block"
+              placeholder="Напишите вопрос об инцидентах..."
+              :disabled="isLoading || isRateLimited"
+              @input="adjustTextareaHeight"
+              style="min-height: 84px; max-height: 400px; height: auto;"
+            ></textarea>
+            
+            <!-- Счетчик и кнопки внизу справа -->
+            <div class="absolute bottom-2 right-3 flex items-center gap-2">
+              <div class="text-xs px-2 py-1 rounded bg-dark-800/80 text-dark-400">
+                {{ inputMessage.length }}/500
+              </div>
+              
+              <!-- Кнопка загрузки файла логов -->
+              <input
+                ref="fileInput"
+                type="file"
+                accept=".log"
+                @change="handleFileUpload"
+                class="hidden"
+              />
+              <button
+                @click="$refs.fileInput.click()"
+                class="btn bg-dark-800 hover:bg-dark-700 border border-dark-700 hover:border-primary-500/50 text-dark-300 hover:text-primary-400 transition-all p-2"
+                title="Загрузить .log файл"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                </svg>
+              </button>
+              
+              <button
+                @click="sendMessage"
+                :disabled="!canSendMessage"
+                class="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed p-2"
+                :title="getRateLimitMessage"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8m0 8l-6-4m6 4l6-4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -108,19 +123,48 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, computed, onMounted } from 'vue'
+import { useAppStore } from '@/stores/app'
 
+const appStore = useAppStore()
 const chatContainer = ref(null)
 const fileInput = ref(null)
+const messageInput = ref(null)
 const inputMessage = ref('')
 const isLoading = ref(false)
 const uploadedLogFile = ref(null)
+const lastMessageTime = ref(0)
+const isRateLimited = ref(false)
+
+// Константы ограничений
+const MAX_MESSAGE_LENGTH = 500
+const RATE_LIMIT_DELAY = 2000 // 2 секунды
+
 const messages = ref([
   {
     role: 'ai',
     text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
   },
 ])
+
+// Проверка возможности отправки сообщения
+const canSendMessage = computed(() => {
+  return (
+    inputMessage.value.trim().length > 0 &&
+    inputMessage.value.length <= MAX_MESSAGE_LENGTH &&
+    !isLoading.value &&
+    !isRateLimited.value
+  )
+})
+
+// Сообщение о причине блокировки
+const getRateLimitMessage = computed(() => {
+  if (isLoading.value) return 'Ожидание ответа агента...'
+  if (isRateLimited.value) return 'Подождите 2 секунды перед следующим сообщением'
+  if (inputMessage.value.length > MAX_MESSAGE_LENGTH) return 'Сообщение слишком длинное'
+  if (!inputMessage.value.trim()) return 'Введите сообщение'
+  return 'Отправить сообщение'
+})
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -130,8 +174,49 @@ const scrollToBottom = () => {
   })
 }
 
+const adjustTextareaHeight = () => {
+  nextTick(() => {
+    const textarea = messageInput.value
+    if (!textarea) return
+    
+    // Сбрасываем высоту для правильного расчета scrollHeight
+    textarea.style.height = 'auto'
+    
+    // Устанавливаем новую высоту на основе содержимого
+    const newHeight = Math.min(textarea.scrollHeight, 400) // Максимум 400px
+    textarea.style.height = `${newHeight}px`
+  })
+}
+
+onMounted(() => {
+  // Устанавливаем начальную высоту
+  adjustTextareaHeight()
+})
+
 const sendMessage = async () => {
-  if (!inputMessage.value.trim()) return
+  // Проверка возможности отправки
+  if (!canSendMessage.value) return
+  
+  // Проверка частоты отправки (rate limiting)
+  const now = Date.now()
+  const timeSinceLastMessage = now - lastMessageTime.value
+  
+  if (timeSinceLastMessage < RATE_LIMIT_DELAY) {
+    appStore.addNotification(
+      `Подождите ${Math.ceil((RATE_LIMIT_DELAY - timeSinceLastMessage) / 1000)} сек. перед следующим сообщением`,
+      'warning'
+    )
+    return
+  }
+  
+  // Обновляем время последнего сообщения
+  lastMessageTime.value = now
+  
+  // Устанавливаем rate limit на 2 секунды
+  isRateLimited.value = true
+  setTimeout(() => {
+    isRateLimited.value = false
+  }, RATE_LIMIT_DELAY)
 
   // Добавить сообщение пользователя
   messages.value.push({
@@ -142,6 +227,9 @@ const sendMessage = async () => {
   const userMessage = inputMessage.value
   inputMessage.value = ''
   isLoading.value = true
+  
+  // Сбрасываем высоту textarea после очистки
+  adjustTextareaHeight()
   
   scrollToBottom()
 

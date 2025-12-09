@@ -3,8 +3,8 @@
 ## Начало работы
 
 1. Клонируем репозиторий
-```bash
 
+```bash
 git clone https://gitverse.ru/mitoshi_team/AI-CyberLogAgent
 ```
 

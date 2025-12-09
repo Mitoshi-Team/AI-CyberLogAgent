@@ -34,7 +34,7 @@
     </nav>
 
     <!-- Профиль -->
-    <div class="mt-auto px-4 py-3 bg-gradient-to-br from-dark-800/30 to-dark-900/50 backdrop-blur-sm mx-3 mb-3 rounded-xl border border-dark-700/50">
+    <div class="mt-auto px-4 py-3 mx-3 mb-3">
       <div class="mb-3 pb-2.5 border-b border-dark-700/50">
         <p class="text-sm font-medium text-dark-100 truncate text-center">
           {{ appStore.currentUser?.username || 'User' }}
