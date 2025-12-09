@@ -11,6 +11,9 @@ export const useAppStore = defineStore('app', () => {
   const isAuthenticated = ref(false)
   const currentUser = ref(null)
   const token = ref(localStorage.getItem('auth_token') || null)
+  
+  // Состояние Sidebar
+  const sidebarCollapsed = ref(false)
 
   // Инициализация: восстанавливаем сессию из localStorage
   const initializeAuth = () => {
@@ -183,6 +186,7 @@ export const useAppStore = defineStore('app', () => {
     isAuthenticated,
     currentUser,
     token,
+    sidebarCollapsed,
     notifications,
     incidents,
     isLoadingIncidents,

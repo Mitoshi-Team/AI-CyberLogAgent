@@ -4,13 +4,13 @@
       <!-- Окно чата на всю высоту -->
       <div class="flex-1 flex flex-col bg-dark-900/30 border-l border-dark-800 overflow-hidden">
         <!-- История чата с фиксированной высотой и скроллом -->
-        <div ref="chatContainer" class="flex-1 overflow-y-auto space-y-8 pt-8 px-4 pb-4 scrollbar-chat">
+        <div ref="chatContainer" class="flex-1 overflow-y-auto space-y-8 pt-8 px-48 pb-4 scrollbar-chat">
           <div
             v-for="(msg, index) in messages"
             :key="index"
             class="flex justify-center"
           >
-            <div class="max-w-2xl w-full">
+            <div class="max-w-lg w-full">
               <!-- Сообщение пользователя - облачко справа от области агента -->
               <div
                 v-if="msg.role === 'user'"
@@ -38,7 +38,7 @@
         </div>
 
         <!-- Быстрые вопросы (компактные плашки над полем ввода) -->
-        <div class="flex flex-wrap gap-2 px-4 pt-2 pb-1 mt-4">
+        <div class="flex flex-wrap gap-2 px-64 pt-2 pb-1 mt-4">
           <button
             @click="selectQuickQuestion('Сколько критичных инцидентов за последнее время?')"
             class="px-3 py-1.5 bg-dark-800/50 hover:bg-dark-800 border border-dark-700 hover:border-primary-500/50 rounded-lg text-xs text-dark-300 hover:text-primary-400 transition-all flex items-center gap-1.5"
@@ -70,7 +70,7 @@
         </div>
 
         <!-- Ввод сообщения -->
-        <div class="flex gap-3 p-4 items-start min-h-[116px]">
+        <div class="flex gap-3 px-64 py-4 items-start min-h-[116px]">
           <div class="flex-1 relative">
             <textarea
               v-model="inputMessage"

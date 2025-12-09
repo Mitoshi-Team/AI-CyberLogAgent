@@ -1,9 +1,29 @@
 <template>
-  <aside class="fixed left-0 top-0 w-64 h-screen bg-dark-900/80 backdrop-blur-xl border-r border-dark-800 pt-6 flex flex-col">
+  <aside 
+    :class="[
+      'fixed left-0 top-0 h-screen bg-dark-900/80 backdrop-blur-xl border-r border-dark-800 pt-6 flex flex-col transition-all duration-300',
+      isCollapsed ? 'w-20' : 'w-64'
+    ]"
+  >
+    <!-- Кнопка сворачивания -->
+    <button
+      @click="isCollapsed = !isCollapsed"
+      class="absolute -right-3 top-8 w-6 h-6 bg-dark-800 border border-dark-700 rounded-full flex items-center justify-center hover:bg-dark-700 transition-colors z-10"
+    >
+      <svg 
+        :class="['w-3 h-3 text-dark-300 transition-transform duration-300', isCollapsed ? 'rotate-180' : '']"
+        fill="none" 
+        stroke="currentColor" 
+        viewBox="0 0 24 24"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </button>
+
     <!-- Логотип -->
-    <div class="px-6 mb-8">
+    <div class="px-6 mb-8 overflow-hidden">
       <div class="flex items-center gap-3 text-primary-400 font-bold text-lg">
-        <div class="w-7 h-7 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-lg shadow-primary-500/30">
+        <div class="w-7 h-7 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-lg shadow-primary-500/30 flex-shrink-0">
           <svg
             class="w-4 h-4 text-white"
             fill="currentColor"
@@ -16,7 +36,14 @@
             />
           </svg>
         </div>
-        <span class="bg-gradient-to-r from-primary-400 to-primary-500 bg-clip-text text-transparent">CyberLog</span>
+        <span 
+          :class="[
+            'bg-gradient-to-r from-primary-400 to-primary-500 bg-clip-text text-transparent whitespace-nowrap transition-opacity duration-300',
+            isCollapsed ? 'opacity-0 w-0' : 'opacity-100'
+          ]"
+        >
+          CyberLog
+        </span>
       </div>
     </div>
 
@@ -26,43 +53,72 @@
         v-for="item in menuItems"
         :key="item.to"
         :to="item.to"
-        class="nav-link"
+        :class="[
+          'nav-link',
+          isCollapsed ? 'justify-center' : ''
+        ]"
+        :title="isCollapsed ? item.label : ''"
       >
-        <component :is="item.icon" class="w-5 h-5" />
-        <span>{{ item.label }}</span>
+        <component :is="item.icon" class="w-5 h-5 flex-shrink-0" />
+        <span 
+          :class="[
+            'transition-opacity duration-300 whitespace-nowrap',
+            isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
+          ]"
+        >
+          {{ item.label }}
+        </span>
       </RouterLink>
     </nav>
 
     <!-- Профиль -->
-    <div class="mt-auto px-4 py-3 mx-3 mb-3">
-      <div class="mb-3 pb-2.5 border-b border-dark-700/50">
+    <div :class="['mt-auto py-3 mb-3', isCollapsed ? 'px-2' : 'px-4 mx-3']">
+      <div 
+        :class="[
+          'mb-3 pb-2.5 border-b border-dark-700/50 transition-opacity duration-300',
+          isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'
+        ]"
+      >
         <p class="text-sm font-medium text-dark-100 truncate text-center">
           {{ appStore.currentUser?.username || 'User' }}
         </p>
       </div>
       <button
         @click="logout"
-        class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-dark-800/50 hover:bg-danger-500/10 text-dark-300 hover:text-danger-400 rounded-lg transition-all duration-200 border border-dark-700/50 hover:border-danger-500/50 group"
+        :class="[
+          'w-full flex items-center justify-center bg-dark-800/50 hover:bg-danger-500/10 text-dark-300 hover:text-danger-400 rounded-lg transition-all duration-200 border border-dark-700/50 hover:border-danger-500/50 group',
+          isCollapsed ? 'p-1.5' : 'gap-2 px-3 py-2'
+        ]"
+        :title="isCollapsed ? 'Выйти из системы' : ''"
       >
-        <svg class="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5 transition-transform group-hover:translate-x-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
         </svg>
-        <span class="text-xs font-medium">Выйти из системы</span>
+        <span 
+          v-if="!isCollapsed"
+          class="text-xs font-medium whitespace-nowrap"
+        >
+          Выйти из системы
+        </span>
       </button>
     </div>
   </aside>
 </template>
 
 <script setup>
+import { ref, watch, provide, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRouter } from 'vue-router'
-import IconDashboard from '@/components/icons/IconDashboard.vue'
 import IconStats from '@/components/icons/IconStats.vue'
 import IconChat from '@/components/icons/IconChat.vue'
 import IconHistory from '@/components/icons/IconHistory.vue'
 
 const appStore = useAppStore()
 const router = useRouter()
+const isCollapsed = computed({
+  get: () => appStore.sidebarCollapsed,
+  set: (value) => { appStore.sidebarCollapsed = value }
+})
 
 const logout = () => {
   appStore.logout()
@@ -71,19 +127,14 @@ const logout = () => {
 
 const menuItems = [
   {
-    to: '/',
-    label: 'Панель управления',
-    icon: IconDashboard,
+    to: '/chat',
+    label: 'Чат с AI',
+    icon: IconChat,
   },
   {
     to: '/statistics',
     label: 'Статистика',
     icon: IconStats,
-  },
-  {
-    to: '/chat',
-    label: 'Чат с AI',
-    icon: IconChat,
   },
   {
     to: '/history',
