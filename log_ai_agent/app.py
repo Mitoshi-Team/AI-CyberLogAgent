@@ -1,14 +1,12 @@
-"""AI CyberLog Agent - Backend Application
-Заглушка для основного приложения
-"""
-
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
-
 import asyncpg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from log_ai_agent.config import commands
 
 # Настройка логирования
 logging.basicConfig(
@@ -42,7 +40,7 @@ app = FastAPI(
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене указать конкретные домены
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,32 +80,124 @@ async def health_check():
     }
 
 
-@app.get("/api/incidents")
-async def get_incidents():
-    """Получить список инцидентов (заглушка)"""
-    return {
-        "incidents": [
-            {
-                "id": 1,
-                "title": "Suspicious Login Activity",
-                "severity": "high",
-                "status": "active",
-                "timestamp": "2025-12-08T10:30:00Z",
-            },
-            {
-                "id": 2,
-                "title": "High CPU Usage Detected",
-                "severity": "medium",
-                "status": "resolved",
-                "timestamp": "2025-12-08T09:15:00Z",
-            },
-        ],
-        "total": 2,
-    }
+# --- CLI Commands ---
+
+# Словарь доступных команд
+AVAILABLE_COMMANDS = {
+    "collect_logs": "Собрать системные логи",
+    "show_logs": "Показать логи",
+    "hide_logs": "Скрыть логи",
+    "get_history": "Получить историю инцидентов",
+    "register": "Зарегистрировать нового пользователя или изменить существующего",
+    "help": "Показать справку",
+    "interactive": "Запустить консоль CLI",
+    "exit": "Выйти из консоли",
+}
+
+
+def show_help():
+    """Показать справку по использованию консоли."""
+    print("\n" + "=" * 60)
+    print("  AI CyberLog Agent - CLI Команды")
+    print("=" * 60)
+    print("\nДоступные команды:")
+    print("-" * 60)
+    for cmd, description in AVAILABLE_COMMANDS.items():
+        print(f"  {cmd:15} - {description}")
+    print("\nИспользование:")
+    print("  python app.py <команда>           # Режим одной команды")
+    print("  python app.py interactive         # Консоль")
+    print("  python app.py --help")
+    print("\nПримеры:")
+    print("  python app.py collect_logs")
+    print("  python app.py register")
+    print("  python app.py interactive         # Запустить консоль")
+    print("=" * 60 + "\n")
+
+
+def execute_command(command: str):
+    """Выполнить одну CLI команду"""
+    command = command.strip()
+    
+    if not command:
+        return True
+    
+    if command in ["exit", "quit", "q"]:
+        return False
+    
+    if command in ["help", "--help", "-h", "?"]:
+        show_help()
+    elif command == "collect_logs":
+        commands.collect_logs()
+    elif command == "show_logs":
+        commands.show_logs()
+    elif command == "hide_logs":
+        commands.hide_logs()
+    elif command == "get_history":
+        commands.get_history()
+    elif command == "register":
+        commands.register()
+    else:
+        print(f"❌ Ошибка: неизвестная команда '{command}'")
+        print("💡 Введите 'help' чтобы увидеть доступные команды")
+    
+    return True
+
+
+def run_interactive():
+    """Запустить CLI консоль"""
+    print("\n" + "=" * 60)
+    print("  🤖 AI CyberLog Agent - CLI")
+    print("=" * 60)
+    print("\n  Введите 'help' для просмотра доступных команд")
+    print("  Введите 'exit' или 'quit' для выхода из консоли\n")
+    print("=" * 60 + "\n")
+    
+    while True:
+        try:
+            command = input("cyberlog> ").strip()
+            if not execute_command(command):
+                print("\n👋 Выход из консоли...\n")
+                break
+        except KeyboardInterrupt:
+            print("\n\n👋 Прервано. Введите 'exit' для выхода или продолжайте.\n")
+            continue
+        except EOFError:
+            print("\n\n👋 Выход из консоли...\n")
+            break
+
+
+def run_cli():
+    """Запустить CLI команды"""
+    if len(sys.argv) <= 1:
+        print("\nОшибка: команда не указана")
+        show_help()
+        sys.exit(1)
+
+    command = sys.argv[1]
+
+    # Обработка команды help
+    if command in ["--help", "-h", "help"]:
+        show_help()
+        sys.exit(0)
+    
+    # Обработка консоли
+    if command in ["interactive", "i", "shell"]:
+        run_interactive()
+        sys.exit(0)
+
+    # Выполнить одну команду
+    result = execute_command(command)
+    sys.exit(0 if result else 1)
 
 
 if __name__ == "__main__":
-    import uvicorn
+    # Check if CLI command is provided
+    if len(sys.argv) > 1 and (sys.argv[1] in AVAILABLE_COMMANDS or sys.argv[1] in ["--help", "-h", "i", "shell"]):
+        run_cli()
+    else:
+        # Start web server
+        import uvicorn
 
-    logger.info(f"Starting server on {HOST}:{PORT}")
-    uvicorn.run("app:app", host=HOST, port=PORT, reload=True, log_level="info")
+        logger.info(f"Starting server on {HOST}:{PORT}")
+        uvicorn.run("app:app", host=HOST, port=PORT, reload=True, log_level="info")

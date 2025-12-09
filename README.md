@@ -3,7 +3,8 @@
 ## Начало работы
 
 1. Клонируем репозиторий
-```
+```bash
+
 git clone https://gitverse.ru/mitoshi_team/AI-CyberLogAgent
 ```
 
@@ -13,20 +14,29 @@ git clone https://gitverse.ru/mitoshi_team/AI-CyberLogAgent
 - фронтенда
 
 3. Запускаем докер
-```
+
+```bash
 docker compose up -d
 ```
 
 4. Переходим на сайт (домен указывается в `.env`)
-```
+
+```bash
 http://localhost:{FRONTEND_PORT}/
 ```
 
 **Готово!**
 
 Для выключения докера пишем
-```
+
+```bash
 docker compose down
+```
+
+Для подключения к консоли пишем (название контейнера указывается в `.env`)
+
+```bash
+docker exec -it {BACKEND_CONTAINER_NAME} python app.py interactive
 ```
 
 ## Схема БД

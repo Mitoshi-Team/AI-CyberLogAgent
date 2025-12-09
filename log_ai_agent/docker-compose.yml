@@ -1,7 +1,7 @@
 services:
   # База данных PostgreSQL
   db:
-    image: postgres:${POSTGRES_VERSION:-16-alpine}
+    image: postgres:${POSTGRES_VERSION:-18}
     container_name: ${DB_CONTAINER_NAME:-cyberlog-db}
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
