@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { auth } from '@/services/api'
 
 /**
  * Хранилище состояния приложения
@@ -28,17 +29,27 @@ export const useAppStore = defineStore('app', () => {
   /**
    * Вход пользователя
    */
-  const login = (username, password) => {
-    // Имитация логирования - будет заменено на реальный API запрос
-    isAuthenticated.value = true
-    currentUser.value = {
-      id: 1,
-      username,
-      email: `${username}@cyberagent.com`,
+  const login = async (username, password) => {
+    try {
+      const { data } = await auth.login(username, password)
+      
+      if (data.success && data.user && data.token) {
+        isAuthenticated.value = true
+        currentUser.value = {
+          id: data.user.user_id,
+          username: data.user.login,
+          email: `${data.user.login}@cyberagent.com`,
+        }
+        token.value = data.token
+        localStorage.setItem('auth_token', data.token)
+        return { success: true }
+      } else {
+        return { success: false, message: data.message || 'Введен неверный логин или пароль' }
+      }
+    } catch (error) {
+      console.error('Login error:', error)
+      return { success: false, message: 'Введен неверный логин или пароль' }
     }
-    token.value = 'mock_token_' + Math.random()
-    localStorage.setItem('auth_token', token.value)
-    return Promise.resolve()
   }
 
   /**

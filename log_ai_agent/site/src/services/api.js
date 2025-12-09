@@ -42,7 +42,10 @@ apiClient.interceptors.response.use(
 export const auth = {
   login: (username, password) =>
     apiClient.post('/auth/login', { username, password }),
-  logout: () => apiClient.post('/auth/logout'),
+  logout: () => {
+    localStorage.removeItem('auth_token')
+    return Promise.resolve()
+  },
   me: () => apiClient.get('/auth/me'),
 }
 

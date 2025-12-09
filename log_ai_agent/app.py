@@ -6,8 +6,9 @@ from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from log_ai_agent.config import commands
 
@@ -56,11 +57,51 @@ app.add_middleware(
 
 # --- API Endpoints ---
 
+# Модели данных для API
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    success: bool
+    message: str
+    user: dict | None = None
+    token: str | None = None
+
 
 @app.get("/")
 async def root():
     """Главная страница API"""
     return {"message": "AI CyberLog Agent API", "status": "running", "version": "1.0.0"}
+
+
+@app.post("/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    """Аутентификация пользователя"""
+    try:
+        success, user_data = commands.verify_user_credentials(request.username, request.password)
+        
+        if success:
+            # Генерируем простой токен (в production использовать JWT)
+            import secrets
+            token = secrets.token_urlsafe(32)
+            
+            return LoginResponse(
+                success=True,
+                message="Успешная авторизация",
+                user=user_data,
+                token=token
+            )
+        else:
+            return LoginResponse(
+                success=False,
+                message="Введен неверный логин или пароль",
+                user=None,
+                token=None
+            )
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
 
 
 @app.get("/health")
