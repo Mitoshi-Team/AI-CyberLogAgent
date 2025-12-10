@@ -1,0 +1,14 @@
+[
+  {
+    "type": "DDoS",
+    "description": "Distributed Denial of Service attack"
+  },
+  {
+    "type": "Phishing",
+    "description": "Fraudulent attempt to obtain sensitive information"
+  },
+  {
+    "type": "Malware",
+    "description": "Malicious software designed to harm"
+  }
+]

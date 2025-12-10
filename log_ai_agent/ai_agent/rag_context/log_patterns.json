@@ -1,0 +1,14 @@
+[
+  {
+    "pattern": "404",
+    "meaning": "Page not found"
+  },
+  {
+    "pattern": "500",
+    "meaning": "Internal server error"
+  },
+  {
+    "pattern": "failed login",
+    "meaning": "Possible brute force attempt"
+  }
+]
