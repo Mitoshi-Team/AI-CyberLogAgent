@@ -60,7 +60,7 @@ class LogGeneratorCLI:
         self.running = True
         self.logs_generated = 0
         self.start_time = datetime.now()
-        
+
         # Регистрация обработчиков сигналов для graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -82,7 +82,9 @@ class LogGeneratorCLI:
         """Показывает финальную статистику генерации."""
         duration = datetime.now() - self.start_time
         print(f"\n{Colors.CYAN}📊 Статистика генерации:{Colors.RESET}")
-        print(f"  {Colors.BOLD}Сгенерировано логов:{Colors.RESET} {self.logs_generated}")
+        print(
+            f"  {Colors.BOLD}Сгенерировано логов:{Colors.RESET} {self.logs_generated}"
+        )
         print(f"  {Colors.BOLD}Время работы:{Colors.RESET} {duration}")
         print(f"  {Colors.BOLD}Файл:{Colors.RESET} {OUTPUT_LOG_FILE.absolute()}")
 
@@ -120,10 +122,10 @@ class LogGeneratorCLI:
         percent = current / total
         filled = int(bar_length * percent)
         bar = "█" * filled + "░" * (bar_length - filled)
-        
+
         print(
             f"\r{Colors.CYAN}Прогресс:{Colors.RESET} |{bar}| "
-            f"{current}/{total} ({percent*100:.1f}%)",
+            f"{current}/{total} ({percent * 100:.1f}%)",
             end="",
             flush=True,
         )
@@ -139,17 +141,19 @@ class LogGeneratorCLI:
 
         """
         config_path = self._validate_config_path(config_type)
-        
+
         print(f"{Colors.GREEN}{Colors.BOLD}🚀 Запуск режима имитации{Colors.RESET}")
         print(f"  {Colors.BOLD}Конфигурация:{Colors.RESET} {config_type}")
         print(f"  {Colors.BOLD}Config файл:{Colors.RESET} {config_path}")
         print(f"  {Colors.BOLD}Скорость:{Colors.RESET} 1 лог/секунду")
-        print(f"  {Colors.BOLD}Выходной файл:{Colors.RESET} {OUTPUT_LOG_FILE.absolute()}")
+        print(
+            f"  {Colors.BOLD}Выходной файл:{Colors.RESET} {OUTPUT_LOG_FILE.absolute()}"
+        )
         print(f"\n{Colors.YELLOW}Нажмите Ctrl+C для остановки{Colors.RESET}\n")
 
         # Загружаем конфигурацию
         config = ConfigLoader.load_from_json(str(config_path))
-        
+
         # Создаём/очищаем выходной файл
         OUTPUT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with OUTPUT_LOG_FILE.open("w", encoding="utf-8") as f:
@@ -163,31 +167,31 @@ class LogGeneratorCLI:
             # Обновляем время в конфиге на текущее
             config.start_time = datetime.now()
             config.log_count = 1  # Генерируем по 1 логу
-            
+
             # Создаём генератор и генерируем один лог
             generator = LogGenerator(config)
             generator.generate_logs()
-            
+
             if generator.logs:
                 log_entry = generator.logs[0]
                 log_line = log_entry.format()
-                
+
                 # Записываем в файл
                 with OUTPUT_LOG_FILE.open("a", encoding="utf-8") as f:
                     f.write(log_line + "\n")
-                
+
                 log_count += 1
                 self.logs_generated = log_count
-                
+
                 # Выводим лог в консоль с цветом
                 level_color = Colors.GREEN
                 if "error" in log_line.lower() or "crit" in log_line.lower():
                     level_color = Colors.RED
                 elif "warn" in log_line.lower():
                     level_color = Colors.YELLOW
-                
+
                 print(f"{level_color}[{log_count:05d}]{Colors.RESET} {log_line}")
-            
+
             # Ждём 1 секунду перед следующим логом
             time.sleep(1)
 
@@ -200,60 +204,66 @@ class LogGeneratorCLI:
 
         """
         config_path = self._validate_config_path(config_type)
-        
-        print(f"{Colors.GREEN}{Colors.BOLD}📝 Режим записи логов для тестирования{Colors.RESET}")
+
+        print(
+            f"{Colors.GREEN}{Colors.BOLD}📝 Режим записи логов для тестирования{Colors.RESET}"
+        )
         print(f"  {Colors.BOLD}Конфигурация:{Colors.RESET} {config_type}")
         print(f"  {Colors.BOLD}Config файл:{Colors.RESET} {config_path}")
         print(f"  {Colors.BOLD}Количество логов:{Colors.RESET} {num_logs}")
-        print(f"  {Colors.BOLD}Выходной файл:{Colors.RESET} {OUTPUT_LOG_FILE.absolute()}")
+        print(
+            f"  {Colors.BOLD}Выходной файл:{Colors.RESET} {OUTPUT_LOG_FILE.absolute()}"
+        )
         print()
 
         # Загружаем конфигурацию
         config = ConfigLoader.load_from_json(str(config_path))
         config.log_count = num_logs
-        
+
         # Создаём генератор
         generator = LogGenerator(config)
-        
+
         # Генерация с прогресс-баром
         print(f"{Colors.CYAN}🔄 Генерация логов...{Colors.RESET}\n")
-        
+
         # Генерируем логи порциями для отображения прогресса
         batch_size = max(1, num_logs // 100)  # 1% за раз
         generated = 0
-        
+
         OUTPUT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with OUTPUT_LOG_FILE.open("w", encoding="utf-8") as f:
             f.write(f"# Log generation started: {datetime.now()}\n")
             f.write("# Mode: record_logs_for_tests\n")
             f.write(f"# Config: {config_type}\n")
             f.write(f"# Total logs: {num_logs}\n\n")
-            
+
             while generated < num_logs:
                 current_batch = min(batch_size, num_logs - generated)
                 config.log_count = current_batch
-                
+
                 batch_generator = LogGenerator(config)
                 batch_generator.generate_logs()
-                
+
                 # Записываем логи
                 for log_entry in batch_generator.logs:
                     f.write(log_entry.format() + "\n")
-                
+
                 generator.logs.extend(batch_generator.logs)
                 generated += len(batch_generator.logs)
-                
+
                 # Обновляем прогресс-бар
                 self._print_progress_bar(generated, num_logs)
-        
+
         print()  # Новая строка после прогресс-бара
         self.logs_generated = generated
-        
+
         # Показываем статистику
         self._show_statistics(generator, config_type)
-        
+
         print(f"\n{Colors.GREEN}✅ Логи успешно сгенерированы!{Colors.RESET}")
-        print(f"💾 Сохранено в: {Colors.CYAN}{OUTPUT_LOG_FILE.absolute()}{Colors.RESET}\n")
+        print(
+            f"💾 Сохранено в: {Colors.CYAN}{OUTPUT_LOG_FILE.absolute()}{Colors.RESET}\n"
+        )
 
     def _show_statistics(self, generator: LogGenerator, config_type: str) -> None:
         """Показывает детальную статистику по сгенерированным логам.
@@ -265,12 +275,12 @@ class LogGeneratorCLI:
         """
         duration = datetime.now() - self.start_time
         level_counts = Counter(log.level for log in generator.logs)
-        
+
         print(f"\n{Colors.CYAN}{Colors.BOLD}📊 Статистика генерации:{Colors.RESET}")
         print(f"  {Colors.BOLD}Конфигурация:{Colors.RESET} {config_type}")
         print(f"  {Colors.BOLD}Всего записей:{Colors.RESET} {len(generator.logs)}")
         print(f"  {Colors.BOLD}Время генерации:{Colors.RESET} {duration}")
-        
+
         if generator.logs:
             print(
                 f"  {Colors.BOLD}Период логов:{Colors.RESET} "
@@ -278,20 +288,20 @@ class LogGeneratorCLI:
             )
             log_duration = generator.logs[-1].timestamp - generator.logs[0].timestamp
             print(f"  {Colors.BOLD}Длительность логов:{Colors.RESET} {log_duration}")
-        
+
         print(f"\n  {Colors.BOLD}Распределение по уровням:{Colors.RESET}")
         for level, count in sorted(
             level_counts.items(), key=lambda x: x[1], reverse=True
         ):
             percentage = (count / len(generator.logs)) * 100
-            
+
             # Цвет в зависимости от уровня
             level_color = Colors.GREEN
             if level.value in ["error", "crit"]:
                 level_color = Colors.RED
             elif level.value == "warn":
                 level_color = Colors.YELLOW
-            
+
             print(
                 f"    {level_color}{level.value:8s}{Colors.RESET}: "
                 f"{count:5d} ({percentage:5.1f}%)"
@@ -332,9 +342,7 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Команда для выполнения")
 
     # Команда start
-    start_parser = subparsers.add_parser(
-        "start", help="Запустить генератор логов"
-    )
+    start_parser = subparsers.add_parser("start", help="Запустить генератор логов")
     start_parser.add_argument(
         "mode",
         choices=["imitate", "record_logs_for_tests"],
@@ -354,9 +362,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # Команда stop (информационная, реальная остановка через Ctrl+C)
-    subparsers.add_parser(
-        "stop", help="Остановить генератор (используйте Ctrl+C)"
-    )
+    subparsers.add_parser("stop", help="Остановить генератор (используйте Ctrl+C)")
 
     return parser
 
@@ -380,11 +386,11 @@ def main() -> None:
 
         if args.command == "start":
             cli = LogGeneratorCLI()
-            
+
             if args.mode == "imitate":
                 # Режим имитации (num_logs игнорируется)
                 cli.start_imitate_mode(args.type)
-            
+
             elif args.mode == "record_logs_for_tests":
                 # Режим записи для тестов
                 cli.start_record_mode(args.type, args.num_logs)
@@ -392,11 +398,11 @@ def main() -> None:
     except FileNotFoundError as error:
         print(f"\n{Colors.RED}❌ Ошибка:{Colors.RESET} {error}", file=sys.stderr)
         sys.exit(1)
-    
+
     except KeyboardInterrupt:
         # Обработано в signal_handler
         pass
-    
+
     except Exception as error:
         print(
             f"\n{Colors.RED}❌ Неожиданная ошибка:{Colors.RESET} {error}",
