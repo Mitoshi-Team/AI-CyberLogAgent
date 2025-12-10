@@ -15,7 +15,7 @@ from log_ai_agent.config.cfg import GIGACHAT_API_KEY
 
 # Database configuration
 DB_CONFIG = {
-    "host": os.getenv("POSTGRES_HOST", "localhost"),  # Use 'db' for container-to-container, 'localhost' for host-to-container
+    "host": "localhost",  # Direct connection from host to container
     "port": int(os.getenv("POSTGRES_PORT", 5433)),  # Match docker-compose port mapping
     "database": os.getenv("POSTGRES_DB", "cyberlog_db"),
     "user": os.getenv("POSTGRES_USER", "postgres"),
