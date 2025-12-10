@@ -86,90 +86,44 @@ def get_chat_history(user_id: int) -> List[Dict]:
         conn.close()
 
 
-def analyze_log(log_content: str, rag_context: Dict) -> str:
-    """Analyze log content using RAG context."""
-    analysis = "Анализ лога:\n\n"
-    findings = []
-    
-    # Check against suspicious patterns from RAG context
-    suspicious_patterns = rag_context.get("log_analysis_rules", {}).get("suspicious_patterns", [])
-    
-    for pattern_info in suspicious_patterns:
-        pattern = pattern_info["pattern"]
-        if pattern.lower() in log_content.lower():
-            findings.append({
-                "pattern": pattern,
-                "severity": pattern_info["severity"],
-                "description": pattern_info["description"],
-                "recommendation": pattern_info["recommendation"]
-            })
-    
-    # Add findings to analysis
-    if findings:
-        for finding in findings:
-            analysis += f"- Найдено: {finding['description']} (уровень серьезности: {finding['severity']})\n"
-        
-        analysis += "\nРекомендации:\n"
-        for finding in findings:
-            analysis += f"- {finding['recommendation']}\n"
-    else:
-        analysis += "Подозрительных паттернов не обнаружено.\n"
-    
-    # Add general security recommendations
-    analysis += "\nОбщие рекомендации по кибербезопасности:\n- Регулярно обновляйте программное обеспечение\n- Проводите аудит логов\n- Настройте систему мониторинга инцидентов\n"
-    
-    return analysis
+
 
 
 def process_user_input(user_id: int, user_input: str, rag_context: Dict) -> str:
     """Process user input and return appropriate response using GigaChat."""
     # Save user message
     save_message(user_id, "user", user_input)
-    
-    # Check if user is uploading a log
-    if user_input.startswith("/upload_log"):
-        log_content = user_input[len("/upload_log"):].strip()
-        if not log_content:
-            response = "Пожалуйста, укажите содержимое лога после команды /upload_log"
-        else:
-            # Analyze the log
-            analysis = analyze_log(log_content, rag_context)
-            response = analysis
-            
-            # Save analysis to database
-            save_message(user_id, "assistant", analysis)
-            
-    else:
-        # Use GigaChat for general conversation
-        try:
-            # Initialize GigaChat client with scope
-            with GigaChat(credentials=GIGACHAT_API_KEY, scope="GIGACHAT_API_PERS", verify_ssl_certs=False) as giga:
-                # Get chat history for context
-                history = get_chat_history(user_id)
-                messages = []
-                
-                # Add chat history to messages
-                for msg in history:
-                    role = msg["role"]
-                    if role == "user":
-                        messages.append(Messages(role=MessagesRole.USER, content=msg["content"]))
-                    elif role == "assistant":
-                        messages.append(Messages(role=MessagesRole.ASSISTANT, content=msg["content"]))
-                
-                # Add current user message
-                messages.append(Messages(role=MessagesRole.USER, content=user_input))
-                
-                # Create chat request
-                chat = Chat(messages=messages)
-                
-                # Get response from GigaChat
-                response_model = giga.chat(chat)
-                response = response_model.choices[0].message.content
-                
-        except Exception as e:
-            print(f"Error communicating with GigaChat: {e}")
-            response = "Извините, произошла ошибка при подключении к нейросети. Попробуйте позже."
-    
+
+    # Use GigaChat for general conversation
+    try:
+        # Initialize GigaChat client with scope
+        with GigaChat(credentials=GIGACHAT_API_KEY, scope="GIGACHAT_API_PERS", verify_ssl_certs=False) as giga:
+            # Get chat history for context
+            history = get_chat_history(user_id)
+            messages = []
+
+            # Add chat history to messages
+            for msg in history:
+                role = msg["role"]
+                if role == "user":
+                    messages.append(Messages(role=MessagesRole.USER, content=msg["content"]))
+                elif role == "assistant":
+                    messages.append(Messages(role=MessagesRole.ASSISTANT, content=msg["content"]))
+
+            # Add current user message
+            messages.append(Messages(role=MessagesRole.USER, content=user_input))
+
+            # Create chat request
+            chat = Chat(messages=messages)
+
+            # Get response from GigaChat
+            response_model = giga.chat(chat)
+            response = response_model.choices[0].message.content
+
+    except Exception as e:
+        print(f"Error communicating with GigaChat: {e}")
+        response = "Извините, произошла ошибка при подключении к нейросети. Попробуйте позже."
+
     # Save response
     save_message(user_id, "assistant", response)
     
