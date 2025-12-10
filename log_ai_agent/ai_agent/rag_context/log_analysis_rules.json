@@ -1,0 +1,48 @@
+{
+  "suspicious_patterns": [
+    {
+      "pattern": "404",
+      "severity": "medium",
+      "description": "Страница не найдена",
+      "recommendation": "Проверьте логи на наличие сканирования директорий"
+    },
+    {
+      "pattern": "500",
+      "severity": "high",
+      "description": "Внутренняя ошибка сервера",
+      "recommendation": "Проверьте серверное приложение на наличие уязвимостей"
+    },
+    {
+      "pattern": "failed login",
+      "severity": "high",
+      "description": "Неудачная попытка входа",
+      "recommendation": "Проверьте IP-адрес на наличие брутфорс атаки"
+    },
+    {
+      "pattern": "sql syntax error",
+      "severity": "critical",
+      "description": "Ошибка синтаксиса SQL",
+      "recommendation": "Возможная SQL инъекция, проверьте параметры запроса"
+    }
+  ],
+  "common_threats": [
+    {
+      "type": "DDoS",
+      "description": "Атака типа 'отказ в обслуживании' через перегрузку ресурсов",
+      "indicators": ["high network traffic", "slow response times"],
+      "mitigation": "Настройте rate limiting и используйте CDN"
+    },
+    {
+      "type": "Phishing",
+      "description": "Фишинговая атака для получения учетных данных",
+      "indicators": ["suspicious emails", "fake login pages"],
+      "mitigation": "Обучайте пользователей и используйте двухфакторную аутентификацию"
+    },
+    {
+      "type": "Ransomware",
+      "description": "Вредоносное ПО, шифрующее файлы для выкупа",
+      "indicators": ["file encryption", "ransom note"],
+      "mitigation": "Регулярно создавайте резервные копии и обновляйте ПО"
+    }
+  ]
+}
