@@ -8,7 +8,7 @@
     <!-- Кнопка сворачивания -->
     <button
       @click="isCollapsed = !isCollapsed"
-      class="absolute -right-3 top-8 w-6 h-6 bg-dark-800 border border-dark-700 rounded-full flex items-center justify-center hover:bg-dark-700 transition-colors z-10"
+      class="absolute -right-3 top-8 w-6 h-6 bg-dark-800 border border-dark-700 rounded-full flex items-center justify-center hover:bg-dark-700 transition-colors z-[100]"
     >
       <svg 
         :class="['w-3 h-3 text-dark-300 transition-transform duration-300', isCollapsed ? 'rotate-180' : '']"
@@ -60,7 +60,15 @@
         ]"
         :title="isCollapsed ? item.label : ''"
       >
-        <component :is="item.icon" class="w-5 h-5 flex-shrink-0" />
+        <div class="relative flex-shrink-0">
+          <component :is="item.icon" class="w-5 h-5" />
+          <span 
+            v-if="item.to === '/chat' && appStore.unreadChatMessages > 0"
+            class="absolute -top-1 -right-1 w-3 h-3 bg-danger-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white animate-pulse"
+          >
+            {{ appStore.unreadChatMessages > 9 ? '9+' : appStore.unreadChatMessages }}
+          </span>
+        </div>
         <span 
           :class="[
             'transition-opacity duration-300 whitespace-nowrap',

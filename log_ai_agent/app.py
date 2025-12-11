@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import asyncpg
@@ -71,13 +72,27 @@ class LoginResponse(BaseModel):
     token: str | None = None
 
 
+class ChatMessageRequest(BaseModel):
+    user_id: int
+    role: str  # 'user' или 'assistant'
+    content: str
+
+
+class ChatMessageResponse(BaseModel):
+    message_id: int
+    user_id: int
+    role: str
+    content: str
+    created_at: str
+
+
 @app.get("/")
 async def root():
     """Главная страница API"""
     return {"message": "AI CyberLog Agent API", "status": "running", "version": "1.0.0"}
 
 
-@app.post("/auth/login", response_model=LoginResponse)
+@app.post("/api/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """Аутентификация пользователя"""
     try:
@@ -131,6 +146,464 @@ async def health_check():
         "database": db_status,
         "database_error": db_error if db_error else None,
     }
+
+
+@app.get("/api/statistics/severity")
+async def get_severity_statistics():
+    """Получить статистику по уровням серьезности"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем все уровни серьезности и количество отчетов для каждого
+        rows = await conn.fetch("""
+            SELECT 
+                sl.severity_level_id,
+                sl.name,
+                COUNT(r.report_id) as count
+            FROM public."SeverityLevels" sl
+            LEFT JOIN public."Reports" r ON sl.severity_level_id = r.severity_level_id
+            GROUP BY sl.severity_level_id, sl.name
+            ORDER BY sl.severity_level_id
+        """)
+
+        await conn.close()
+
+        result = [
+            {"id": row["severity_level_id"], "name": row["name"], "count": row["count"]}
+            for row in rows
+        ]
+
+        return {"data": result}
+    except Exception as e:
+        logger.error(f"Error getting severity statistics: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статистики")
+
+
+@app.get("/api/statistics/threats")
+async def get_threat_statistics():
+    """Получить статистику по типам угроз"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем все типы угроз и количество отчетов для каждого
+        rows = await conn.fetch("""
+            SELECT 
+                tt.threat_type_id,
+                tt.name,
+                COUNT(r.report_id) as count
+            FROM public."ThreatTypes" tt
+            LEFT JOIN public."Reports" r ON tt.threat_type_id = r.threat_type_id
+            GROUP BY tt.threat_type_id, tt.name
+            ORDER BY COUNT(r.report_id) DESC, tt.name
+        """)
+
+        await conn.close()
+
+        result = [
+            {"id": row["threat_type_id"], "name": row["name"], "count": row["count"]}
+            for row in rows
+        ]
+
+        return {"data": result}
+    except Exception as e:
+        logger.error(f"Error getting threat statistics: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статистики")
+
+
+@app.get("/api/statistics/activity")
+async def get_activity_statistics(
+    period_type: str = "week", start_date: str = None, end_date: str = None
+):
+    """Получить статистику активности по дням
+
+    Args:
+        period_type: тип периода - 'week' или 'month'
+        start_date: начало периода (ISO format)
+        end_date: конец периода (ISO format)
+
+    """
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        from datetime import datetime, timedelta
+
+        if start_date and end_date:
+            # Парсим даты напрямую, игнорируя время и часовой пояс
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+
+            # Используем только дату без времени, затем создаем datetime для работы с БД
+            start = datetime.combine(start_dt.date(), datetime.min.time())
+            end = datetime.combine(end_dt.date(), datetime.max.time())
+
+            logger.info(
+                f"Activity stats - Received dates: start={start_date}, end={end_date}"
+            )
+            logger.info(f"Activity stats - Normalized: start={start}, end={end}")
+        else:
+            # По умолчанию - текущая неделя/месяц
+            now = datetime.now()
+            if period_type == "week":
+                # Текущая неделя (понедельник - воскресенье)
+                start = now - timedelta(days=now.weekday())
+                start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = start + timedelta(days=6)
+                end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+            else:
+                # Текущий месяц
+                start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                # Последний день месяца
+                if now.month == 12:
+                    end = now.replace(
+                        year=now.year + 1,
+                        month=1,
+                        day=1,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    ) - timedelta(days=1)
+                else:
+                    end = now.replace(
+                        month=now.month + 1,
+                        day=1,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    ) - timedelta(days=1)
+                end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # Получаем количество отчетов по дням
+        rows = await conn.fetch(
+            """
+            SELECT 
+                DATE(created_at) as date,
+                COUNT(*) as count
+            FROM public."Reports"
+            WHERE created_at >= $1 AND created_at <= $2
+            GROUP BY DATE(created_at)
+            ORDER BY date
+        """,
+            start,
+            end,
+        )
+
+        await conn.close()
+
+        # Создаем полный список дней с нулями для дней без данных
+        result = []
+        day_counts = {row["date"]: row["count"] for row in rows}
+
+        # Вычисляем количество дней между start и end
+        start_date_obj = start.date()
+        end_date_obj = end.date()
+
+        # Рассчитываем количество дней (разница + 1 день, так как включаем оба конца)
+        days_count = (end_date_obj - start_date_obj).days + 1
+
+        # Генерируем даты: для недели будет 7 дней, для месяца - количество дней в месяце
+        for i in range(days_count):
+            current_date = start_date_obj + timedelta(days=i)
+            result.append(
+                {
+                    "date": current_date.isoformat(),
+                    "count": day_counts.get(current_date, 0),
+                }
+            )
+
+        return {
+            "data": result,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error getting activity statistics: {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка получения статистики активности"
+        )
+
+
+@app.get("/api/reports/history")
+async def get_reports_history(
+    date_from: str = None,
+    date_to: str = None,
+    severity_level_id: int = None,
+    threat_type_id: int = None,
+    page: int = 1,
+    page_size: int = 10,
+):
+    """Получение истории отчетов с фильтрацией и пагинацией"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Базовый SQL запрос для подсчета общего количества
+        count_query = """
+            SELECT COUNT(*) as total
+            FROM public."Reports" r
+            WHERE 1=1
+        """
+
+        # Базовый SQL запрос для получения данных
+        query = """
+            SELECT 
+                r.report_id,
+                r.description,
+                r.created_at,
+                sl.severity_level_id,
+                sl.name as severity_name,
+                tt.threat_type_id,
+                tt.name as threat_name
+            FROM public."Reports" r
+            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
+            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
+            WHERE 1=1
+        """
+        params = []
+        param_count = 1
+
+        # Добавляем фильтры к обоим запросам
+        filter_conditions = ""
+
+        if date_from:
+            filter_conditions += f" AND r.created_at >= ${param_count}"
+            params.append(datetime.fromisoformat(date_from.replace("Z", "+00:00")))
+            param_count += 1
+
+        if date_to:
+            filter_conditions += f" AND r.created_at <= ${param_count}"
+            params.append(datetime.fromisoformat(date_to.replace("Z", "+00:00")))
+            param_count += 1
+
+        if severity_level_id:
+            filter_conditions += f" AND r.severity_level_id = ${param_count}"
+            params.append(severity_level_id)
+            param_count += 1
+
+        if threat_type_id:
+            filter_conditions += f" AND r.threat_type_id = ${param_count}"
+            params.append(threat_type_id)
+            param_count += 1
+
+        # Добавляем фильтры к запросам
+        count_query += filter_conditions
+        query += filter_conditions
+
+        # Получаем общее количество записей
+        total_row = await conn.fetchrow(count_query, *params)
+        total = total_row["total"]
+
+        # Вычисляем offset
+        offset = (page - 1) * page_size
+
+        # Добавляем сортировку, лимит и offset
+        query += f" ORDER BY r.created_at DESC LIMIT ${param_count} OFFSET ${param_count + 1}"
+        params.extend([page_size, offset])
+
+        rows = await conn.fetch(query, *params)
+        await conn.close()
+
+        # Форматируем результаты
+        result = [
+            {
+                "id": row["report_id"],
+                "description": row["description"],
+                "created_at": row["created_at"].isoformat(),
+                "severity_level_id": row["severity_level_id"],
+                "severity_name": row["severity_name"],
+                "threat_type_id": row["threat_type_id"],
+                "threat_name": row["threat_name"],
+            }
+            for row in rows
+        ]
+
+        return {
+            "data": result,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size,
+        }
+    except Exception as e:
+        logger.error(f"Error getting reports history: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения истории отчетов")
+
+
+@app.get("/api/reports/filters")
+async def get_reports_filters():
+    """Получение всех доступных фильтров для отчетов"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем уровни серьезности
+        severity_levels = await conn.fetch("""
+            SELECT severity_level_id, name
+            FROM public."SeverityLevels"
+            ORDER BY severity_level_id
+        """)
+
+        # Получаем типы угроз
+        threat_types = await conn.fetch("""
+            SELECT threat_type_id, name
+            FROM public."ThreatTypes"
+            ORDER BY threat_type_id
+        """)
+
+        await conn.close()
+
+        return {
+            "severity_levels": [
+                {"id": row["severity_level_id"], "name": row["name"]}
+                for row in severity_levels
+            ],
+            "threat_types": [
+                {"id": row["threat_type_id"], "name": row["name"]}
+                for row in threat_types
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting reports filters: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения фильтров отчетов")
+
+
+@app.get("/api/reports/{report_id}")
+async def get_report_details(report_id: int):
+    """Получение детальной информации об отчете"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем отчет с логами
+        report = await conn.fetchrow(
+            """
+            SELECT 
+                r.report_id,
+                r.description,
+                r.created_at,
+                r.log_id,
+                sl.name as severity_name,
+                tt.name as threat_name,
+                l.file_content
+            FROM public."Reports" r
+            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
+            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
+            LEFT JOIN public."Logs" l ON r.log_id = l.log_id
+            WHERE r.report_id = $1
+        """,
+            report_id,
+        )
+
+        await conn.close()
+
+        if not report:
+            raise HTTPException(status_code=404, detail="Отчет не найден")
+
+        return {
+            "id": report["report_id"],
+            "description": report["description"],
+            "created_at": report["created_at"].isoformat(),
+            "severity_name": report["severity_name"],
+            "threat_name": report["threat_name"],
+            "file_content": report["file_content"] or "Логи отсутствуют",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting report details: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения деталей отчета")
+
+
+@app.post("/api/chat/messages", response_model=ChatMessageResponse)
+async def save_chat_message(request: ChatMessageRequest):
+    """Сохранение сообщения в чат"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Сохраняем сообщение в базу данных
+        row = await conn.fetchrow(
+            """
+            INSERT INTO public."Messages" (user_id, role, content, created_at)
+            VALUES ($1, $2, $3, NOW())
+            RETURNING message_id, user_id, role, content, created_at
+        """,
+            request.user_id,
+            request.role,
+            request.content,
+        )
+
+        await conn.close()
+
+        return ChatMessageResponse(
+            message_id=row["message_id"],
+            user_id=row["user_id"],
+            role=row["role"],
+            content=row["content"],
+            created_at=row["created_at"].isoformat(),
+        )
+    except Exception as e:
+        logger.error(f"Error saving chat message: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сохранения сообщения")
+
+
+@app.get("/api/chat/messages")
+async def get_chat_messages(user_id: int, limit: int = 50):
+    """Получение последних сообщений чата"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем последние N сообщений для пользователя
+        rows = await conn.fetch(
+            """
+            SELECT message_id, user_id, role, content, created_at
+            FROM public."Messages"
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+        """,
+            user_id,
+            limit,
+        )
+
+        await conn.close()
+
+        # Возвращаем в обратном порядке (от старых к новым)
+        messages = [
+            {
+                "message_id": row["message_id"],
+                "user_id": row["user_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "created_at": row["created_at"].isoformat(),
+            }
+            for row in reversed(rows)
+        ]
+
+        return {"data": messages, "total": len(messages)}
+    except Exception as e:
+        logger.error(f"Error getting chat messages: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения сообщений чата")
+
+
+@app.delete("/api/chat/messages")
+async def clear_chat_messages(user_id: int):
+    """Очистка всех сообщений чата пользователя"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Удаляем все сообщения пользователя
+        result = await conn.execute(
+            """
+            DELETE FROM public."Messages"
+            WHERE user_id = $1
+        """,
+            user_id,
+        )
+
+        await conn.close()
+
+        return {"success": True, "message": "Чат очищен"}
+    except Exception as e:
+        logger.error(f"Error clearing chat messages: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка очистки чата")
 
 
 # --- CLI Commands ---

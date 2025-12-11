@@ -14,6 +14,10 @@ export const useAppStore = defineStore('app', () => {
   
   // Состояние Sidebar
   const sidebarCollapsed = ref(false)
+  
+  // Состояние непрочитанных сообщений в чате
+  const unreadChatMessages = ref(0)
+  const originalPageTitle = ref(document.title)
 
   // Инициализация: восстанавливаем сессию из localStorage
   const initializeAuth = () => {
@@ -37,8 +41,25 @@ export const useAppStore = defineStore('app', () => {
 
   // Уведомления
   const notifications = ref([])
+  const pendingNotifications = ref([]) // Очередь уведомлений для показа при возврате на вкладку
   const incidents = ref([])
   const isLoadingIncidents = ref(false)
+  
+  // Обработчик изменения видимости вкладки
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible' && pendingNotifications.value.length > 0) {
+      // Показываем отложенные уведомления
+      pendingNotifications.value.forEach(notif => {
+        showNotificationNow(notif.message, notif.type, notif.duration, notif.playSound)
+      })
+      pendingNotifications.value = []
+    }
+  }
+  
+  // Подписываемся на изменение видимости
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  }
 
   // Статистика
   const statistics = ref({
@@ -91,12 +112,23 @@ export const useAppStore = defineStore('app', () => {
   }
 
   /**
-   * Добавление уведомления
+   * Показать уведомление немедленно
    */
-  const addNotification = (message, type = 'info', duration = 3000) => {
+  const showNotificationNow = (message, type = 'info', duration = 5000, playSound = false) => {
     const id = Math.random()
     const notification = { id, message, type }
+    
+    // Ограничение на 5 уведомлений - удаляем старые
+    if (notifications.value.length >= 5) {
+      notifications.value.shift()
+    }
+    
     notifications.value.push(notification)
+    
+    // Воспроизведение звука только если указано
+    if (playSound) {
+      playNotificationSound()
+    }
 
     if (duration) {
       setTimeout(() => {
@@ -105,6 +137,40 @@ export const useAppStore = defineStore('app', () => {
     }
 
     return id
+  }
+  
+  /**
+   * Добавление уведомления (с проверкой видимости вкладки)
+   */
+  const addNotification = (message, type = 'info', duration = 5000, playSound = false) => {
+    // Воспроизводим звук сразу, независимо от видимости вкладки
+    if (playSound) {
+      playNotificationSound()
+    }
+    
+    // Если вкладка не активна, добавляем в очередь (только визуальное уведомление)
+    if (document.visibilityState !== 'visible') {
+      pendingNotifications.value.push({ message, type, duration, playSound: false }) // playSound: false т.к. уже воспроизвели
+      return null
+    }
+    
+    // Если вкладка активна, показываем сразу (без повторного звука)
+    return showNotificationNow(message, type, duration, false) // playSound: false т.к. уже воспроизвели выше
+  }
+  
+  /**
+   * Воспроизведение звука уведомления
+   */
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('/sounds/notification.mp3')
+      audio.volume = 0.5 // Средняя громкость
+      audio.play().catch(() => {
+        // Игнорируем ошибки воспроизведения (например, если браузер блокирует автовоспроизведение)
+      })
+    } catch (e) {
+      // Игнорируем ошибки воспроизведения
+    }
   }
 
   /**
@@ -181,6 +247,33 @@ export const useAppStore = defineStore('app', () => {
     statistics.value.totalIncidents++
     addNotification(`Новый инцидент: ${incident.title}`, 'warning')
   }
+  
+  /**
+   * Добавление непрочитанного сообщения в чат
+   */
+  const addUnreadChatMessage = () => {
+    unreadChatMessages.value++
+    updatePageTitle()
+  }
+  
+  /**
+   * Очистка счетчика непрочитанных сообщений
+   */
+  const clearUnreadChatMessages = () => {
+    unreadChatMessages.value = 0
+    updatePageTitle()
+  }
+  
+  /**
+   * Обновление заголовка страницы с индикатором непрочитанных
+   */
+  const updatePageTitle = () => {
+    if (unreadChatMessages.value > 0) {
+      document.title = `(${unreadChatMessages.value}) ${originalPageTitle.value}`
+    } else {
+      document.title = originalPageTitle.value
+    }
+  }
 
   return {
     isAuthenticated,
@@ -191,11 +284,14 @@ export const useAppStore = defineStore('app', () => {
     incidents,
     isLoadingIncidents,
     statistics,
+    unreadChatMessages,
     login,
     logout,
     addNotification,
     removeNotification,
     loadIncidents,
+    addUnreadChatMessage,
+    clearUnreadChatMessages,
     addIncident,
   }
 })

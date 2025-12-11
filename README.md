@@ -36,7 +36,7 @@ docker compose down
 Для подключения к консоли пишем (название контейнера указывается в `.env`)
 
 ```bash
-docker exec -it cyberlog-backend python app.py interactive
+docker exec -it {BACKEND_CONTAINER_NAME} python app.py interactive
 ```
 
 ## Схема БД
@@ -68,14 +68,18 @@ docker exec -it cyberlog-backend python app.py interactive
 - file_content: text (Содержимое файла лога)
 - date: timestamp with time zone (Дата и время создания лога)
 
-### Таблица ThreatTypes
-- threat_type_id: integer (Уникальный идентификатор типа угрозы, автоинкремент)
-- name: text (Название типа угрозы)
-
 ### Таблица Reports
 - report_id: integer (Уникальный идентификатор отчета, автоинкремент)
 - description: text (Описание инцидента)
 - log_id: integer (Внешний ключ на Logs, связанный лог)
 - threat_type_id: integer (Внешний ключ на ThreatTypes, тип угрозы)
 - created_at: timestamp with time zone (Дата и время создания отчета)
+- severity_level_id (Внешний ключ на SeverityLevels, уровень серьезности)
 
+### Таблица ThreatTypes
+- threat_type_id: integer (Уникальный идентификатор типа угрозы, автоинкремент)
+- name: text (Название типа угрозы)
+
+### Таблица SeverityLevels
+- severity_level_id (Уникальный идентификатор уровня серьезности, автоинкремент)
+- name: text (Название уровня серьезности)

@@ -1,10 +1,23 @@
 <template>
   <div class="h-screen flex flex-col">
-    <div class="flex-1 flex flex-col overflow-hidden">
+    <div class="flex-1 flex flex-col bg-dark-900/30 overflow-hidden">
       <!-- Окно чата на всю высоту -->
-      <div class="flex-1 flex flex-col bg-dark-900/30 border-l border-dark-800 overflow-hidden">
+      <div class="flex-1 flex flex-col overflow-hidden relative ml-9">
+        <!-- Кнопка "Новый чат" в правом верхнем углу -->
+        <button
+          @click="showNewChatModal = true"
+          :disabled="isLoading"
+          class="absolute top-4 right-8 z-20 flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 disabled:bg-dark-800 disabled:cursor-not-allowed text-dark-300 hover:text-white disabled:text-dark-500 rounded-lg transition-all text-sm font-medium shadow-lg"
+          title="Начать новый чат"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+          </svg>
+          <span>Новый чат</span>
+        </button>
+        
         <!-- История чата с фиксированной высотой и скроллом -->
-        <div ref="chatContainer" class="flex-1 overflow-y-auto space-y-8 pt-8 px-2 sm:px-3 md:px-4 lg:px-6 xl:px-8 pb-4 scrollbar-chat">
+        <div ref="chatContainer" class="flex-1 overflow-y-auto space-y-8 pt-8 pl-8 pr-2 sm:pr-3 md:pr-4 lg:pr-6 xl:pr-8 pb-4 scrollbar-chat">
           <div
             v-for="(msg, index) in messages"
             :key="index"
@@ -22,7 +35,21 @@
               </div>
               
               <!-- Сообщение агента - сплошной текст с подписью -->
-              <div v-else>
+              <div 
+                v-else
+                :class="[
+                  'p-4 rounded-lg transition-all duration-500',
+                  msg.isNew ? 'bg-primary-500/10 border-l-4 border-primary-500 shadow-lg shadow-primary-500/20' : ''
+                ]"
+              >
+                <div v-if="msg.isNew" class="flex items-center gap-2 mb-2">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-500/20 text-primary-400 text-xs font-medium rounded-full animate-pulse">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+                    </svg>
+                    Новое сообщение
+                  </span>
+                </div>
                 <p class="text-base leading-relaxed text-dark-200 text-left">{{ msg.text }}</p>
                 <p class="text-xs text-dark-500 mt-2 text-left">AI Cyber Log</p>
               </div>
@@ -85,6 +112,11 @@
               style="min-height: 84px; max-height: 400px; height: auto;"
             ></textarea>
             
+            <!-- Сообщение об ошибке пустого файла -->
+            <div v-if="isEmptyFile" class="absolute bottom-16 right-3 text-xs text-red-500">
+              Файл пустой
+            </div>
+            
             <!-- Счетчик и кнопки внизу справа -->
             <div class="absolute bottom-2 right-3 flex items-center gap-2">
               <div class="text-xs px-2 py-1 rounded bg-dark-800/80 text-dark-400">
@@ -101,7 +133,12 @@
               />
               <button
                 @click="$refs.fileInput.click()"
-                class="btn bg-dark-800 hover:bg-dark-700 border border-dark-700 hover:border-primary-500/50 text-dark-300 hover:text-primary-400 transition-all p-2"
+                :class="[
+                  'btn bg-dark-800 hover:bg-dark-700 border transition-all p-2',
+                  isEmptyFile 
+                    ? 'border-red-500 text-red-400 hover:border-red-400' 
+                    : 'border-dark-700 hover:border-primary-500/50 text-dark-300 hover:text-primary-400'
+                ]"
                 title="Загрузить .log файл"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,14 +161,61 @@
         </div>
       </div>
     </div>
+
+    <!-- Модальное окно подтверждения нового чата -->
+    <div
+      v-if="showNewChatModal"
+      class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      @click.self="showNewChatModal = false"
+    >
+      <div class="bg-dark-900 rounded-xl max-w-md w-full border border-dark-800">
+        <!-- Заголовок модального окна -->
+        <div class="bg-dark-900 border-b border-dark-800 px-6 py-4 flex items-center justify-between">
+          <h2 class="text-xl font-bold text-white">Подтверждение</h2>
+          <button
+            @click="showNewChatModal = false"
+            class="text-dark-400 hover:text-white transition-colors p-1"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Содержимое модального окна -->
+        <div class="p-6">
+          <p class="text-dark-300 mb-6">
+            Вы уверены, что хотите начать новый чат? Все сообщения будут удалены.
+          </p>
+          <div class="flex gap-3 justify-end">
+            <button
+              @click="showNewChatModal = false"
+              class="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-white rounded-lg transition-colors"
+            >
+              Отмена
+            </button>
+            <button
+              @click="confirmNewChat"
+              :disabled="isLoading"
+              class="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-dark-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+            >
+              Удалить и начать новый
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick, computed, onMounted } from 'vue'
+import { ref, nextTick, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useRoute } from 'vue-router'
+import { chat } from '@/services/api'
 
 const appStore = useAppStore()
+const route = useRoute()
 const chatContainer = ref(null)
 const fileInput = ref(null)
 const messageInput = ref(null)
@@ -140,17 +224,145 @@ const isLoading = ref(false)
 const uploadedLogFile = ref(null)
 const lastMessageTime = ref(0)
 const isRateLimited = ref(false)
+const isEmptyFile = ref(false)
+const showNewChatModal = ref(false)
+let clearNotificationsTimer = null
 
 // Константы ограничений
 const MAX_MESSAGE_LENGTH = 500
 const RATE_LIMIT_DELAY = 2000 // 2 секунды
+const NOTIFICATION_CLEAR_DELAY = 5000 // 5 секунд до снятия выделения
 
-const messages = ref([
-  {
-    role: 'ai',
-    text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
-  },
-])
+const messages = ref([])
+
+// Загрузка истории чата при монтировании
+onMounted(async () => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // Очищаем с задержкой при монтировании компонента
+  clearNotifications(false)
+  adjustTextareaHeight()
+  
+  // Загружаем историю чата из БД
+  await loadChatHistory()
+})
+
+// Функция загрузки истории чата
+const loadChatHistory = async () => {
+  try {
+    const userId = appStore.currentUser?.id
+    if (!userId) {
+      console.error('User not authenticated')
+      // Показываем начальное приветствие если пользователь не авторизован
+      messages.value = [{
+        role: 'ai',
+        text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+        isNew: false,
+      }]
+      return
+    }
+    
+    const response = await chat.getMessages(userId, 50)
+    
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      // Преобразуем сообщения из БД в формат компонента
+      messages.value = response.data.data.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'ai',
+        text: msg.content,
+        isNew: false,
+      }))
+    } else {
+      // Если история пуста, показываем приветствие
+      messages.value = [{
+        role: 'ai',
+        text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+        isNew: false,
+      }]
+    }
+    
+    scrollToBottom()
+  } catch (error) {
+    console.error('Error loading chat history:', error)
+    // В случае ошибки показываем приветствие
+    messages.value = [{
+      role: 'ai',
+      text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+      isNew: false,
+    }]
+  }
+}
+
+// Функция сохранения сообщения в БД
+const saveChatMessage = async (role, content) => {
+  try {
+    const userId = appStore.currentUser?.id
+    if (!userId) {
+      console.error('User not authenticated, cannot save message')
+      return
+    }
+    
+    await chat.sendMessage(userId, role, content)
+  } catch (error) {
+    console.error('Error saving chat message:', error)
+    appStore.addNotification('Ошибка сохранения сообщения', 'error')
+  }
+}
+
+// Функция очистки уведомлений
+const clearNotifications = (immediate = false) => {
+  // Очищаем предыдущий таймер если он был
+  if (clearNotificationsTimer) {
+    clearTimeout(clearNotificationsTimer)
+    clearNotificationsTimer = null
+  }
+  
+  // Сбрасываем счетчик непрочитанных сразу
+  appStore.clearUnreadChatMessages()
+  
+  if (immediate) {
+    // Немедленная очистка (при загрузке истории)
+    messages.value = messages.value.map(msg => ({
+      ...msg,
+      isNew: false
+    }))
+  } else {
+    // Очистка с задержкой (чтобы пользователь увидел выделенные сообщения)
+    clearNotificationsTimer = setTimeout(() => {
+      messages.value = messages.value.map(msg => ({
+        ...msg,
+        isNew: false
+      }))
+    }, NOTIFICATION_CLEAR_DELAY)
+  }
+}
+
+// Очистка счетчика непрочитанных при открытии/переходе на страницу чата
+watch(() => route.path, (newPath) => {
+  if (newPath === '/chat') {
+    // Очищаем с задержкой, чтобы пользователь увидел выделенные сообщения
+    clearNotifications(false)
+  }
+}, { immediate: true })
+
+// Очистка при возвращении фокуса на вкладку
+const handleVisibilityChange = () => {
+  if (!document.hidden && route.path === '/chat') {
+    clearNotifications()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // Очищаем при монтировании компонента
+  clearNotifications()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  // Очищаем таймер при размонтировании
+  if (clearNotificationsTimer) {
+    clearTimeout(clearNotificationsTimer)
+  }
+})
 
 // Проверка возможности отправки сообщения
 const canSendMessage = computed(() => {
@@ -193,11 +405,6 @@ const adjustTextareaHeight = () => {
   })
 }
 
-onMounted(() => {
-  // Устанавливаем начальную высоту
-  adjustTextareaHeight()
-})
-
 const sendMessage = async () => {
   // Проверка возможности отправки
   if (!canSendMessage.value) return
@@ -230,6 +437,10 @@ const sendMessage = async () => {
   })
 
   const userMessage = inputMessage.value
+  
+  // Сохраняем сообщение пользователя в БД
+  await saveChatMessage('user', userMessage)
+  
   inputMessage.value = ''
   isLoading.value = true
   
@@ -239,11 +450,28 @@ const sendMessage = async () => {
   scrollToBottom()
 
   // Имитация ответа AI
-  setTimeout(() => {
+  setTimeout(async () => {
+    const isOnChatPage = route.path === '/chat'
+    const isTabVisible = document.visibilityState === 'visible'
+    const shouldNotify = !isOnChatPage || !isTabVisible
+    
+    const aiResponse = generateAIResponse(userMessage)
+    
     messages.value.push({
       role: 'ai',
-      text: generateAIResponse(userMessage),
+      text: aiResponse,
+      isNew: shouldNotify, // Помечаем как новое, если пользователь не видит чат
     })
+    
+    // Сохраняем сообщение AI в БД
+    await saveChatMessage('assistant', aiResponse)
+    
+    // Если пользователь не видит чат (другая страница или вкладка), увеличиваем счетчик и отправляем уведомление
+    if (shouldNotify) {
+      appStore.addUnreadChatMessage()
+      appStore.addNotification('Новый ответ от AI агента в чате', 'info', 5000, true) // playSound = true
+    }
+    
     isLoading.value = false
     scrollToBottom()
   }, 1500)
@@ -259,12 +487,17 @@ const handleFileUpload = async (event) => {
   
   if (!file) return
   
+  // Сбрасываем состояние ошибки пустого файла
+  isEmptyFile.value = false
+  
   // Проверяем расширение файла
   if (!file.name.endsWith('.log')) {
+    const errorMsg = '❌ Ошибка: Можно загружать только файлы с расширением .log'
     messages.value.push({
-      role: 'ai',
-      text: '❌ Ошибка: Можно загружать только файлы с расширением .log',
+      role: 'user',
+      text: errorMsg,
     })
+    await saveChatMessage('user', errorMsg)
     scrollToBottom()
     event.target.value = '' // Сбрасываем input
     return
@@ -276,6 +509,22 @@ const handleFileUpload = async (event) => {
   reader.onload = (e) => {
     const fileContent = e.target.result
     
+    // Проверяем, что файл не пустой
+    if (!fileContent || fileContent.trim().length === 0) {
+      isEmptyFile.value = true
+      const errorMsg = '❌ Ошибка: Файл пустой. Загрузите файл с содержимым.'
+      messages.value.push({
+        role: 'user',
+        text: errorMsg,
+      })
+      saveChatMessage('user', errorMsg)
+      scrollToBottom()
+      return
+    }
+    
+    // Сбрасываем ошибку, если файл не пустой
+    isEmptyFile.value = false
+    
     // Сохраняем файл в переменную
     uploadedLogFile.value = {
       name: file.name,
@@ -285,10 +534,12 @@ const handleFileUpload = async (event) => {
     }
     
     // Уведомляем пользователя об успешной загрузке
+    const successMsg = `✅ Файл "${file.name}" успешно загружен (${(file.size / 1024).toFixed(2)} KB)`
     messages.value.push({
-      role: 'ai',
-      text: `✅ Файл "${file.name}" успешно загружен (${(file.size / 1024).toFixed(2)} KB)`,
+      role: 'user',
+      text: successMsg,
     })
+    saveChatMessage('user', successMsg)
     
     scrollToBottom()
     
@@ -296,10 +547,12 @@ const handleFileUpload = async (event) => {
   }
   
   reader.onerror = () => {
+    const errorMsg = '❌ Ошибка при чтении файла. Попробуйте снова.'
     messages.value.push({
-      role: 'ai',
-      text: '❌ Ошибка при чтении файла. Попробуйте снова.',
+      role: 'user',
+      text: errorMsg,
     })
+    saveChatMessage('user', errorMsg)
     scrollToBottom()
   }
   
@@ -307,6 +560,47 @@ const handleFileUpload = async (event) => {
   
   // Сбрасываем input для возможности повторной загрузки того же файла
   event.target.value = ''
+}
+
+const confirmNewChat = async () => {
+  try {
+    const userId = appStore.currentUser?.id
+    if (!userId) {
+      appStore.addNotification('Ошибка: пользователь не авторизован', 'error')
+      showNewChatModal.value = false
+      return
+    }
+
+    isLoading.value = true
+    showNewChatModal.value = false
+
+    // Очищаем сообщения в БД
+    await chat.clearMessages(userId)
+
+    // Очищаем локальный массив сообщений
+    messages.value = []
+
+    // Загружаем начальное приветствие и сохраняем его в БД
+    const welcomeMessage = 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?'
+    
+    messages.value.push({
+      role: 'ai',
+      text: welcomeMessage,
+      isNew: false,
+    })
+
+    // Сохраняем приветствие в БД
+    await saveChatMessage('assistant', welcomeMessage)
+
+    appStore.addNotification('Новый чат начат', 'success')
+    
+    scrollToBottom()
+  } catch (error) {
+    console.error('Error starting new chat:', error)
+    appStore.addNotification('Ошибка при создании нового чата', 'error')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const generateAIResponse = (question) => {
