@@ -11,4 +11,3 @@ if env_path.exists():
                 os.environ[key] = value
 
 GIGACHAT_API_KEY = os.getenv("GIGACHAT_API_KEY")
-print(GIGACHAT_API_KEY)
