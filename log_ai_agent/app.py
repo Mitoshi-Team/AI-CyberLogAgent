@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import asyncpg
@@ -329,7 +329,7 @@ async def get_reports_history(
             FROM public."Reports" r
             WHERE 1=1
         """
-        
+
         # Базовый SQL запрос для получения данных
         query = """
             SELECT 
@@ -350,7 +350,7 @@ async def get_reports_history(
 
         # Добавляем фильтры к обоим запросам
         filter_conditions = ""
-        
+
         if date_from:
             filter_conditions += f" AND r.created_at >= ${param_count}"
             params.append(datetime.fromisoformat(date_from.replace("Z", "+00:00")))
@@ -374,14 +374,14 @@ async def get_reports_history(
         # Добавляем фильтры к запросам
         count_query += filter_conditions
         query += filter_conditions
-        
+
         # Получаем общее количество записей
         total_row = await conn.fetchrow(count_query, *params)
         total = total_row["total"]
-        
+
         # Вычисляем offset
         offset = (page - 1) * page_size
-        
+
         # Добавляем сортировку, лимит и offset
         query += f" ORDER BY r.created_at DESC LIMIT ${param_count} OFFSET ${param_count + 1}"
         params.extend([page_size, offset])
@@ -412,9 +412,7 @@ async def get_reports_history(
         }
     except Exception as e:
         logger.error(f"Error getting reports history: {e}")
-        raise HTTPException(
-            status_code=500, detail="Ошибка получения истории отчетов"
-        )
+        raise HTTPException(status_code=500, detail="Ошибка получения истории отчетов")
 
 
 @app.get("/api/reports/filters")
@@ -451,9 +449,7 @@ async def get_reports_filters():
         }
     except Exception as e:
         logger.error(f"Error getting reports filters: {e}")
-        raise HTTPException(
-            status_code=500, detail="Ошибка получения фильтров отчетов"
-        )
+        raise HTTPException(status_code=500, detail="Ошибка получения фильтров отчетов")
 
 
 @app.get("/api/reports/{report_id}")
@@ -463,7 +459,8 @@ async def get_report_details(report_id: int):
         conn = await asyncpg.connect(DATABASE_URL, timeout=5)
 
         # Получаем отчет с логами
-        report = await conn.fetchrow("""
+        report = await conn.fetchrow(
+            """
             SELECT 
                 r.report_id,
                 r.description,
@@ -477,7 +474,9 @@ async def get_report_details(report_id: int):
             LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
             LEFT JOIN public."Logs" l ON r.log_id = l.log_id
             WHERE r.report_id = $1
-        """, report_id)
+        """,
+            report_id,
+        )
 
         await conn.close()
 
@@ -496,9 +495,7 @@ async def get_report_details(report_id: int):
         raise
     except Exception as e:
         logger.error(f"Error getting report details: {e}")
-        raise HTTPException(
-            status_code=500, detail="Ошибка получения деталей отчета"
-        )
+        raise HTTPException(status_code=500, detail="Ошибка получения деталей отчета")
 
 
 # --- CLI Commands ---
