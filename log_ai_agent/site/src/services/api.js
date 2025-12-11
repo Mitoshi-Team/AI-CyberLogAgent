@@ -80,8 +80,12 @@ export const statistics = {
  * Работа с чатом
  */
 export const chat = {
-  send: (message) => apiClient.post('/chat/message', { message }),
-  history: (limit = 50) => apiClient.get('/chat/history', { params: { limit } }),
+  sendMessage: (userId, role, content) => 
+    apiClient.post('/chat/messages', { user_id: userId, role, content }),
+  getMessages: (userId, limit = 50) => 
+    apiClient.get('/chat/messages', { params: { user_id: userId, limit } }),
+  clearMessages: (userId) => 
+    apiClient.delete('/chat/messages', { params: { user_id: userId } }),
 }
 
 /**

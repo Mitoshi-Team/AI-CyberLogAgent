@@ -72,13 +72,27 @@ class LoginResponse(BaseModel):
     token: str | None = None
 
 
+class ChatMessageRequest(BaseModel):
+    user_id: int
+    role: str  # 'user' или 'assistant'
+    content: str
+
+
+class ChatMessageResponse(BaseModel):
+    message_id: int
+    user_id: int
+    role: str
+    content: str
+    created_at: str
+
+
 @app.get("/")
 async def root():
     """Главная страница API"""
     return {"message": "AI CyberLog Agent API", "status": "running", "version": "1.0.0"}
 
 
-@app.post("/auth/login", response_model=LoginResponse)
+@app.post("/api/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """Аутентификация пользователя"""
     try:
@@ -496,6 +510,102 @@ async def get_report_details(report_id: int):
     except Exception as e:
         logger.error(f"Error getting report details: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения деталей отчета")
+
+
+@app.post("/api/chat/messages", response_model=ChatMessageResponse)
+async def save_chat_message(request: ChatMessageRequest):
+    """Сохранение сообщения в чат"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Сохраняем сообщение в базу данных
+        row = await conn.fetchrow(
+            """
+            INSERT INTO public."Messages" (user_id, role, content, created_at)
+            VALUES ($1, $2, $3, NOW())
+            RETURNING message_id, user_id, role, content, created_at
+        """,
+            request.user_id,
+            request.role,
+            request.content,
+        )
+
+        await conn.close()
+
+        return ChatMessageResponse(
+            message_id=row["message_id"],
+            user_id=row["user_id"],
+            role=row["role"],
+            content=row["content"],
+            created_at=row["created_at"].isoformat(),
+        )
+    except Exception as e:
+        logger.error(f"Error saving chat message: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сохранения сообщения")
+
+
+@app.get("/api/chat/messages")
+async def get_chat_messages(user_id: int, limit: int = 50):
+    """Получение последних сообщений чата"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем последние N сообщений для пользователя
+        rows = await conn.fetch(
+            """
+            SELECT message_id, user_id, role, content, created_at
+            FROM public."Messages"
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+        """,
+            user_id,
+            limit,
+        )
+
+        await conn.close()
+
+        # Возвращаем в обратном порядке (от старых к новым)
+        messages = [
+            {
+                "message_id": row["message_id"],
+                "user_id": row["user_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "created_at": row["created_at"].isoformat(),
+            }
+            for row in reversed(rows)
+        ]
+
+        return {"data": messages, "total": len(messages)}
+    except Exception as e:
+        logger.error(f"Error getting chat messages: {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка получения сообщений чата"
+        )
+
+
+@app.delete("/api/chat/messages")
+async def clear_chat_messages(user_id: int):
+    """Очистка всех сообщений чата пользователя"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Удаляем все сообщения пользователя
+        result = await conn.execute(
+            """
+            DELETE FROM public."Messages"
+            WHERE user_id = $1
+        """,
+            user_id,
+        )
+
+        await conn.close()
+
+        return {"success": True, "message": "Чат очищен"}
+    except Exception as e:
+        logger.error(f"Error clearing chat messages: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка очистки чата")
 
 
 # --- CLI Commands ---
