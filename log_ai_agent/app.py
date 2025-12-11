@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import asyncpg
@@ -307,6 +308,194 @@ async def get_activity_statistics(
         raise HTTPException(
             status_code=500, detail="Ошибка получения статистики активности"
         )
+
+
+@app.get("/api/reports/history")
+async def get_reports_history(
+    date_from: str = None,
+    date_to: str = None,
+    severity_level_id: int = None,
+    threat_type_id: int = None,
+    page: int = 1,
+    page_size: int = 10,
+):
+    """Получение истории отчетов с фильтрацией и пагинацией"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Базовый SQL запрос для подсчета общего количества
+        count_query = """
+            SELECT COUNT(*) as total
+            FROM public."Reports" r
+            WHERE 1=1
+        """
+
+        # Базовый SQL запрос для получения данных
+        query = """
+            SELECT 
+                r.report_id,
+                r.description,
+                r.created_at,
+                sl.severity_level_id,
+                sl.name as severity_name,
+                tt.threat_type_id,
+                tt.name as threat_name
+            FROM public."Reports" r
+            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
+            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
+            WHERE 1=1
+        """
+        params = []
+        param_count = 1
+
+        # Добавляем фильтры к обоим запросам
+        filter_conditions = ""
+
+        if date_from:
+            filter_conditions += f" AND r.created_at >= ${param_count}"
+            params.append(datetime.fromisoformat(date_from.replace("Z", "+00:00")))
+            param_count += 1
+
+        if date_to:
+            filter_conditions += f" AND r.created_at <= ${param_count}"
+            params.append(datetime.fromisoformat(date_to.replace("Z", "+00:00")))
+            param_count += 1
+
+        if severity_level_id:
+            filter_conditions += f" AND r.severity_level_id = ${param_count}"
+            params.append(severity_level_id)
+            param_count += 1
+
+        if threat_type_id:
+            filter_conditions += f" AND r.threat_type_id = ${param_count}"
+            params.append(threat_type_id)
+            param_count += 1
+
+        # Добавляем фильтры к запросам
+        count_query += filter_conditions
+        query += filter_conditions
+
+        # Получаем общее количество записей
+        total_row = await conn.fetchrow(count_query, *params)
+        total = total_row["total"]
+
+        # Вычисляем offset
+        offset = (page - 1) * page_size
+
+        # Добавляем сортировку, лимит и offset
+        query += f" ORDER BY r.created_at DESC LIMIT ${param_count} OFFSET ${param_count + 1}"
+        params.extend([page_size, offset])
+
+        rows = await conn.fetch(query, *params)
+        await conn.close()
+
+        # Форматируем результаты
+        result = [
+            {
+                "id": row["report_id"],
+                "description": row["description"],
+                "created_at": row["created_at"].isoformat(),
+                "severity_level_id": row["severity_level_id"],
+                "severity_name": row["severity_name"],
+                "threat_type_id": row["threat_type_id"],
+                "threat_name": row["threat_name"],
+            }
+            for row in rows
+        ]
+
+        return {
+            "data": result,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size,
+        }
+    except Exception as e:
+        logger.error(f"Error getting reports history: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения истории отчетов")
+
+
+@app.get("/api/reports/filters")
+async def get_reports_filters():
+    """Получение всех доступных фильтров для отчетов"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем уровни серьезности
+        severity_levels = await conn.fetch("""
+            SELECT severity_level_id, name
+            FROM public."SeverityLevels"
+            ORDER BY severity_level_id
+        """)
+
+        # Получаем типы угроз
+        threat_types = await conn.fetch("""
+            SELECT threat_type_id, name
+            FROM public."ThreatTypes"
+            ORDER BY threat_type_id
+        """)
+
+        await conn.close()
+
+        return {
+            "severity_levels": [
+                {"id": row["severity_level_id"], "name": row["name"]}
+                for row in severity_levels
+            ],
+            "threat_types": [
+                {"id": row["threat_type_id"], "name": row["name"]}
+                for row in threat_types
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting reports filters: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения фильтров отчетов")
+
+
+@app.get("/api/reports/{report_id}")
+async def get_report_details(report_id: int):
+    """Получение детальной информации об отчете"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+
+        # Получаем отчет с логами
+        report = await conn.fetchrow(
+            """
+            SELECT 
+                r.report_id,
+                r.description,
+                r.created_at,
+                r.log_id,
+                sl.name as severity_name,
+                tt.name as threat_name,
+                l.file_content
+            FROM public."Reports" r
+            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
+            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
+            LEFT JOIN public."Logs" l ON r.log_id = l.log_id
+            WHERE r.report_id = $1
+        """,
+            report_id,
+        )
+
+        await conn.close()
+
+        if not report:
+            raise HTTPException(status_code=404, detail="Отчет не найден")
+
+        return {
+            "id": report["report_id"],
+            "description": report["description"],
+            "created_at": report["created_at"].isoformat(),
+            "severity_name": report["severity_name"],
+            "threat_name": report["threat_name"],
+            "file_content": report["file_content"] or "Логи отсутствуют",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting report details: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения деталей отчета")
 
 
 # --- CLI Commands ---

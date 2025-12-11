@@ -84,4 +84,13 @@ export const chat = {
   history: (limit = 50) => apiClient.get('/chat/history', { params: { limit } }),
 }
 
+/**
+ * Работа с отчетами
+ */
+export const reports = {
+  history: (params) => apiClient.get('/reports/history', { params }),
+  filters: () => apiClient.get('/reports/filters'),
+  details: (id) => apiClient.get(`/reports/${id}`),
+}
+
 export default apiClient

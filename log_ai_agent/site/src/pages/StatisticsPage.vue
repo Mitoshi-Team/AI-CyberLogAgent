@@ -96,17 +96,27 @@
         <div v-if="loadingActivity" class="text-center py-8 text-dark-400 text-sm sm:text-base">
           Загрузка данных активности...
         </div>
-        <div v-else class="h-48 sm:h-56 md:h-64 flex items-end justify-center gap-1 sm:gap-2 overflow-x-auto">
-          <div v-for="(item, index) in activityData" :key="index" class="flex flex-col items-center gap-1 sm:gap-2 group flex-shrink-0">
+        <div v-else class="h-48 sm:h-56 md:h-64 flex items-end justify-center gap-1 sm:gap-2 overflow-x-auto pt-2">
+          <div v-for="(item, index) in activityData" :key="index" class="flex flex-col items-center gap-1 sm:gap-2 group flex-shrink-0 relative">
             <div
-              class="bg-gradient-to-t from-primary-600 to-primary-500 rounded-t-lg hover:from-primary-500 hover:to-primary-400 transition-all duration-300 shadow-lg shadow-primary-500/20 group-hover:shadow-primary-500/40 cursor-pointer relative overflow-hidden"
+              class="bg-gradient-to-t from-primary-600 to-primary-500 rounded-t-lg hover:from-primary-500 hover:to-primary-400 transition-all duration-300 shadow-lg shadow-primary-500/20 group-hover:shadow-primary-500/40 cursor-pointer relative overflow-visible"
               :class="periodType === 'week' ? 'w-8 sm:w-10' : 'w-4 sm:w-6'"
               :style="{ height: Math.max(item.count * 20, 4) + 'px' }"
             >
               <div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-dark-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                {{ item.count }} {{ pluralize(item.count, 'инцидент', 'инцидента', 'инцидентов') }}
-              </div>
+            </div>
+            <!-- Подсказка справа для высоких столбиков, сверху для низких -->
+            <div 
+              v-if="item.count * 20 > 150"
+              class="absolute left-full ml-2 top-0 bg-dark-900 text-white text-xs px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-dark-700"
+            >
+              {{ item.count }} {{ pluralize(item.count, 'инцидент', 'инцидента', 'инцидентов') }}
+            </div>
+            <div 
+              v-else
+              class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-dark-900 text-white text-xs px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-dark-700"
+            >
+              {{ item.count }} {{ pluralize(item.count, 'инцидент', 'инцидента', 'инцидентов') }}
             </div>
             <span class="text-xs text-dark-500 group-hover:text-dark-400 transition-colors">{{ getLabel(index, item.date) }}</span>
           </div>
@@ -172,7 +182,12 @@ async function loadSeverityStats() {
 async function loadThreatStats() {
   try {
     const response = await statistics.threats()
-    threatStats.value = response.data.data
+    // Сортируем так, чтобы "Другое" было в конце
+    threatStats.value = response.data.data.sort((a, b) => {
+      if (a.name === 'Другое') return 1
+      if (b.name === 'Другое') return -1
+      return 0
+    })
   } catch (error) {
     console.error('Ошибка загрузки статистики по угрозам:', error)
   }
