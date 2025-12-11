@@ -36,7 +36,7 @@ def load_rag_context() -> Dict:
     context = {}
     if not os.path.exists(RAG_CONTEXT_DIR):
         os.makedirs(RAG_CONTEXT_DIR)
-        
+
     # Load all JSON files from RAG context directory
     for filename in os.listdir(RAG_CONTEXT_DIR):
         if filename.endswith(".json"):
@@ -48,7 +48,7 @@ def load_rag_context() -> Dict:
                     context[context_key] = json.load(f)
             except Exception as e:
                 print(f"Error loading RAG context file {filename}: {e}")
-    
+
     return context
 
 
@@ -78,15 +78,12 @@ def get_chat_history(user_id: int) -> List[Dict]:
         )
         rows = cur.fetchall()
         return [
-            {"role": row[0], "content": row[1], "created_at": row[2]} 
+            {"role": row[0], "content": row[1], "created_at": row[2]}
             for row in rows
         ]
     finally:
         cur.close()
         conn.close()
-
-
-
 
 
 def process_user_input(user_id: int, user_input: str, rag_context: Dict) -> str:
@@ -126,39 +123,31 @@ def process_user_input(user_id: int, user_input: str, rag_context: Dict) -> str:
 
     # Save response
     save_message(user_id, "assistant", response)
-    
+
     return response
 
 
 def main():
     """Main function to run the chatbot."""
     print("Привет! Я ассистент по кибербезопасности. Введите 'exit' для выхода.")
-    
+
     # Load RAG context
     rag_context = load_rag_context()
-    
+
     # Simulate user session
     user_id = 1  # In real application, this would come from authentication
-    
+
     # Load chat history
     history = get_chat_history(user_id)
     for msg in history:
         print(f"{msg['role']}: {msg['content']}")
-    
-    while True:
-        try:
-            user_input = input("\nВы: ")
-            
-            if user_input.lower() == "exit":
-                break
-            
-            response = process_user_input(user_id, user_input, rag_context)
-            print(f"Ассистент: {response}")
-            
-        except KeyboardInterrupt:
-            break
-    
-    print("\nДо свидания!")
+
+    user_input = input("\nВы: ")
+    response = process_user_input(user_id, user_input, rag_context)
+    print(f"Ассистент: {response}")
+
+
+
 
 if __name__ == "__main__":
     main()
