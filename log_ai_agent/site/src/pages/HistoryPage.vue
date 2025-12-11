@@ -57,7 +57,6 @@
           <thead>
             <tr class="border-b border-dark-800">
               <th class="text-left py-3 px-4 font-semibold text-dark-300">Дата и время</th>
-              <th class="text-left py-3 px-4 font-semibold text-dark-300">Описание</th>
               <th class="text-left py-3 px-4 font-semibold text-dark-300">Тип угрозы</th>
               <th class="text-left py-3 px-4 font-semibold text-dark-300">Уровень серьезности</th>
               <th class="text-right py-3 px-4 font-semibold text-dark-300">Действия</th>
@@ -70,7 +69,6 @@
               class="border-b border-dark-800 hover:bg-dark-800/30 transition-colors"
             >
               <td class="py-3 px-4 text-sm text-dark-400">{{ formatDateTime(report.created_at) }}</td>
-              <td class="py-3 px-4 text-sm font-medium text-white">{{ truncateDescription(report.description) }}</td>
               <td class="py-3 px-4 text-sm text-dark-400">{{ report.threat_name }}</td>
               <td class="py-3 px-4">
                 <span :class="['badge', getSeverityBadgeClass(report.severity_name)]">
@@ -182,7 +180,7 @@
           <!-- Описание -->
           <div>
             <h3 class="text-sm font-semibold text-dark-400 mb-2">Описание</h3>
-            <p class="text-white whitespace-pre-wrap">{{ selectedReport.description }}</p>
+            <div class="text-white markdown-content" v-html="renderMarkdown(selectedReport.description)"></div>
           </div>
 
           <!-- Логи -->
@@ -202,6 +200,8 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { reports } from '../services/api'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const router = useRouter()
 
@@ -225,6 +225,13 @@ const totalPages = ref(0)
 const showModal = ref(false)
 const loadingModal = ref(false)
 const selectedReport = ref(null)
+
+// Рендер markdown с санитизацией
+const renderMarkdown = (text) => {
+  if (!text) return ''
+  const rawHtml = marked.parse(text)
+  return DOMPurify.sanitize(rawHtml)
+}
 
 // Загрузка фильтров
 async function loadFilters() {

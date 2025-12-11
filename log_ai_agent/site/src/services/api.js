@@ -86,6 +86,8 @@ export const chat = {
     apiClient.get('/chat/messages', { params: { user_id: userId, limit } }),
   clearMessages: (userId) => 
     apiClient.delete('/chat/messages', { params: { user_id: userId } }),
+  sendToAI: (userId, message) =>
+    apiClient.post('/chat/send', { user_id: userId, message }),
 }
 
 /**
@@ -95,6 +97,22 @@ export const reports = {
   history: (params) => apiClient.get('/reports/history', { params }),
   filters: () => apiClient.get('/reports/filters'),
   details: (id) => apiClient.get(`/reports/${id}`),
+}
+
+/**
+ * Работа с логами
+ */
+export const logs = {
+  upload: (userId, file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    return apiClient.post(`/logs/upload?user_id=${userId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
 }
 
 export default apiClient

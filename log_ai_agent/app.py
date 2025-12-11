@@ -7,11 +7,13 @@ from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from log_ai_agent.config import commands
+from log_ai_agent.ai_agent.gigachat_async import process_chat_message, clear_user_context
+from log_ai_agent.ai_agent.log_analysis_service import process_log_file
 
 # Загрузка переменных окружения из .env файла
 env_path = Path(__file__).parent / ".env"
@@ -585,25 +587,161 @@ async def get_chat_messages(user_id: int, limit: int = 50):
 
 @app.delete("/api/chat/messages")
 async def clear_chat_messages(user_id: int):
-    """Очистка всех сообщений чата пользователя"""
+    """Очистка всех сообщений чата пользователя и контекста GigaChat агента"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        # Используем специальную функцию для очистки контекста
+        deleted_count = await clear_user_context(user_id, DATABASE_URL)
+        
+        logger.info(f"Chat cleared for user {user_id}: {deleted_count} messages deleted, GigaChat context reset")
 
-        # Удаляем все сообщения пользователя
-        result = await conn.execute(
-            """
-            DELETE FROM public."Messages"
-            WHERE user_id = $1
-        """,
-            user_id,
-        )
-
-        await conn.close()
-
-        return {"success": True, "message": "Чат очищен"}
+        return {
+            "success": True, 
+            "message": "Чат и контекст GigaChat очищены",
+            "deleted_count": deleted_count
+        }
     except Exception as e:
         logger.error(f"Error clearing chat messages: {e}")
         raise HTTPException(status_code=500, detail="Ошибка очистки чата")
+
+
+class ChatSendRequest(BaseModel):
+    user_id: int
+    message: str
+
+
+class ChatSendResponse(BaseModel):
+    success: bool
+    user_message: str
+    agent_response: str
+    message: str | None = None
+
+
+@app.post("/api/chat/send", response_model=ChatSendResponse)
+async def send_chat_message(request: ChatSendRequest):
+    """
+    Отправить сообщение AI агенту и получить ответ.
+    
+    Процесс:
+    1. Сохраняет сообщение пользователя в БД с ролью 'user'
+    2. Получает последние 20 сообщений для контекста
+    3. Отправляет в GigaChat для получения ответа
+    4. Сохраняет ответ в БД с ролью 'agent'
+    5. Возвращает ответ агента
+    """
+    try:
+        # Проверяем, что сообщение не пустое
+        if not request.message or not request.message.strip():
+            raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
+        
+        # Обрабатываем сообщение через GigaChat
+        agent_response = await process_chat_message(
+            user_id=request.user_id,
+            user_message=request.message,
+            database_url=DATABASE_URL
+        )
+        
+        logger.info(f"Chat message processed for user {request.user_id}")
+        
+        return ChatSendResponse(
+            success=True,
+            user_message=request.message,
+            agent_response=agent_response,
+            message="Сообщение успешно обработано"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing chat message: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ошибка обработки сообщения: {str(e)}"
+        )
+
+
+@app.post("/api/logs/upload")
+async def upload_log_file(
+    user_id: int,
+    file: UploadFile = File(...)
+):
+    """
+    Загрузка и анализ лог-файла.
+    
+    Процесс:
+    1. Проверка формата файла (.log)
+    2. Классический анализ логов
+    3. Сохранение в таблицу Logs
+    4. Анализ через GigaChat с учетом ThreatTypes и SeverityLevels
+    5. Создание отчета в таблице Reports
+    6. Возврат результатов пользователю
+    """
+    try:
+        # Проверяем расширение файла
+        if not file.filename.endswith('.log'):
+            raise HTTPException(
+                status_code=400, 
+                detail="Можно загружать только файлы с расширением .log"
+            )
+        
+        # Читаем содержимое файла
+        file_content = await file.read()
+        
+        # Декодируем содержимое
+        try:
+            content_str = file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                content_str = file_content.decode('windows-1251')
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Не удалось декодировать файл. Используйте UTF-8 или Windows-1251"
+                )
+        
+        # Проверяем, что файл не пустой
+        if not content_str or len(content_str.strip()) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Файл пустой. Загрузите файл с содержимым."
+            )
+        
+        logger.info(
+            f"Получен файл {file.filename} от пользователя {user_id}, "
+            f"размер: {len(content_str)} байт"
+        )
+        
+        # Обрабатываем файл через полный цикл анализа
+        result = await process_log_file(
+            user_id=user_id,
+            filename=file.filename,
+            file_content=content_str,
+            database_url=DATABASE_URL
+        )
+        
+        if result["success"]:
+            logger.info(
+                f"Файл {file.filename} успешно обработан. "
+                f"Log ID: {result['log_id']}, Report ID: {result['report_id']}"
+            )
+            
+            return {
+                "success": True,
+                "gigachat_analysis": result["gigachat_analysis"]
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Ошибка при обработке файла")
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading log file: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при загрузке файла: {str(e)}"
+        )
 
 
 # --- CLI Commands ---

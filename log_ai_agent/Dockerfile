@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e .
 
 # Установка дополнительных зависимостей для веб-сервера
-RUN pip install --no-cache-dir fastapi uvicorn[standard] psycopg2-binary sqlalchemy
+RUN pip install --no-cache-dir fastapi uvicorn[standard] psycopg2-binary sqlalchemy python-multipart
 
 WORKDIR /app/log_ai_agent
 

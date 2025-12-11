@@ -50,7 +50,10 @@
                     Новое сообщение
                   </span>
                 </div>
-                <p class="text-base leading-relaxed text-dark-200 text-left">{{ msg.text }}</p>
+                <div 
+                  class="markdown-content text-base leading-relaxed text-dark-200 text-left"
+                  v-html="renderMarkdown(msg.text)"
+                ></div>
                 <p class="text-xs text-dark-500 mt-2 text-left">AI Cyber Log</p>
               </div>
             </div>
@@ -185,7 +188,8 @@
         <!-- Содержимое модального окна -->
         <div class="p-6">
           <p class="text-dark-300 mb-6">
-            Вы уверены, что хотите начать новый чат? Все сообщения будут удалены.
+            Вы уверены, что хотите начать новый чат? Все сообщения будут удалены, 
+            а контекст GigaChat агента будет полностью очищен.
           </p>
           <div class="flex gap-3 justify-end">
             <button
@@ -212,7 +216,26 @@
 import { ref, nextTick, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRoute } from 'vue-router'
-import { chat } from '@/services/api'
+import { chat, logs } from '@/services/api'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+
+// Настройка marked для безопасного рендеринга
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  headerIds: false,
+  mangle: false
+})
+
+// Функция для безопасного преобразования markdown в HTML
+const renderMarkdown = (text) => {
+  const rawHtml = marked.parse(text)
+  return DOMPurify.sanitize(rawHtml, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'code', 'pre', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class']
+  })
+}
 
 const appStore = useAppStore()
 const route = useRoute()
@@ -266,7 +289,7 @@ const loadChatHistory = async () => {
     if (response.data && response.data.data && response.data.data.length > 0) {
       // Преобразуем сообщения из БД в формат компонента
       messages.value = response.data.data.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'ai',
+        role: msg.role === 'user' ? 'user' : 'ai',  // 'assistant' или 'agent' -> 'ai'
         text: msg.content,
         isNew: false,
       }))
@@ -438,9 +461,6 @@ const sendMessage = async () => {
 
   const userMessage = inputMessage.value
   
-  // Сохраняем сообщение пользователя в БД
-  await saveChatMessage('user', userMessage)
-  
   inputMessage.value = ''
   isLoading.value = true
   
@@ -449,13 +469,21 @@ const sendMessage = async () => {
   
   scrollToBottom()
 
-  // Имитация ответа AI
-  setTimeout(async () => {
+  // Отправляем сообщение AI агенту через API
+  try {
+    const userId = appStore.currentUser?.id
+    if (!userId) {
+      throw new Error('User not authenticated')
+    }
+
+    // Вызываем новый endpoint для обработки сообщения с AI
+    const response = await chat.sendToAI(userId, userMessage)
+    
     const isOnChatPage = route.path === '/chat'
     const isTabVisible = document.visibilityState === 'visible'
     const shouldNotify = !isOnChatPage || !isTabVisible
     
-    const aiResponse = generateAIResponse(userMessage)
+    const aiResponse = response.data.agent_response
     
     messages.value.push({
       role: 'ai',
@@ -463,18 +491,27 @@ const sendMessage = async () => {
       isNew: shouldNotify, // Помечаем как новое, если пользователь не видит чат
     })
     
-    // Сохраняем сообщение AI в БД
-    await saveChatMessage('assistant', aiResponse)
-    
     // Если пользователь не видит чат (другая страница или вкладка), увеличиваем счетчик и отправляем уведомление
     if (shouldNotify) {
       appStore.addUnreadChatMessage()
       appStore.addNotification('Новый ответ от AI агента в чате', 'info', 5000, true) // playSound = true
     }
     
+  } catch (error) {
+    console.error('Error sending message to AI:', error)
+    
+    // Показываем сообщение об ошибке пользователю
+    messages.value.push({
+      role: 'ai',
+      text: 'Извините, произошла ошибка при обработке вашего сообщения. Попробуйте еще раз позже.',
+      isNew: false,
+    })
+    
+    appStore.addNotification('Ошибка при отправке сообщения AI агенту', 'error')
+  } finally {
     isLoading.value = false
     scrollToBottom()
-  }, 1500)
+  }
 }
 
 const selectQuickQuestion = (question) => {
@@ -486,6 +523,13 @@ const handleFileUpload = async (event) => {
   const file = event.target.files[0]
   
   if (!file) return
+  
+  const userId = appStore.currentUser?.id
+  if (!userId) {
+    appStore.addNotification('Ошибка: пользователь не авторизован', 'error')
+    event.target.value = ''
+    return
+  }
   
   // Сбрасываем состояние ошибки пустого файла
   isEmptyFile.value = false
@@ -503,63 +547,64 @@ const handleFileUpload = async (event) => {
     return
   }
   
-  // Читаем содержимое файла
-  const reader = new FileReader()
+  // Показываем сообщение о загрузке
+  const uploadMsg = `📤 Загрузка файла "${file.name}" (${(file.size / 1024).toFixed(2)} KB)...`
+  messages.value.push({
+    role: 'user',
+    text: uploadMsg,
+  })
+  await saveChatMessage('user', uploadMsg)
+  scrollToBottom()
   
-  reader.onload = (e) => {
-    const fileContent = e.target.result
+  // Устанавливаем состояние загрузки
+  isLoading.value = true
+  
+  try {
+    // Отправляем файл на сервер для анализа
+    const response = await logs.upload(userId, file)
     
-    // Проверяем, что файл не пустой
-    if (!fileContent || fileContent.trim().length === 0) {
-      isEmptyFile.value = true
-      const errorMsg = '❌ Ошибка: Файл пустой. Загрузите файл с содержимым.'
+    if (response.data.success) {
+      // Показываем только анализ от GigaChat
+      const analysisMsg = response.data.gigachat_analysis
+      
       messages.value.push({
-        role: 'user',
-        text: errorMsg,
+        role: 'ai',
+        text: analysisMsg,
+        isNew: false,
       })
-      saveChatMessage('user', errorMsg)
-      scrollToBottom()
-      return
+      
+      // Сохраняем ответ в БД
+      await saveChatMessage('agent', analysisMsg)
+      
+      appStore.addNotification(
+        `Файл ${file.name} успешно проанализирован`,
+        'success'
+      )
+    } else {
+      throw new Error(response.data.message || 'Ошибка при анализе файла')
     }
     
-    // Сбрасываем ошибку, если файл не пустой
-    isEmptyFile.value = false
+  } catch (error) {
+    console.error('Error uploading log file:', error)
     
-    // Сохраняем файл в переменную
-    uploadedLogFile.value = {
-      name: file.name,
-      size: file.size,
-      content: fileContent,
-      uploadedAt: new Date().toISOString(),
-    }
+    const errorMsg = `❌ **Ошибка при анализе файла**
+
+${error.response?.data?.detail || error.message || 'Неизвестная ошибка'}`
     
-    // Уведомляем пользователя об успешной загрузке
-    const successMsg = `✅ Файл "${file.name}" успешно загружен (${(file.size / 1024).toFixed(2)} KB)`
     messages.value.push({
-      role: 'user',
-      text: successMsg,
-    })
-    saveChatMessage('user', successMsg)
-    
-    scrollToBottom()
-    
-    console.log('Загруженный файл:', uploadedLogFile.value)
-  }
-  
-  reader.onerror = () => {
-    const errorMsg = '❌ Ошибка при чтении файла. Попробуйте снова.'
-    messages.value.push({
-      role: 'user',
+      role: 'ai',
       text: errorMsg,
+      isNew: false,
     })
-    saveChatMessage('user', errorMsg)
+    
+    await saveChatMessage('agent', errorMsg)
+    
+    appStore.addNotification('Ошибка при анализе файла логов', 'error')
+  } finally {
+    isLoading.value = false
     scrollToBottom()
+    event.target.value = '' // Сбрасываем input
   }
-  
-  reader.readAsText(file)
-  
-  // Сбрасываем input для возможности повторной загрузки того же файла
-  event.target.value = ''
 }
 
 const confirmNewChat = async () => {
@@ -574,8 +619,8 @@ const confirmNewChat = async () => {
     isLoading.value = true
     showNewChatModal.value = false
 
-    // Очищаем сообщения в БД
-    await chat.clearMessages(userId)
+    // Очищаем сообщения в БД и контекст GigaChat
+    const response = await chat.clearMessages(userId)
 
     // Очищаем локальный массив сообщений
     messages.value = []
@@ -589,10 +634,15 @@ const confirmNewChat = async () => {
       isNew: false,
     })
 
-    // Сохраняем приветствие в БД
-    await saveChatMessage('assistant', welcomeMessage)
+    // Сохраняем приветствие в БД с ролью 'agent'
+    await chat.sendMessage(userId, 'agent', welcomeMessage)
 
-    appStore.addNotification('Новый чат начат', 'success')
+    // Показываем уведомление с информацией об очистке
+    const deletedCount = response.data?.deleted_count || 0
+    appStore.addNotification(
+      `Новый чат начат`, 
+      'success'
+    )
     
     scrollToBottom()
   } catch (error) {
@@ -602,21 +652,150 @@ const confirmNewChat = async () => {
     isLoading.value = false
   }
 }
-
-const generateAIResponse = (question) => {
-  const responses = {
-    'статистика': 'На данный момент обнаружено 10 инцидентов, из них 2 критичных и 3 подозрительных.',
-    'рекомендации': 'Рекомендую активировать двухфакторную аутентификацию, обновить список блокируемых IP и увеличить мониторинг.',
-    'анализ': 'Последний инцидент был связан с попыткой несанкционированного доступа. Предполагаемый источник заблокирован.',
-    'тренды': 'В последнюю неделю наблюдается рост попыток атак на SSH. Рекомендую усилить контроль доступа.',
-  }
-
-  for (const [key, response] of Object.entries(responses)) {
-    if (question.toLowerCase().includes(key)) {
-      return response
-    }
-  }
-
-  return 'Спасибо за вопрос. Я анализирую данные и выполняю необходимые проверки. Результаты будут готовы вскоре.'
-}
 </script>
+<style scoped>
+/* Стили для markdown контента */
+.markdown-content :deep(p) {
+  margin: 0.5em 0;
+}
+
+.markdown-content :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-content :deep(strong) {
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.markdown-content :deep(em) {
+  font-style: italic;
+}
+
+.markdown-content :deep(code) {
+  background-color: rgba(79, 70, 229, 0.1);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #c4b5fd;
+}
+
+.markdown-content :deep(pre) {
+  background-color: rgba(17, 24, 39, 0.8);
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.markdown-content :deep(pre code) {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #e5e7eb;
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-content :deep(li) {
+  margin: 4px 0;
+}
+
+.markdown-content :deep(ul li) {
+  list-style-type: disc;
+}
+
+.markdown-content :deep(ol li) {
+  list-style-type: decimal;
+}
+
+.markdown-content :deep(blockquote) {
+  border-left: 4px solid rgba(79, 70, 229, 0.5);
+  padding-left: 12px;
+  margin: 12px 0;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.markdown-content :deep(h1),
+.markdown-content :deep(h2),
+.markdown-content :deep(h3),
+.markdown-content :deep(h4),
+.markdown-content :deep(h5),
+.markdown-content :deep(h6) {
+  font-weight: 600;
+  margin: 16px 0 8px 0;
+  color: #f3f4f6;
+}
+
+.markdown-content :deep(h1) {
+  font-size: 1.5em;
+  border-bottom: 2px solid rgba(79, 70, 229, 0.3);
+  padding-bottom: 8px;
+}
+
+.markdown-content :deep(h2) {
+  font-size: 1.3em;
+}
+
+.markdown-content :deep(h3) {
+  font-size: 1.15em;
+}
+
+.markdown-content :deep(h4) {
+  font-size: 1.05em;
+}
+
+.markdown-content :deep(a) {
+  color: #818cf8;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.markdown-content :deep(a:hover) {
+  color: #a5b4fc;
+}
+
+.markdown-content :deep(hr) {
+  border: none;
+  border-top: 1px solid rgba(79, 70, 229, 0.3);
+  margin: 16px 0;
+}
+
+.markdown-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 0.9em;
+}
+
+.markdown-content :deep(th),
+.markdown-content :deep(td) {
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.markdown-content :deep(th) {
+  background-color: rgba(79, 70, 229, 0.2);
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.markdown-content :deep(tr:nth-child(even)) {
+  background-color: rgba(17, 24, 39, 0.3);
+}
+</style>

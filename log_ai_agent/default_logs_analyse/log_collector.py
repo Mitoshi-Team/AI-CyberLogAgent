@@ -3,7 +3,7 @@
 import shutil
 from pathlib import Path
 
-from settings import (
+from .settings import (
     IGNORED_PATHS,
     LOG_FILE_PATTERN,
     PROCESSED_LOG_PATH,

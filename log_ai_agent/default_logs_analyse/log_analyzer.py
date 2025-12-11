@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from settings import (
+from .settings import (
     INCIDENTS_OUTPUT_PATH,
     LOG_FILE_ENCODING,
     PROCESSED_LOG_PATH,
