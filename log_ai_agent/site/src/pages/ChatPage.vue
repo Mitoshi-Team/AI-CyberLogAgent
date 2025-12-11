@@ -22,7 +22,21 @@
               </div>
               
               <!-- Сообщение агента - сплошной текст с подписью -->
-              <div v-else>
+              <div 
+                v-else
+                :class="[
+                  'p-4 rounded-lg transition-all duration-500',
+                  msg.isNew ? 'bg-primary-500/10 border-l-4 border-primary-500 shadow-lg shadow-primary-500/20' : ''
+                ]"
+              >
+                <div v-if="msg.isNew" class="flex items-center gap-2 mb-2">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-500/20 text-primary-400 text-xs font-medium rounded-full animate-pulse">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+                    </svg>
+                    Новый отчёт
+                  </span>
+                </div>
                 <p class="text-base leading-relaxed text-dark-200 text-left">{{ msg.text }}</p>
                 <p class="text-xs text-dark-500 mt-2 text-left">AI Cyber Log</p>
               </div>
@@ -128,10 +142,12 @@
 </template>
 
 <script setup>
-import { ref, nextTick, computed, onMounted } from 'vue'
+import { ref, nextTick, computed, onMounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useRoute } from 'vue-router'
 
 const appStore = useAppStore()
+const route = useRoute()
 const chatContainer = ref(null)
 const fileInput = ref(null)
 const messageInput = ref(null)
@@ -149,8 +165,20 @@ const messages = ref([
   {
     role: 'ai',
     text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+    isNew: false,
   },
 ])
+
+// Очистка счетчика непрочитанных при открытии/переходе на страницу чата
+watch(() => route.path, (newPath) => {
+  if (newPath === '/chat') {
+    appStore.clearUnreadChatMessages()
+    // Убираем подсветку "новое" со всех сообщений
+    messages.value.forEach(msg => {
+      msg.isNew = false
+    })
+  }
+}, { immediate: true })
 
 // Проверка возможности отправки сообщения
 const canSendMessage = computed(() => {
@@ -240,10 +268,22 @@ const sendMessage = async () => {
 
   // Имитация ответа AI
   setTimeout(() => {
+    const isOnChatPage = route.path === '/chat'
+    const isTabVisible = document.visibilityState === 'visible'
+    const shouldNotify = !isOnChatPage || !isTabVisible
+    
     messages.value.push({
       role: 'ai',
       text: generateAIResponse(userMessage),
+      isNew: shouldNotify, // Помечаем как новое, если пользователь не видит чат
     })
+    
+    // Если пользователь не видит чат (другая страница или вкладка), увеличиваем счетчик и отправляем уведомление
+    if (shouldNotify) {
+      appStore.addUnreadChatMessage()
+      appStore.addNotification('Новый ответ от AI агента в чате', 'info', 5000, true) // playSound = true
+    }
+    
     isLoading.value = false
     scrollToBottom()
   }, 1500)
