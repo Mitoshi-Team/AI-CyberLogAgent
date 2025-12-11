@@ -138,7 +138,7 @@ async def get_severity_statistics():
     """Получить статистику по уровням серьезности"""
     try:
         conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-        
+
         # Получаем все уровни серьезности и количество отчетов для каждого
         rows = await conn.fetch("""
             SELECT 
@@ -150,18 +150,14 @@ async def get_severity_statistics():
             GROUP BY sl.severity_level_id, sl.name
             ORDER BY sl.severity_level_id
         """)
-        
+
         await conn.close()
-        
+
         result = [
-            {
-                "id": row["severity_level_id"],
-                "name": row["name"],
-                "count": row["count"]
-            }
+            {"id": row["severity_level_id"], "name": row["name"], "count": row["count"]}
             for row in rows
         ]
-        
+
         return {"data": result}
     except Exception as e:
         logger.error(f"Error getting severity statistics: {e}")
@@ -173,7 +169,7 @@ async def get_threat_statistics():
     """Получить статистику по типам угроз"""
     try:
         conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-        
+
         # Получаем все типы угроз и количество отчетов для каждого
         rows = await conn.fetch("""
             SELECT 
@@ -185,18 +181,14 @@ async def get_threat_statistics():
             GROUP BY tt.threat_type_id, tt.name
             ORDER BY COUNT(r.report_id) DESC, tt.name
         """)
-        
+
         await conn.close()
-        
+
         result = [
-            {
-                "id": row["threat_type_id"],
-                "name": row["name"],
-                "count": row["count"]
-            }
+            {"id": row["threat_type_id"], "name": row["name"], "count": row["count"]}
             for row in rows
         ]
-        
+
         return {"data": result}
     except Exception as e:
         logger.error(f"Error getting threat statistics: {e}")
@@ -204,29 +196,34 @@ async def get_threat_statistics():
 
 
 @app.get("/api/statistics/activity")
-async def get_activity_statistics(period_type: str = "week", start_date: str = None, end_date: str = None):
+async def get_activity_statistics(
+    period_type: str = "week", start_date: str = None, end_date: str = None
+):
     """Получить статистику активности по дням
-    
+
     Args:
         period_type: тип периода - 'week' или 'month'
         start_date: начало периода (ISO format)
         end_date: конец периода (ISO format)
+
     """
     try:
         conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-        
+
         from datetime import datetime, timedelta
-        
+
         if start_date and end_date:
             # Парсим даты напрямую, игнорируя время и часовой пояс
-            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+
             # Используем только дату без времени, затем создаем datetime для работы с БД
             start = datetime.combine(start_dt.date(), datetime.min.time())
             end = datetime.combine(end_dt.date(), datetime.max.time())
-            
-            logger.info(f"Activity stats - Received dates: start={start_date}, end={end_date}")
+
+            logger.info(
+                f"Activity stats - Received dates: start={start_date}, end={end_date}"
+            )
             logger.info(f"Activity stats - Normalized: start={start}, end={end}")
         else:
             # По умолчанию - текущая неделя/месяц
@@ -242,13 +239,29 @@ async def get_activity_statistics(period_type: str = "week", start_date: str = N
                 start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 # Последний день месяца
                 if now.month == 12:
-                    end = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                    end = now.replace(
+                        year=now.year + 1,
+                        month=1,
+                        day=1,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    ) - timedelta(days=1)
                 else:
-                    end = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                    end = now.replace(
+                        month=now.month + 1,
+                        day=1,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    ) - timedelta(days=1)
                 end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
-        
+
         # Получаем количество отчетов по дням
-        rows = await conn.fetch("""
+        rows = await conn.fetch(
+            """
             SELECT 
                 DATE(created_at) as date,
                 COUNT(*) as count
@@ -256,33 +269,44 @@ async def get_activity_statistics(period_type: str = "week", start_date: str = N
             WHERE created_at >= $1 AND created_at <= $2
             GROUP BY DATE(created_at)
             ORDER BY date
-        """, start, end)
-        
+        """,
+            start,
+            end,
+        )
+
         await conn.close()
-        
+
         # Создаем полный список дней с нулями для дней без данных
         result = []
         day_counts = {row["date"]: row["count"] for row in rows}
-        
+
         # Вычисляем количество дней между start и end
         start_date_obj = start.date()
         end_date_obj = end.date()
-        
+
         # Рассчитываем количество дней (разница + 1 день, так как включаем оба конца)
         days_count = (end_date_obj - start_date_obj).days + 1
-        
+
         # Генерируем даты: для недели будет 7 дней, для месяца - количество дней в месяце
         for i in range(days_count):
             current_date = start_date_obj + timedelta(days=i)
-            result.append({
-                "date": current_date.isoformat(),
-                "count": day_counts.get(current_date, 0)
-            })
-        
-        return {"data": result, "start_date": start.isoformat(), "end_date": end.isoformat()}
+            result.append(
+                {
+                    "date": current_date.isoformat(),
+                    "count": day_counts.get(current_date, 0),
+                }
+            )
+
+        return {
+            "data": result,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
     except Exception as e:
         logger.error(f"Error getting activity statistics: {e}")
-        raise HTTPException(status_code=500, detail="Ошибка получения статистики активности")
+        raise HTTPException(
+            status_code=500, detail="Ошибка получения статистики активности"
+        )
 
 
 # --- CLI Commands ---
