@@ -580,9 +580,7 @@ async def get_chat_messages(user_id: int, limit: int = 50):
         return {"data": messages, "total": len(messages)}
     except Exception as e:
         logger.error(f"Error getting chat messages: {e}")
-        raise HTTPException(
-            status_code=500, detail="Ошибка получения сообщений чата"
-        )
+        raise HTTPException(status_code=500, detail="Ошибка получения сообщений чата")
 
 
 @app.delete("/api/chat/messages")
