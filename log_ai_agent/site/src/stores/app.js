@@ -163,25 +163,11 @@ export const useAppStore = defineStore('app', () => {
    */
   const playNotificationSound = () => {
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-      
-      // Создаем очень низкий и приглушенный звук
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      
-      oscillator.frequency.value = 196 // G3 - низкая частота
-      oscillator.type = 'sine' // Мягкий синусоидальный тон
-      
-      // Очень плавное и долгое нарастание и затухание
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime)
-      gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.08) // Медленное нарастание
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5) // Длинное затухание
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
+      const audio = new Audio('/sounds/notification.mp3')
+      audio.volume = 0.5 // Средняя громкость
+      audio.play().catch(() => {
+        // Игнорируем ошибки воспроизведения (например, если браузер блокирует автовоспроизведение)
+      })
     } catch (e) {
       // Игнорируем ошибки воспроизведения
     }

@@ -142,7 +142,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, computed, onMounted, watch } from 'vue'
+import { ref, nextTick, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRoute } from 'vue-router'
 
@@ -169,16 +169,37 @@ const messages = ref([
   },
 ])
 
+// Функция очистки уведомлений
+const clearNotifications = () => {
+  appStore.clearUnreadChatMessages()
+  messages.value.forEach(msg => {
+    msg.isNew = false
+  })
+}
+
 // Очистка счетчика непрочитанных при открытии/переходе на страницу чата
 watch(() => route.path, (newPath) => {
   if (newPath === '/chat') {
-    appStore.clearUnreadChatMessages()
-    // Убираем подсветку "новое" со всех сообщений
-    messages.value.forEach(msg => {
-      msg.isNew = false
-    })
+    clearNotifications()
   }
 }, { immediate: true })
+
+// Очистка при возвращении фокуса на вкладку
+const handleVisibilityChange = () => {
+  if (!document.hidden && route.path === '/chat') {
+    clearNotifications()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // Очищаем при монтировании компонента
+  clearNotifications()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 
 // Проверка возможности отправки сообщения
 const canSendMessage = computed(() => {
@@ -222,6 +243,9 @@ const adjustTextareaHeight = () => {
 }
 
 onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // Очищаем при монтировании компонента
+  clearNotifications()
   // Устанавливаем начальную высоту
   adjustTextareaHeight()
 })
