@@ -36,7 +36,7 @@ docker compose down
 Для подключения к консоли пишем (название контейнера указывается в `.env`)
 
 ```bash
-docker exec -it cyberlog-backend python app.py interactive
+docker exec -it {BACKEND_CONTAINER_NAME} python app.py interactive
 ```
 
 ## Схема БД

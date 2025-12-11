@@ -8,7 +8,7 @@
     <!-- Кнопка сворачивания -->
     <button
       @click="isCollapsed = !isCollapsed"
-      class="absolute -right-3 top-8 w-6 h-6 bg-dark-800 border border-dark-700 rounded-full flex items-center justify-center hover:bg-dark-700 transition-colors z-10"
+      class="absolute -right-3 top-8 w-6 h-6 bg-dark-800 border border-dark-700 rounded-full flex items-center justify-center hover:bg-dark-700 transition-colors z-[100]"
     >
       <svg 
         :class="['w-3 h-3 text-dark-300 transition-transform duration-300', isCollapsed ? 'rotate-180' : '']"
