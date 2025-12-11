@@ -277,7 +277,7 @@ time python log_manage.py collect_logs
 python log_gen.py start imitate realistic
 
 # Запуск веб-интерфейса (в другом терминале)
-cd log_ai_agent/site
+cd log_ai-agent/site
 npm run dev
 
 # Открыть http://localhost:5173 и наблюдать обнаружение инцидентов в реальном времени

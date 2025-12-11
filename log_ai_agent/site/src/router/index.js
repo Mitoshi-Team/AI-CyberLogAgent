@@ -13,20 +13,18 @@ const routes = [
   },
   {
     path: '/',
-    name: 'Dashboard',
-    component: () => import('@/pages/DashboardPage.vue'),
+    redirect: '/chat',
+  },
+  {
+    path: '/chat',
+    name: 'Chat',
+    component: () => import('@/pages/ChatPage.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/statistics',
     name: 'Statistics',
     component: () => import('@/pages/StatisticsPage.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/chat',
-    name: 'Chat',
-    component: () => import('@/pages/ChatPage.vue'),
     meta: { requiresAuth: true },
   },
   {
@@ -37,7 +35,7 @@ const routes = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/',
+    redirect: '/chat',
   },
 ]
 

@@ -81,7 +81,7 @@ python log_manage.py collect_logs
 python -m app_simulation.log_gen.log_gen_cli start imitate realistic
 
 # Терминал 2
-cd log_ai_agent/site && npm run dev
+cd log_ai-agent/site && npm run dev
 ```
 
 ### Создание датасета

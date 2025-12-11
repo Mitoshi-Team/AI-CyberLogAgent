@@ -1,0 +1,32 @@
+{
+  "log_count": 300,
+  "time_increment_seconds": [2, 15],
+  "process_id_range": [6000, 7000],
+  "slot_range": [1, 15],
+  "incident_probability": 0.3,
+  "error_probability": 0.2,
+  "incident_duration_logs": [5, 20],
+  "incident_types": [
+    "worker_error",
+    "memory_leak",
+    "service_crash"
+  ],
+  "log_type_weights": {
+    "normal": 0.2,
+    "error": 0.1,
+    "mod_jk_worker_init": 0.2,
+    "mod_jk_worker_error": 0.3,
+    "jk2_child_init": 0.1,
+    "jk2_child_error": 0.2,
+    "client_directory_forbidden": 0.0,
+    "client_file_not_found": 0.0,
+    "system_notice": 0.0
+  },
+  "client_ip_ranges": [
+    "192.168.1.0/24"
+  ],
+  "forbidden_paths": [
+    "/var/www/html/"
+  ],
+  "_description": "Конфигурация для отладки проблем с worker процессами"
+}

@@ -8,7 +8,12 @@
 
     <div v-if="appStore.isAuthenticated" class="flex relative">
       <Sidebar />
-      <main class="flex-1 ml-64">
+      <main 
+        :class="[
+          'flex-1 transition-all duration-300',
+          appStore.sidebarCollapsed ? 'ml-20' : 'ml-20 sm:ml-64'
+        ]"
+      >
         <RouterView />
       </main>
     </div>
@@ -38,7 +43,11 @@ onMounted(() => {
 
   // Подключение к WebSocket для получения уведомлений
   if (appStore.isAuthenticated) {
-    websocketService.connect().catch(console.error)
+    // Пытаемся подключиться, но не показываем ошибки
+    websocketService.connect().catch((error) => {
+      console.warn('WebSocket connection failed:', error)
+      // Не показываем уведомление, т.к. WebSocket не критичен для работы
+    })
 
     websocketService.on('message', (data) => {
       if (data.type === 'incident') {
@@ -46,9 +55,7 @@ onMounted(() => {
       }
     })
 
-    websocketService.on('error', (error) => {
-      appStore.addNotification('Ошибка подключения к серверу', 'danger')
-    })
+    // Убираем обработчик ошибок, чтобы не спамить уведомлениями
   }
 })
 </script>

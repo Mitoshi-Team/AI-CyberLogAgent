@@ -1,0 +1,41 @@
+{
+  "log_count": 800,
+  "time_increment_seconds": [2, 8],
+  "process_id_range": [6000, 7000],
+  "slot_range": [1, 10],
+  "incident_probability": 0.08,
+  "error_probability": 0.12,
+  "incident_duration_logs": [3, 8],
+  "incident_types": [
+    "worker_error",
+    "connection_failed",
+    "auth_failure",
+    "permission_denied"
+  ],
+  "log_type_weights": {
+    "normal": 0.35,
+    "error": 0.1,
+    "mod_jk_worker_init": 0.08,
+    "mod_jk_worker_error": 0.08,
+    "jk2_child_init": 0.12,
+    "jk2_child_error": 0.07,
+    "client_directory_forbidden": 0.1,
+    "client_file_not_found": 0.1,
+    "system_notice": 0.05
+  },
+  "client_ip_ranges": [
+    "192.168.0.0/16",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "public"
+  ],
+  "forbidden_paths": [
+    "/var/www/html/",
+    "/var/www/html/admin/",
+    "/var/www/html/images/",
+    "/var/www/html/uploads/",
+    "/var/www/html/api/",
+    "/usr/local/apache/htdocs/"
+  ],
+  "_description": "Реалистичная смешанная конфигурация с балансом различных типов логов"
+}

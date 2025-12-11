@@ -98,11 +98,9 @@ class WebSocketService {
    * Попытка переподключения
    */
   attemptReconnect(url) {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++
-      console.log(`Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`)
-      setTimeout(() => this.connect(url), this.reconnectDelay)
-    }
+    // Отключаем автоматический реконнект, чтобы избежать спама ошибок
+    // WebSocket не критичен для работы приложения
+    console.log('WebSocket disconnected. Auto-reconnect disabled.')
   }
 
   /**

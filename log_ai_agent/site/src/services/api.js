@@ -42,7 +42,10 @@ apiClient.interceptors.response.use(
 export const auth = {
   login: (username, password) =>
     apiClient.post('/auth/login', { username, password }),
-  logout: () => apiClient.post('/auth/logout'),
+  logout: () => {
+    localStorage.removeItem('auth_token')
+    return Promise.resolve()
+  },
   me: () => apiClient.get('/auth/me'),
 }
 
@@ -61,14 +64,55 @@ export const incidents = {
 export const statistics = {
   overview: () => apiClient.get('/statistics/overview'),
   timeline: (days = 30) => apiClient.get('/statistics/timeline', { params: { days } }),
+  severity: (startDate, endDate) => apiClient.get('/statistics/severity', { params: { start_date: startDate, end_date: endDate } }),
+  threats: (startDate, endDate) => apiClient.get('/statistics/threats', { params: { start_date: startDate, end_date: endDate } }),
+  activity: (periodType, startDate, endDate) => 
+    apiClient.get('/statistics/activity', { 
+      params: { 
+        period_type: periodType, 
+        start_date: startDate, 
+        end_date: endDate 
+      } 
+    }),
 }
 
 /**
  * Работа с чатом
  */
 export const chat = {
-  send: (message) => apiClient.post('/chat/message', { message }),
-  history: (limit = 50) => apiClient.get('/chat/history', { params: { limit } }),
+  sendMessage: (userId, role, content) => 
+    apiClient.post('/chat/messages', { user_id: userId, role, content }),
+  getMessages: (userId, limit = 50) => 
+    apiClient.get('/chat/messages', { params: { user_id: userId, limit } }),
+  clearMessages: (userId) => 
+    apiClient.delete('/chat/messages', { params: { user_id: userId } }),
+  sendToAI: (userId, message) =>
+    apiClient.post('/chat/send', { user_id: userId, message }),
+}
+
+/**
+ * Работа с отчетами
+ */
+export const reports = {
+  history: (params) => apiClient.get('/reports/history', { params }),
+  filters: () => apiClient.get('/reports/filters'),
+  details: (id) => apiClient.get(`/reports/${id}`),
+}
+
+/**
+ * Работа с логами
+ */
+export const logs = {
+  upload: (userId, file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    return apiClient.post(`/logs/upload?user_id=${userId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
 }
 
 export default apiClient
