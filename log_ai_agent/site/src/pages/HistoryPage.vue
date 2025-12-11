@@ -2,8 +2,8 @@
   <div class="pt-8 pb-8">
     <div class="px-8">
       <div class="mb-8">
-        <h1 class="text-4xl font-bold text-white mb-2">История инцидентов</h1>
-        <p class="text-dark-400">Архив всех обнаруженных инцидентов с фильтрацией по датам</p>
+        <h1 class="text-4xl font-bold text-white mb-2">История отчетов</h1>
+        <p class="text-dark-400">Архив всех отчетов по логам</p>
       </div>
 
       <!-- Фильтры -->

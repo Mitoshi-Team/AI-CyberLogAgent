@@ -1,5 +1,5 @@
 <template>
-  <div class="date-period-picker">
+  <div class="date-period-picker relative">
     <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
       <!-- Выбор типа периода -->
       <select 
@@ -26,7 +26,7 @@
     <!-- Календарь или выбор месяца/года -->
     <div 
       v-if="showCalendar" 
-      class="absolute z-50 mt-2 bg-dark-800 border border-dark-700 rounded-lg shadow-xl p-3 sm:p-4 left-0 right-0 sm:left-auto sm:right-auto sm:min-w-[320px] max-w-sm sm:max-w-md"
+      class="absolute z-50 mt-2 bg-dark-800 border border-dark-700 rounded-lg shadow-xl p-3 sm:p-4 right-0 sm:min-w-[320px] max-w-sm sm:max-w-md"
       @click.stop
     >
       <!-- Выбор только месяца и года (для типа "месяц") -->

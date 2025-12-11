@@ -4,7 +4,7 @@
       <div class="mb-6 md:mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2">Статистика</h1>
-          <p class="text-sm sm:text-base text-dark-400">Аналитика и тренды инцидентов</p>
+          <p class="text-sm sm:text-base text-dark-400">График и распределение по уровням и типам</p>
         </div>
         
         <DatePeriodPicker 
@@ -61,7 +61,7 @@
             <svg class="w-5 h-5 text-primary-400" fill="currentColor" viewBox="0 0 20 20">
               <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
             </svg>
-            Распределение по уровням серьезности
+            Уровень серьезности
           </h2>
           <div v-if="loading" class="text-center py-8 text-dark-400">
             Загрузка данных...
@@ -100,7 +100,7 @@
             <svg class="w-5 h-5 text-primary-400" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
             </svg>
-            Распределение по типам угроз
+            Тип угрозы
           </h2>
           <div v-if="loading" class="text-center py-8 text-dark-400">
             Загрузка данных...

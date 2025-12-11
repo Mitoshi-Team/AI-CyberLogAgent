@@ -82,7 +82,7 @@
     </nav>
 
     <!-- Профиль -->
-    <div :class="['mt-auto py-3 mb-3', isCollapsed || 'px-2 sm:px-4 sm:mx-3', isCollapsed && 'px-2']">
+    <div :class="['mt-auto py-3 mb-3', isCollapsed ? 'px-4' : 'px-2 sm:px-4 sm:mx-3']">
       <div 
         :class="[
           'mb-3 pb-2.5 border-b border-dark-700/50 transition-all duration-300',

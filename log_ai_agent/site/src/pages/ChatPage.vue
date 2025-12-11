@@ -54,7 +54,7 @@
                   class="markdown-content text-base leading-relaxed text-dark-200 text-left"
                   v-html="renderMarkdown(msg.text)"
                 ></div>
-                <p class="text-xs text-dark-500 mt-2 text-left">AI Cyber Log</p>
+                <p class="text-xs text-dark-500 mt-2 text-left">CyberLog Agent</p>
               </div>
             </div>
           </div>
@@ -70,25 +70,11 @@
         <!-- Быстрые вопросы (компактные плашки над полем ввода) -->
         <div class="flex flex-wrap gap-2 px-4 sm:px-8 md:px-16 lg:px-24 xl:px-48 pt-2 pb-1 mt-4">
           <button
-            @click="selectQuickQuestion('Сколько критичных инцидентов за последнее время?')"
-            class="px-3 py-1.5 bg-dark-800/50 hover:bg-dark-800 border border-dark-700 hover:border-primary-500/50 rounded-lg text-xs text-dark-300 hover:text-primary-400 transition-all flex items-center gap-1.5"
-          >
-            <span>📊</span>
-            <span>Статистика</span>
-          </button>
-          <button
             @click="selectQuickQuestion('Какие рекомендации для предотвращения атак?')"
             class="px-3 py-1.5 bg-dark-800/50 hover:bg-dark-800 border border-dark-700 hover:border-primary-500/50 rounded-lg text-xs text-dark-300 hover:text-primary-400 transition-all flex items-center gap-1.5"
           >
             <span>🛡️</span>
             <span>Рекомендации</span>
-          </button>
-          <button
-            @click="selectQuickQuestion('Анализируй последний инцидент')"
-            class="px-3 py-1.5 bg-dark-800/50 hover:bg-dark-800 border border-dark-700 hover:border-primary-500/50 rounded-lg text-xs text-dark-300 hover:text-primary-400 transition-all flex items-center gap-1.5"
-          >
-            <span>🔍</span>
-            <span>Анализ инцидента</span>
           </button>
           <button
             @click="selectQuickQuestion('Какие тренды в безопасности?')"
@@ -278,7 +264,7 @@ const loadChatHistory = async () => {
       // Показываем начальное приветствие если пользователь не авторизован
       messages.value = [{
         role: 'ai',
-        text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+        text: 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
         isNew: false,
       }]
       return
@@ -297,7 +283,7 @@ const loadChatHistory = async () => {
       // Если история пуста, показываем приветствие
       messages.value = [{
         role: 'ai',
-        text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+        text: 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
         isNew: false,
       }]
     }
@@ -308,7 +294,7 @@ const loadChatHistory = async () => {
     // В случае ошибки показываем приветствие
     messages.value = [{
       role: 'ai',
-      text: 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
+      text: 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
       isNew: false,
     }]
   }
@@ -626,7 +612,7 @@ const confirmNewChat = async () => {
     messages.value = []
 
     // Загружаем начальное приветствие и сохраняем его в БД
-    const welcomeMessage = 'Привет! Я CyberLog AI ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?'
+    const welcomeMessage = 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?'
     
     messages.value.push({
       role: 'ai',
