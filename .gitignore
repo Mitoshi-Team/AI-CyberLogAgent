@@ -40,3 +40,5 @@ secrets.py
 
 # IDE: PyCharm / IntelliJ
 .idea/
+/log_ai_agent/ai_agent/chroma_db/
+/log_ai_agent/ai_agent/model/
