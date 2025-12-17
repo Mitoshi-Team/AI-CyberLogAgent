@@ -1,11 +1,12 @@
+import logging
+import os
+
 from langchain.prompts import PromptTemplate
 from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_gigachat.chat_models import GigaChat
 from langchain_huggingface import HuggingFaceEmbeddings
-import logging
-import os
 
 from log_ai_agent.config.cfg import GIGACHAT_API_KEY
 

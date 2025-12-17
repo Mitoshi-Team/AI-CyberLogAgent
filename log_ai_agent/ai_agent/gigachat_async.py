@@ -1,8 +1,8 @@
 # gigachat_async.py
 # Асинхронная версия для интеграции с FastAPI
 
-import logging
 import asyncio
+import logging
 
 import asyncpg
 
@@ -90,14 +90,20 @@ async def process_chat_message(
                 response = await asyncio.wait_for(
                     asyncio.to_thread(ask_gigachat, formatted_question), timeout=30
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.error(f"ask_gigachat timed out for user {user_id}")
-                response = "Извините, запрос занял слишком много времени. Попробуйте позже."
+                response = (
+                    "Извините, запрос занял слишком много времени. Попробуйте позже."
+                )
             except Exception as e:
                 logger.error(f"Error in ask_gigachat for user {user_id}: {e}")
-                response = f"Извините, произошла ошибка при обращении к GigaChat: {str(e)}"
+                response = (
+                    f"Извините, произошла ошибка при обращении к GigaChat: {str(e)}"
+                )
         except Exception as e:
-            response = f"Извините, произошла ошибка при формировании контекста: {str(e)}"
+            response = (
+                f"Извините, произошла ошибка при формировании контекста: {str(e)}"
+            )
 
         # Сохраняем ответ агента в базу данных
         await conn.execute(
