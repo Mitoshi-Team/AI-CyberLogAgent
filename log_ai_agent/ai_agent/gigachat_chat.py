@@ -6,12 +6,8 @@ from datetime import datetime
 
 import psycopg2
 
-# Импорт для работы с GigaChat
-from gigachat import GigaChat
-from gigachat.models import Chat, Messages, MessagesRole
-
-# Загрузка переменных окружения из .env файла
-from log_ai_agent.config.cfg import GIGACHAT_API_KEY
+# Используем RAG-обёртку для запросов к GigaChat
+from .RAG_gigachat import ask_gigachat
 
 # Database configuration
 DB_CONFIG = {
@@ -89,43 +85,24 @@ def process_user_input(user_id: int, user_input: str, rag_context: dict) -> str:
     """Process user input and return appropriate response using GigaChat."""
     # Save user message
     save_message(user_id, "user", user_input)
-
-    # Use GigaChat for general conversation
+    # Собираем последние 10 сообщений пользователя как контекст
     try:
-        # Initialize GigaChat client with scope
-        with GigaChat(
-            credentials=GIGACHAT_API_KEY,
-            scope="GIGACHAT_API_PERS",
-            verify_ssl_certs=False,
-        ) as giga:
-            # Get chat history for context
-            history = get_chat_history(user_id)
-            messages = []
+        history = get_chat_history(user_id)
+        last_msgs = history[-10:]
+        history_lines = [f"{m['role']}: {m['content']}" for m in last_msgs]
+        history_text = "\n".join(history_lines)
 
-            # Add chat history to messages
-            for msg in history:
-                role = msg["role"]
-                if role == "user":
-                    messages.append(
-                        Messages(role=MessagesRole.USER, content=msg["content"])
-                    )
-                elif role == "assistant":
-                    messages.append(
-                        Messages(role=MessagesRole.ASSISTANT, content=msg["content"])
-                    )
+        # Формируем вопрос с контекстом диалога
+        formatted_question = (
+            f"История диалога:\n{history_text}\nВопрос: {user_input}"
+            if history_text
+            else f"Вопрос: {user_input}"
+        )
 
-            # Add current user message
-            messages.append(Messages(role=MessagesRole.USER, content=user_input))
-
-            # Create chat request
-            chat = Chat(messages=messages, max_tokens=50)
-
-            # Get response from GigaChat
-            response_model = giga.chat(chat)
-            response = response_model.choices[0].message.content
-
+        # Use RAG-enabled GigaChat wrapper
+        response = ask_gigachat(formatted_question)
     except Exception as e:
-        print(f"Error communicating with GigaChat: {e}")
+        print(f"Error communicating with RAG GigaChat: {e}")
         response = (
             "Извините, произошла ошибка при подключении к нейросети. Попробуйте позже."
         )

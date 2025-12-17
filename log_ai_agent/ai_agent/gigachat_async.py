@@ -2,12 +2,11 @@
 # Асинхронная версия для интеграции с FastAPI
 
 import logging
+import asyncio
 
 import asyncpg
-from gigachat import GigaChat
-from gigachat.models import Chat, Messages, MessagesRole
 
-from log_ai_agent.config.cfg import GIGACHAT_API_KEY
+from .RAG_gigachat import ask_gigachat
 
 logger = logging.getLogger(__name__)
 
@@ -74,39 +73,31 @@ async def process_chat_message(
             f"GigaChat context: загружено {len(history)} сообщений для пользователя {user_id}"
         )
 
-        # Формируем список сообщений для GigaChat
-        messages = []
-
-        for msg in history:
-            role = msg["role"]
-            if role == "user":
-                messages.append(
-                    Messages(role=MessagesRole.USER, content=msg["content"])
-                )
-            elif role in ["assistant", "agent"]:
-                messages.append(
-                    Messages(role=MessagesRole.ASSISTANT, content=msg["content"])
-                )
-
-        # Добавляем текущее сообщение пользователя
-        messages.append(Messages(role=MessagesRole.USER, content=user_message))
-
-        # Вызываем GigaChat для получения ответа
+        # Для RAG-версии вызываем обёртку ask_gigachat в отдельном потоке
+        # Ограничиваем время выполнения, чтобы не блокировать обработчик
         try:
-            with GigaChat(
-                credentials=GIGACHAT_API_KEY,
-                scope="GIGACHAT_API_PERS",
-                verify_ssl_certs=False,
-            ) as giga:
-                # Создаем запрос к чату
-                chat = Chat(messages=messages, max_tokens=1000)
+            last_msgs = history[-10:]
+            history_lines = [f"{m['role']}: {m['content']}" for m in last_msgs]
+            history_text = "\n".join(history_lines)
+            formatted_question = (
+                f"История диалога:\n{history_text}\nВопрос: {user_message}"
+                if history_text
+                else f"Вопрос: {user_message}"
+            )
 
-                # Получаем ответ от GigaChat
-                response_model = giga.chat(chat)
-                response = response_model.choices[0].message.content
-
+            # Запускаем синхронную RAG-функцию в пуле потоков с таймаутом
+            try:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(ask_gigachat, formatted_question), timeout=30
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"ask_gigachat timed out for user {user_id}")
+                response = "Извините, запрос занял слишком много времени. Попробуйте позже."
+            except Exception as e:
+                logger.error(f"Error in ask_gigachat for user {user_id}: {e}")
+                response = f"Извините, произошла ошибка при обращении к GigaChat: {str(e)}"
         except Exception as e:
-            response = f"Извините, произошла ошибка при обращении к GigaChat: {str(e)}"
+            response = f"Извините, произошла ошибка при формировании контекста: {str(e)}"
 
         # Сохраняем ответ агента в базу данных
         await conn.execute(

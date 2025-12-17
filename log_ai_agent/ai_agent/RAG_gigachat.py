@@ -4,27 +4,42 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_gigachat.chat_models import GigaChat
 from langchain_huggingface import HuggingFaceEmbeddings
+import logging
+import os
 
 from log_ai_agent.config.cfg import GIGACHAT_API_KEY
 
-# 1. Загружаем локальные эмбеддинги (из распакованной папки model)
-# Это исключит ошибки скачивания и блокировки "lock"
-embeddings = HuggingFaceEmbeddings(model_name="./model")
+logger = logging.getLogger(__name__)
 
-# 2. Подключаем векторную базу
-vectorstore = Chroma(
-    persist_directory="./chroma_db",
-    embedding_function=embeddings,
-    collection_name="mitre_collection",
-)
+# Попробуем взять модель из локальной папки рядом с этим файлом
+LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
+
+# 1. Попытка инициализировать локальные эмбеддинги и векторную базу
+embeddings = None
+vectorstore = None
+use_vectorstore = False
+try:
+    embeddings = HuggingFaceEmbeddings(
+        model_name=LOCAL_MODEL_DIR, model_kwargs={"local_files_only": True}
+    )
+    vectorstore = Chroma(
+        persist_directory=os.path.join(os.path.dirname(__file__), "chroma_db"),
+        embedding_function=embeddings,
+        collection_name="mitre_collection",
+    )
+    use_vectorstore = True
+    logger.info(f"Loaded local embeddings from {LOCAL_MODEL_DIR}")
+except Exception as e:
+    logger.warning(
+        f"Local embeddings not available or failed to load from {LOCAL_MODEL_DIR}: {e}. Falling back to LLM-only mode."
+    )
 
 # 3. Инициализируем GigaChat
-# Замените 'ВАШ_КЛЮЧ' на данные из личного кабинета GigaChat
 llm = GigaChat(
     credentials=GIGACHAT_API_KEY,
     verify_ssl_certs=False,
-    model="GigaChat",  # или GigaChat-Pro / GigaChat-Max
-    temperature=0.1,  # Ставим низкую температуру для точности
+    model="GigaChat",
+    temperature=0.1,
 )
 
 # 4. Настраиваем Промпт (чтобы GigaChat отвечал строго по базе MITRE)
@@ -41,15 +56,19 @@ template = """Используй предоставленные фрагмент
 QA_CHAIN_PROMPT = PromptTemplate.from_template(template)
 
 # 5. Создаем цепочку RAG
-rag_chain = (
-    {
-        "context": vectorstore.as_retriever(search_kwargs={"k": 5}),
-        "question": RunnablePassthrough(),
-    }
-    | QA_CHAIN_PROMPT
-    | llm
-    | StrOutputParser()
-)
+if use_vectorstore and vectorstore is not None:
+    rag_chain = (
+        {
+            "context": vectorstore.as_retriever(search_kwargs={"k": 5}),
+            "question": RunnablePassthrough(),
+        }
+        | QA_CHAIN_PROMPT
+        | llm
+        | StrOutputParser()
+    )
+else:
+    # Fallback: без векторной БД — просто промпт -> LLM
+    rag_chain = QA_CHAIN_PROMPT | llm | StrOutputParser()
 
 
 def ask_gigachat(question: str) -> str:
