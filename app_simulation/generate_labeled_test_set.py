@@ -5,7 +5,6 @@
 """
 
 import json
-import random
 from datetime import datetime
 from pathlib import Path
 
@@ -14,11 +13,20 @@ from log_gen.log_gen import LogGenerator
 
 # Определяем типы угроз согласно системе
 THREAT_TYPES = {
-    1: {"name": "Вторжение", "description": "Intrusion - попытки несанкционированного доступа"},
+    1: {
+        "name": "Вторжение",
+        "description": "Intrusion - попытки несанкционированного доступа",
+    },
     2: {"name": "Malware", "description": "Вредоносное ПО - вирусы, трояны, черви"},
     3: {"name": "DDoS", "description": "Распределенная атака отказа в обслуживании"},
-    4: {"name": "Утечка", "description": "Утечка данных - несанкционированный доступ к конфиденциальной информации"},
-    5: {"name": "Доступ", "description": "Несанкционированный доступ - нарушение прав доступа"},
+    4: {
+        "name": "Утечка",
+        "description": "Утечка данных - несанкционированный доступ к конфиденциальной информации",
+    },
+    5: {
+        "name": "Доступ",
+        "description": "Несанкционированный доступ - нарушение прав доступа",
+    },
     6: {"name": "Фишинг", "description": "Фишинговые атаки - социальная инженерия"},
     7: {"name": "SQL", "description": "SQL-инъекция - эксплуатация уязвимостей БД"},
     8: {"name": "XSS", "description": "Cross-Site Scripting - межсайтовый скриптинг"},
@@ -129,13 +137,14 @@ LABELED_SCENARIOS = [
 
 def generate_labeled_test_set(output_dir: str = "test_logs"):
     """Генерирует набор размеченных тестовых логов.
-    
+
     Args:
         output_dir: Директория для сохранения логов
+
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     # Создаем файл с общей метаинформацией
     metadata = {
         "generated_at": datetime.now().isoformat(),
@@ -143,44 +152,44 @@ def generate_labeled_test_set(output_dir: str = "test_logs"):
         "threat_types": THREAT_TYPES,
         "severity_levels": SEVERITY_LEVELS,
         "scenarios": LABELED_SCENARIOS,
-        "logs": []
+        "logs": [],
     }
-    
+
     log_counter = 1
-    
+
     print("=" * 80)
     print("  Генерация размеченных тестовых логов")
     print("=" * 80)
     print()
-    
+
     for scenario in LABELED_SCENARIOS:
         config_path = scenario["config"]
         threat_type = THREAT_TYPES[scenario["threat_type_id"]]
         severity_level = SEVERITY_LEVELS[scenario["severity_level_id"]]
-        
+
         print(f"📊 Сценарий: {threat_type['name']} ({scenario['description']})")
         print(f"   Уровень: {severity_level} (ID={scenario['severity_level_id']})")
         print(f"   Тип угрозы: ID={scenario['threat_type_id']}")
         print(f"   Количество: {scenario['count']} файлов")
-        
+
         try:
             # Загружаем конфигурацию
             config = ConfigLoader.load_from_json(config_path)
-            
+
             # Генерируем логи для этого сценария
             for i in range(scenario["count"]):
                 generator = LogGenerator(config)
                 log_entries = generator.generate_logs()
-                
+
                 # Формируем имя файла
                 filename = f"log_{log_counter:03d}_{threat_type['name'].lower()}.log"
                 log_file_path = output_path / filename
-                
+
                 # Сохраняем лог-файл
                 with open(log_file_path, "w", encoding="utf-8") as f:
                     for entry in log_entries:
                         f.write(entry.format() + "\n")
-                
+
                 # Добавляем метаданные для этого лога
                 log_metadata = {
                     "log_id": log_counter,
@@ -193,27 +202,27 @@ def generate_labeled_test_set(output_dir: str = "test_logs"):
                     "config_used": config_path,
                     "line_count": len(log_entries),
                 }
-                
+
                 metadata["logs"].append(log_metadata)
                 log_counter += 1
-            
+
             print(f"   ✅ Сгенерировано {scenario['count']} файлов")
-            
+
         except FileNotFoundError:
             print(f"   ⚠️  Конфигурация не найдена: {config_path}")
-            print(f"   ℹ️  Пропускаем этот сценарий")
+            print("   ℹ️  Пропускаем этот сценарий")
         except Exception as e:
             print(f"   ❌ Ошибка: {e}")
-        
+
         print()
-    
+
     # Сохраняем метаданные в JSON
     metadata_file = output_path / "labels.json"
     with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
-    
+
     print("=" * 80)
-    print(f"✅ Генерация завершена!")
+    print("✅ Генерация завершена!")
     print(f"📁 Директория: {output_path.absolute()}")
     print(f"📊 Всего файлов: {log_counter - 1}")
     print(f"📋 Метаданные: {metadata_file}")
@@ -221,7 +230,9 @@ def generate_labeled_test_set(output_dir: str = "test_logs"):
     print()
     print("Распределение по типам угроз:")
     for threat_id, threat_info in THREAT_TYPES.items():
-        count = sum(s["count"] for s in LABELED_SCENARIOS if s["threat_type_id"] == threat_id)
+        count = sum(
+            s["count"] for s in LABELED_SCENARIOS if s["threat_type_id"] == threat_id
+        )
         if count > 0:
             print(f"  {threat_id}. {threat_info['name']:20s} - {count:3d} файлов")
     print()
