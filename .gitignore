@@ -2,6 +2,7 @@
 *.log
 *.log.*
 logs/
+test_logs/
 log/
 Logs/
 temp_logs/

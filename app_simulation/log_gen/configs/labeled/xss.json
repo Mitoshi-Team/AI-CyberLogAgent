@@ -1,0 +1,30 @@
+{
+  "log_count": 1000,
+  "time_increment_seconds": [1, 4],
+  "process_id_range": [6000, 7000],
+  "slot_range": [1, 10],
+  "incident_probability": 0.35,
+  "error_probability": 0.4,
+  "incident_duration_logs": [8, 20],
+  "incident_types": [
+    "worker_error"
+  ],
+  "log_type_weights": {
+    "normal": 0.15,
+    "error": 0.35,
+    "mod_jk_worker_init": 0.0,
+    "mod_jk_worker_error": 0.2,
+    "jk2_child_init": 0.0,
+    "jk2_child_error": 0.15,
+    "client_directory_forbidden": 0.1,
+    "client_file_not_found": 0.05,
+    "system_notice": 0.0
+  },
+  "client_ip_ranges": ["public", "suspicious"],
+  "forbidden_paths": [
+    "/var/www/html/comment.php?text=<script>alert('XSS')</script>",
+    "/var/www/html/profile.php?name=<img src=x onerror=alert(1)>",
+    "/var/www/html/search.php?q=<iframe src='evil.com'></iframe>"
+  ],
+  "_description": "XSS атаки - попытки межсайтового скриптинга"
+}
