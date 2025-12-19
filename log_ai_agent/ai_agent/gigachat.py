@@ -278,7 +278,7 @@ async def analyze_log_with_gigachat(log_content: str) -> dict:
     log_summary = f"Анализируется лог-файл ({len(log_content)} байт)"
     if len(log_content) > 5000:
         log_summary += " (показана часть)"
-    
+
     question = f"""Проанализируй этот лог-файл на предмет инцидентов безопасности.
 
 ЛОГ-ФАЙЛ:
@@ -309,11 +309,11 @@ threat_type_id: <1-11: 1-Вторжение, 2-Malware, 3-DDoS, 4-Утечка, 
 
     try:
         # Используем RAG для анализа с базой знаний MITRE ATT&CK
-        response = await asyncio.wait_for(
-            ask_gigachat_rag(question), timeout=60
+        response = await asyncio.wait_for(ask_gigachat_rag(question), timeout=60)
+
+        logger.info(
+            f"Log analysis with RAG completed, response length: {len(response)}"
         )
-        
-        logger.info(f"Log analysis with RAG completed, response length: {len(response)}")
 
         # Парсим ответ
         description = response
@@ -345,7 +345,9 @@ threat_type_id: <1-11: 1-Вторжение, 2-Malware, 3-DDoS, 4-Утечка, 
             except Exception as e:
                 logger.warning(f"Не удалось извлечь метаданные из ответа GigaChat: {e}")
 
-        logger.info(f"Log analysis completed, severity={severity_level_id}, threat={threat_type_id}")
+        logger.info(
+            f"Log analysis completed, severity={severity_level_id}, threat={threat_type_id}"
+        )
 
         return {
             "description": description,
@@ -373,55 +375,107 @@ threat_type_id: <1-11: 1-Вторжение, 2-Malware, 3-DDoS, 4-Утечка, 
 
 def should_use_rag(message: str) -> bool:
     """Определить, нужно ли использовать RAG для данного вопроса.
-    
-    Анализирует сообщение на наличие ключевых слов, связанных с 
+
+    Анализирует сообщение на наличие ключевых слов, связанных с
     кибербезопасностью, MITRE ATT&CK и угрозами.
-    
+
     Args:
         message: Сообщение пользователя
-        
+
     Returns:
         True если нужно использовать RAG, False - для обычного диалога
+
     """
     # Ключевые слова, требующие базы знаний MITRE ATT&CK
     rag_keywords = [
         # MITRE ATT&CK
-        "mitre", "att&ck", "attack", "тактика", "техника", "линия защиты",
-        "линия", "защита", "матрица",
-        
+        "mitre",
+        "att&ck",
+        "attack",
+        "тактика",
+        "техника",
+        "линия защиты",
+        "линия",
+        "защита",
+        "матрица",
         # Типы угроз и атак
-        "угроза", "атака", "вредонос", "malware", "эксплойт", "exploit",
-        "уязвимость", "vulnerability", "вторжение", "intrusion",
-        "компрометация", "compromise", "breach",
-        
+        "угроза",
+        "атака",
+        "вредонос",
+        "malware",
+        "эксплойт",
+        "exploit",
+        "уязвимость",
+        "vulnerability",
+        "вторжение",
+        "intrusion",
+        "компрометация",
+        "compromise",
+        "breach",
         # Тактики MITRE ATT&CK (на английском)
-        "reconnaissance", "resource development", "initial access",
-        "execution", "persistence", "privilege escalation",
-        "defense evasion", "credential access", "discovery",
-        "lateral movement", "collection", "command and control",
-        "exfiltration", "impact", "c2", "c&c",
-        
+        "reconnaissance",
+        "resource development",
+        "initial access",
+        "execution",
+        "persistence",
+        "privilege escalation",
+        "defense evasion",
+        "credential access",
+        "discovery",
+        "lateral movement",
+        "collection",
+        "command and control",
+        "exfiltration",
+        "impact",
+        "c2",
+        "c&c",
         # Тактики MITRE ATT&CK (на русском)
-        "разведка", "эксплуатация", "закрепление", "повышение привилегий",
-        "обход защиты", "кража учетных", "сбор данных", "утечка",
-        
+        "разведка",
+        "эксплуатация",
+        "закрепление",
+        "повышение привилегий",
+        "обход защиты",
+        "кража учетных",
+        "сбор данных",
+        "утечка",
         # Конкретные угрозы
-        "ddos", "dos", "injection", "инъекция", "sql", "xss",
-        "csrf", "brute force", "брутфорс", "фишинг", "phishing",
-        "ransomware", "троян", "trojan", "backdoor", "rootkit",
-        "spyware", "keylogger", "botnet", "ботнет",
-        
+        "ddos",
+        "dos",
+        "injection",
+        "инъекция",
+        "sql",
+        "xss",
+        "csrf",
+        "brute force",
+        "брутфорс",
+        "фишинг",
+        "phishing",
+        "ransomware",
+        "троян",
+        "trojan",
+        "backdoor",
+        "rootkit",
+        "spyware",
+        "keylogger",
+        "botnet",
+        "ботнет",
         # Действия злоумышленников
-        "сканирование", "scanning", "enumeration", "перечисление",
-        "escalation", "эскалация", "privilege", "привилегии",
+        "сканирование",
+        "scanning",
+        "enumeration",
+        "перечисление",
+        "escalation",
+        "эскалация",
+        "privilege",
+        "привилегии",
     ]
-    
+
     message_lower = message.lower()
     found = any(keyword in message_lower for keyword in rag_keywords)
-    
+
     if found:
         logger.info(f"RAG mode auto-selected for message: {message[:50]}...")
-    
+
     return found
 
 
@@ -466,11 +520,11 @@ async def process_chat_message(
             use_rag = should_use_rag(user_message)
 
         mode = "RAG" if use_rag else "TEXT"
-        
+
         logger.info(
             f"Processing message for user {user_id}, mode: {mode}, history: {len(history)} messages"
         )
-        
+
         # Выбираем режим работы
         try:
             if use_rag:
@@ -494,7 +548,7 @@ async def process_chat_message(
                     ask_gigachat_text(user_message, history), timeout=30
                 )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(f"Request timed out for user {user_id}")
             response = "Извините, запрос занял слишком много времени. Попробуйте позже."
         except Exception as e:

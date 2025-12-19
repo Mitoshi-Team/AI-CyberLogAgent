@@ -687,7 +687,9 @@ async def send_chat_message(request: ChatSendRequest):
             database_url=DATABASE_URL,
         )
 
-        logger.info(f"Chat message processed for user {request.user_id}, mode: {result['mode']}")
+        logger.info(
+            f"Chat message processed for user {request.user_id}, mode: {result['mode']}"
+        )
 
         return ChatSendResponse(
             success=True,
