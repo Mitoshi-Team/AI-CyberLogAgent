@@ -16,6 +16,7 @@ from log_ai_agent.ai_agent.gigachat import (
     clear_user_context,
     process_chat_message,
 )
+from log_ai_agent.ai_agent_v2.integration import analyze_log_v2, close_pipeline
 from log_ai_agent.config import commands
 
 # Загрузка переменных окружения из .env файла
@@ -41,6 +42,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"📊 Database URL: {DATABASE_URL}")
     yield
     logger.info("🛑 Shutting down AI CyberLog Agent Backend...")
+    # Close AI Agent v2 resources
+    await close_pipeline()
 
 
 # Создание FastAPI приложения
@@ -709,7 +712,11 @@ async def send_chat_message(request: ChatSendRequest):
 
 
 @app.post("/api/logs/upload")
-async def upload_log_file(user_id: int, file: UploadFile = File(...)):
+async def upload_log_file(
+    user_id: int,
+    file: UploadFile = File(...),
+    use_v2: bool = True,  # Новый параметр для выбора версии AI
+):
     """Загрузка и анализ лог-файла.
 
     Процесс:
@@ -719,6 +726,11 @@ async def upload_log_file(user_id: int, file: UploadFile = File(...)):
     4. Анализ через GigaChat с учетом ThreatTypes и SeverityLevels
     5. Создание отчета в таблице Reports
     6. Возврат результатов пользователю
+    
+    Args:
+        user_id: ID пользователя
+        file: Log file to analyze
+        use_v2: Использовать ли AI Agent v2 (по умолчанию True)
     """
     try:
         # Проверяем расширение файла
@@ -754,8 +766,13 @@ async def upload_log_file(user_id: int, file: UploadFile = File(...)):
             f"размер: {len(content_str)} байт"
         )
 
-        # Анализируем лог через GigaChat
-        analysis_result = await analyze_log_with_gigachat(content_str)
+        # Анализируем лог через GigaChat (v1 или v2)
+        if use_v2:
+            logger.info("Используем AI Agent v2 для анализа")
+            analysis_result = await analyze_log_v2(content_str)
+        else:
+            logger.info("Используем AI Agent v1 для анализа")
+            analysis_result = await analyze_log_with_gigachat(content_str)
 
         # Сохраняем лог в БД
         conn = await asyncpg.connect(DATABASE_URL, timeout=10)
@@ -775,10 +792,10 @@ async def upload_log_file(user_id: int, file: UploadFile = File(...)):
             report_row = await conn.fetchrow(
                 """
                 INSERT INTO public."Reports" (
-                    log_id, 
-                    severity_level_id, 
-                    threat_type_id, 
-                    description, 
+                    log_id,
+                    severity_level_id,
+                    threat_type_id,
+                    description,
                     created_at
                 )
                 VALUES ($1, $2, $3, $4, NOW())
@@ -796,12 +813,24 @@ async def upload_log_file(user_id: int, file: UploadFile = File(...)):
                 f"Log ID: {log_id}, Report ID: {report_id}"
             )
 
-            return {
+            response = {
                 "success": True,
                 "log_id": log_id,
                 "report_id": report_id,
                 "gigachat_analysis": analysis_result["description"],
             }
+            
+            # Добавляем метаданные v2 если доступны
+            if use_v2:
+                response["ai_version"] = "v2"
+                if "mitre_techniques" in analysis_result:
+                    response["mitre_techniques"] = analysis_result["mitre_techniques"]
+                if "processing_time_ms" in analysis_result:
+                    response["processing_time_ms"] = analysis_result["processing_time_ms"]
+            else:
+                response["ai_version"] = "v1"
+
+            return response
 
         finally:
             await conn.close()
