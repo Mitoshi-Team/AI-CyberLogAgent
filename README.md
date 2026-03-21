@@ -94,6 +94,12 @@ register
 - description: text (Описание действия агента)
 - date: timestamp with time zone (Дата и время выполнения действия)
 
+### Таблица UserLogs
+- user_log_id: integer (Уникальный идентификатор лога пользователя, автоинкремент)
+- action_type_id: integer (Внешний ключ на ActionTypes, тип действия)
+- description: text (Описание действия агента)
+- date: timestamp with time zone (Дата и время выполнения действия)
+
 ### Таблица Logs
 - log_id: integer (Уникальный идентификатор лога, автоинкремент)
 - file_content: text (Содержимое файла лога)
