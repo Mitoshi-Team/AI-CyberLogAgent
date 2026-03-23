@@ -2,7 +2,6 @@
 *.log
 *.log.*
 logs/
-test_logs/
 log/
 Logs/
 temp_logs/
@@ -43,5 +42,9 @@ secrets.py
 .idea/
 /log_ai_agent/ai_agent/chroma_db/
 /log_ai_agent/ai_agent/model/
+
+# MITRE ATT&CK: векторная БД и исходные данные (генерируются автоматически)
+/log_ai_agent/ai_agent_v2/chroma_db/
+/log_ai_agent/ai_agent_v2/mitre_data/
 
 data/
