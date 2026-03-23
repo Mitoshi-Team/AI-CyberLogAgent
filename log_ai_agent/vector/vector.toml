@@ -1,0 +1,45 @@
+[sources.external_log_files]
+type = "file"
+include = ["/data/external/**/*.log", "/data/external/**/*.txt"]
+ignore_older_secs = 0
+read_from = "beginning"
+fingerprint.strategy = "device_and_inode"
+
+[transforms.normalize_event]
+type = "remap"
+inputs = ["external_log_files"]
+source = '''
+.file_path = to_string(.file) ?? "unknown"
+.message = to_string(.message) ?? ""
+.timestamp = format_timestamp!(now(), "%+", "UTC")
+'''
+
+[transforms.chunk_logs]
+type = "lua"
+version = "2"
+inputs = ["normalize_event", "pipeline_heartbeat"]
+hooks.process = "process"
+search_dirs = ["/etc/vector/lua"]
+source = "require('chunk_logs')"
+
+[sources.pipeline_heartbeat]
+type = "internal_metrics"
+scrape_interval_secs = 5
+
+[sinks.kafka_batches]
+type = "kafka"
+inputs = ["chunk_logs"]
+bootstrap_servers = "${KAFKA_BOOTSTRAP_SERVERS}"
+topic = "${KAFKA_TOPIC}"
+encoding.codec = "json"
+batch.max_events = 250
+batch.timeout_secs = 10
+
+[sinks.kafka_batches.librdkafka_options]
+"message.timeout.ms" = "310000"
+
+[sinks.collected_logs_file]
+type = "file"
+inputs = ["chunk_logs"]
+path = "/data/processed/collected_logs.txt"
+encoding.codec = "json"
