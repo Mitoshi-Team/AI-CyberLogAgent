@@ -1,96 +1,82 @@
 <template>
-  <div class="min-h-screen bg-dark-950 flex items-center justify-center px-4 relative overflow-hidden">
-    <!-- Фоновые эффекты -->
-    <div class="absolute inset-0 overflow-hidden">
-      <div class="absolute top-20 left-20 w-96 h-96 bg-primary-500/10 rounded-full blur-3xl animate-pulse-soft"></div>
-      <div class="absolute bottom-20 right-20 w-96 h-96 bg-primary-600/10 rounded-full blur-3xl animate-pulse-soft" style="animation-delay: 1s;"></div>
-      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full">
-        <div class="w-full h-full" style="background-image: radial-gradient(circle at 1px 1px, rgba(14, 165, 233, 0.05) 1px, transparent 0); background-size: 40px 40px;"></div>
-      </div>
-    </div>
+  <div class="login-page">
+    <video
+      class="login-video"
+      autoplay
+      muted
+      loop
+      playsinline
+      disablepictureinpicture
+      disableremoteplayback
+      controlslist="nodownload noplaybackrate noremoteplayback nofullscreen"
+      tabindex="-1"
+      aria-hidden="true"
+      @contextmenu.prevent
+    >
+      <source src="/animation.webm" type="video/webm">
+    </video>
 
-    <div class="w-full max-w-md relative z-10">
-      <!-- Логотип -->
-      <div class="text-center mb-8">
-        <div class="flex items-center justify-center gap-3 mb-4 pb-2">
-          <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-2xl shadow-primary-500/50 animate-glow">
-            <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
-            </svg>
-          </div>
-          <h1 class="text-4xl font-bold bg-gradient-to-r from-primary-400 via-primary-500 to-primary-600 bg-clip-text text-transparent leading-relaxed pb-1">CyberLog</h1>
-        </div>
-        <p class="text-dark-400 text-sm">AI-powered система мониторинга инцидентов</p>
-      </div>
+    <div class="login-overlay"></div>
 
-      <!-- Форма входа -->
-      <div class="card backdrop-blur-2xl border-dark-800">
-        <form @submit.prevent="handleLogin" class="space-y-6">
-          <div>
-            <label class="block text-sm font-medium text-dark-300 mb-2">
-              Логин
-            </label>
-            <input
-              v-model="username"
-              type="text"
-              class="input"
-              placeholder="Введите логин"
-              required
-            />
-          </div>
+    <section class="login-panel" aria-label="Форма входа">
+      <header class="brand-block">
+        <img
+          class="brand-logo"
+          src="/wavescan_logo.svg"
+          alt="Wavescan"
+          width="380"
+          height="186"
+        />
+      </header>
 
-          <div>
-            <label class="block text-sm font-medium text-dark-300 mb-2">
-              Пароль
-            </label>
-            <div class="relative">
-              <input
-                v-model="password"
-                :type="showPassword ? 'text' : 'password'"
-                class="input pr-10"
-                placeholder="Введите пароль"
-                required
-              />
-              <button
-                type="button"
-                @click="showPassword = !showPassword"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-dark-200 transition-colors"
-              >
-                <svg v-if="!showPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                </svg>
-              </button>
-            </div>
-          </div>
+      <form @submit.prevent="handleLogin" class="login-form">
+        <label class="field">
+          <span class="sr-only">Логин</span>
+          <input
+            v-model="username"
+            type="text"
+            class="field-input"
+            placeholder="Введите логин"
+            required
+          />
+        </label>
 
+        <label class="field password-field">
+          <span class="sr-only">Пароль</span>
+          <input
+            v-model="password"
+            :type="showPassword ? 'text' : 'password'"
+            class="field-input"
+            placeholder="Введите пароль"
+            required
+          />
           <button
-            type="submit"
-            :disabled="isLoading"
-            class="w-full btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group"
+            type="button"
+            class="toggle-password"
+            @click="showPassword = !showPassword"
+            :aria-label="showPassword ? 'Скрыть пароль' : 'Показать пароль'"
           >
-            <span v-if="!isLoading" class="relative z-10">Войти</span>
-            <span v-else class="flex items-center justify-center">
-              <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-              </svg>
-            </span>
-            <div class="absolute inset-0 bg-gradient-to-r from-primary-600 to-primary-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <svg v-if="!showPassword" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M2 12c2.2-4 5.7-6 10-6s7.8 2 10 6c-2.2 4-5.7 6-10 6s-7.8-2-10-6Z" stroke="currentColor" stroke-width="1.8" />
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m3 3 18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M2 12c2.2-4 5.7-6 10-6 2 0 3.8.5 5.4 1.4M22 12c-2.2 4-5.7 6-10 6-2 0-3.8-.5-5.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
           </button>
+        </label>
 
-          <!-- Сообщение об ошибке -->
-          <div v-if="errorMessage" class="text-center">
-            <div class="inline-block px-4 py-2 bg-red-900/30 rounded-lg border border-red-700/50">
-              <p class="text-sm text-red-400">{{ errorMessage }}</p>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
+        <button type="submit" :disabled="isLoading" class="submit-btn">
+          <span v-if="!isLoading">Войти</span>
+          <span v-else class="loader" aria-hidden="true"></span>
+        </button>
+
+        <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
+      </form>
+
+      <p class="help-text">Забыли логин или пароль? Обратитесь к<br>администратору.</p>
+    </section>
   </div>
 </template>
 
@@ -123,10 +109,271 @@ const handleLogin = async () => {
     } else {
       errorMessage.value = result.message || 'Введен неверный логин или пароль'
     }
-  } catch (error) {
+  } catch {
     errorMessage.value = 'Введен неверный логин или пароль'
   } finally {
     isLoading.value = false
   }
 }
 </script>
+
+<style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  background: #1f1f2c;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+.login-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.login-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 70% 25%, rgba(124, 99, 255, 0.08), transparent 44%),
+    radial-gradient(circle at 78% 76%, rgba(72, 102, 255, 0.06), transparent 40%);
+}
+
+.login-panel {
+  position: relative;
+  z-index: 2;
+  width: min(470px, 24.5vw);
+  min-width: 340px;
+  height: 100vh;
+  padding: clamp(26px, 3.6vh, 48px) 20px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  background: rgba(37, 37, 37, 0.85);
+  border-right: 1px solid rgba(60, 60, 60, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.brand-block {
+  width: min(340px, 100%);
+  display: flex;
+  justify-content: center;
+  margin-bottom: clamp(28px, 5.4vh, 54px);
+}
+
+.brand-logo {
+  display: block;
+  width: min(280px, 86%);
+  height: auto;
+  object-fit: contain;
+}
+
+.login-form {
+  width: min(340px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.field {
+  position: relative;
+  display: block;
+}
+
+.login-form .field:first-child {
+  margin-top: 12px;
+}
+
+.field-input {
+  width: 100%;
+  height: 44px;
+  border: none;
+  border-bottom: 2px solid rgba(170, 176, 195, 0.45);
+  background: transparent;
+  color: #ffffff;
+  font-size: clamp(15px, 0.9vw, 17px);
+  font-weight: 300;
+  font-family: inherit;
+  padding: 0 34px 0 0;
+  outline: none;
+}
+
+.field-input::placeholder {
+  color: rgba(235, 239, 255, 0.62);
+  font-weight: 300;
+}
+
+.field-input:focus {
+  border-bottom-color: rgba(139, 180, 255, 0.92);
+}
+
+.toggle-password {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  width: 26px;
+  height: 26px;
+  color: rgba(226, 233, 245, 0.62);
+  cursor: pointer;
+  padding: 0;
+}
+
+.toggle-password svg {
+  width: 20px;
+  height: 20px;
+}
+
+.submit-btn {
+  width: 152px;
+  height: 44px;
+  margin-top: 12px;
+  align-self: center;
+  border: none;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #2a76e6, #1964d3);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 400;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(25, 100, 211, 0.4);
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.loader {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 999px;
+  animation: spin 0.9s linear infinite;
+}
+
+.error-text {
+  margin: 2px 0 0;
+  color: #ff7c9a;
+  font-size: 12px;
+}
+
+.help-text {
+  margin: auto 0 24px;
+  max-width: 340px;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  font-size: clamp(13px, 0.82vw, 15px);
+  font-weight: 300;
+  line-height: 1.28;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1024px) {
+  .login-panel {
+    width: min(460px, 54vw);
+    min-width: 0;
+    padding-inline: 20px;
+  }
+
+  .field-input {
+    font-size: 15px;
+    height: 42px;
+  }
+
+  .submit-btn {
+    width: 138px;
+    height: 40px;
+    font-size: 15px;
+  }
+
+  .help-text {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .login-page {
+    justify-content: center;
+  }
+
+  .login-panel {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-left: none;
+    height: 100vh;
+    padding-inline: 20px;
+  }
+
+  .brand-block {
+    margin-top: 10px;
+    margin-bottom: 26px;
+  }
+
+  .brand-logo {
+    width: min(296px, 90%);
+  }
+
+  .login-form {
+    width: 100%;
+    gap: 24px;
+  }
+
+  .field-input {
+    height: 38px;
+    font-size: 13px;
+    border-bottom-width: 1px;
+  }
+
+  .submit-btn {
+    width: 128px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .help-text {
+    max-width: 320px;
+    margin: auto auto 14px;
+    font-size: 11px;
+  }
+}
+</style>
