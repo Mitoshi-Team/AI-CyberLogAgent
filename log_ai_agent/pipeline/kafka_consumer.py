@@ -6,7 +6,8 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class KafkaLogBatchConsumer:
 
         try:
             aiokafka_module = importlib.import_module("aiokafka")
-            AIOKafkaConsumer = getattr(aiokafka_module, "AIOKafkaConsumer")
+            AIOKafkaConsumer = aiokafka_module.AIOKafkaConsumer
         except ModuleNotFoundError:
             logger.error(
                 "aiokafka is not installed. Install dependencies before starting the backend pipeline."

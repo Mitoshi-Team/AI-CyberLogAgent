@@ -115,6 +115,7 @@ async def _process_kafka_log_batch(payload: dict) -> None:
     finally:
         await conn.close()
 
+
 kafka_log_consumer = KafkaLogBatchConsumer(
     enabled=KAFKA_ENABLED,
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,

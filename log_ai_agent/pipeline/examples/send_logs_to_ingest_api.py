@@ -71,8 +71,12 @@ def upload_file(api_base: str, file_path: Path, source: str, timeout: int = 30) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Upload log files to ingest API")
-    parser.add_argument("--api", default="http://localhost:8000", help="Backend API base URL")
-    parser.add_argument("--source", default="external-client", help="Source label for uploaded logs")
+    parser.add_argument(
+        "--api", default="http://localhost:8000", help="Backend API base URL"
+    )
+    parser.add_argument(
+        "--source", default="external-client", help="Source label for uploaded logs"
+    )
     parser.add_argument("--dir", help="Directory with .log/.txt files")
     parser.add_argument(
         "--pick-files",
@@ -84,7 +88,9 @@ def main() -> None:
         action="store_true",
         help="Open folder picker and choose a directory with logs",
     )
-    parser.add_argument("--timeout", type=int, default=30, help="HTTP timeout in seconds")
+    parser.add_argument(
+        "--timeout", type=int, default=30, help="HTTP timeout in seconds"
+    )
     args = parser.parse_args()
 
     files: list[Path] = []

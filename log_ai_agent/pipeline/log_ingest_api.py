@@ -26,7 +26,9 @@ def _sanitize_filename(name: str) -> str:
     if not base_name:
         return "log.log"
 
-    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in base_name)
+    cleaned = "".join(
+        ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in base_name
+    )
     if not cleaned:
         return "log.log"
     return cleaned
@@ -37,7 +39,9 @@ def _target_path(source: str, original_name: str) -> Path:
     external_dir = Path(PIPELINE_EXTERNAL_LOGS_DIR)
     external_dir.mkdir(parents=True, exist_ok=True)
 
-    safe_source = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in source)
+    safe_source = "".join(
+        ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in source
+    )
     safe_name = _sanitize_filename(original_name)
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
