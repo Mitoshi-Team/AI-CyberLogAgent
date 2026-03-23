@@ -1,6 +1,6 @@
 """Type definitions for LangGraph compatibility."""
 
-from typing import List, Optional, TypedDict
+from typing import TypedDict
 
 
 class AnalysisState(TypedDict, total=False):

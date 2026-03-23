@@ -3,7 +3,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.runnables import RunnableConfig

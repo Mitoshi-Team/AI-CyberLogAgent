@@ -1,7 +1,5 @@
 """Pydantic models for AI analysis results."""
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 

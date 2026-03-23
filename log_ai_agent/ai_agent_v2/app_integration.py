@@ -1,7 +1,6 @@
 """Wrapper for AI Agent v2 integration with app.py."""
 
 import logging
-from typing import Optional
 
 from .callbacks import get_callback_config
 from .pipeline.full_pipeline import LogAnalysisPipeline, create_pipeline

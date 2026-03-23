@@ -4,10 +4,10 @@ import asyncio
 import importlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 

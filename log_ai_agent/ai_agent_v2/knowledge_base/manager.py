@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
