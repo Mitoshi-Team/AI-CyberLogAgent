@@ -17,6 +17,18 @@ from log_ai_agent.ai_agent.gigachat import (
     process_chat_message,
 )
 from log_ai_agent.config import commands
+from log_ai_agent.config.cfg import (
+    KAFKA_AUTO_OFFSET_RESET,
+    KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_ENABLED,
+    KAFKA_GROUP_ID,
+    KAFKA_TOPIC,
+    PIPELINE_COLLECTED_LOGS_FILE,
+    PIPELINE_CONSUMED_LOGS_FILE,
+    PIPELINE_KAFKA_AUTO_ANALYZE,
+)
+from log_ai_agent.pipeline.kafka_consumer import KafkaLogBatchConsumer
+from log_ai_agent.pipeline.log_ingest_api import router as pipeline_ingest_router
 
 # Загрузка переменных окружения из .env файла
 env_path = Path(__file__).parent / ".env"
@@ -34,12 +46,101 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
 
 
+async def _process_kafka_log_batch(payload: dict) -> None:
+    """Analyze Kafka batch with GigaChat and store result in DB."""
+    if not PIPELINE_KAFKA_AUTO_ANALYZE:
+        return
+
+    batch = payload.get("log") if isinstance(payload.get("log"), dict) else payload
+
+    records = batch.get("records")
+    if not isinstance(records, list) or not records:
+        return
+
+    messages = []
+    for record in records:
+        if isinstance(record, dict):
+            message = str(record.get("message", "")).strip()
+            if message:
+                messages.append(message)
+
+    if not messages:
+        return
+
+    log_content = "\n".join(messages)
+    analysis_result = await analyze_log_with_gigachat(log_content)
+
+    source_file = batch.get("source_file", "unknown")
+    report_description = (
+        f"Источник: {source_file}\n"
+        f"Размер батча: {batch.get('batch_size', len(messages))}\n"
+        f"\n{analysis_result['description']}"
+    )
+
+    conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+    try:
+        log_row = await conn.fetchrow(
+            """
+            INSERT INTO public."Logs" (file_content, date)
+            VALUES ($1, NOW())
+            RETURNING log_id
+            """,
+            log_content,
+        )
+        log_id = log_row["log_id"]
+
+        await conn.execute(
+            """
+            INSERT INTO public."Reports" (
+                log_id,
+                severity_level_id,
+                threat_type_id,
+                description,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, NOW())
+            """,
+            log_id,
+            analysis_result["severity_level_id"],
+            analysis_result["threat_type_id"],
+            report_description,
+        )
+
+        logger.info(
+            "Kafka batch analyzed and saved: source=%s, records=%s, log_id=%s",
+            source_file,
+            len(messages),
+            log_id,
+        )
+    finally:
+        await conn.close()
+
+kafka_log_consumer = KafkaLogBatchConsumer(
+    enabled=KAFKA_ENABLED,
+    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+    topic=KAFKA_TOPIC,
+    group_id=KAFKA_GROUP_ID,
+    auto_offset_reset=KAFKA_AUTO_OFFSET_RESET,
+    output_file=PIPELINE_CONSUMED_LOGS_FILE,
+    payload_handler=_process_kafka_log_batch,
+)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle events для приложения"""
     logger.info("🚀 Starting AI CyberLog Agent Backend...")
     logger.info(f"📊 Database URL: {DATABASE_URL}")
+    logger.info(f"📦 Pipeline collected logs file: {PIPELINE_COLLECTED_LOGS_FILE}")
+
+    if KAFKA_ENABLED:
+        await kafka_log_consumer.start()
+
     yield
+
+    if KAFKA_ENABLED:
+        await kafka_log_consumer.stop()
+
     logger.info("🛑 Shutting down AI CyberLog Agent Backend...")
 
 
@@ -50,6 +151,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.include_router(pipeline_ingest_router)
 
 # Настройка CORS
 app.add_middleware(

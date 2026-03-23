@@ -38,14 +38,71 @@ services:
       PORT: ${BACKEND_PORT:-8000}
       DEBUG: ${DEBUG:-False}
       FRONTEND_URL: ${FRONTEND_URL}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-processed-logs-batches}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-cyberlog-backend-group}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-earliest}
+      PIPELINE_EXTERNAL_LOGS_DIR: ${PIPELINE_EXTERNAL_LOGS_DIR:-/app/shared/external}
+      PIPELINE_PROCESSED_LOGS_DIR: ${PIPELINE_PROCESSED_LOGS_DIR:-/app/shared/processed}
+      PIPELINE_COLLECTED_LOGS_FILE: ${PIPELINE_COLLECTED_LOGS_FILE:-/app/shared/processed/collected_logs.txt}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+      kafka:
+        condition: service_started
     volumes:
       - ../log_ai_agent:/app/log_ai_agent
       - app_logs:/app/logs
+      - external_logs:/app/shared/external
+      - processed_logs:/app/shared/processed
+    networks:
+      - cyberlog-network
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: ${KAFKA_CONTAINER_NAME:-cyberlog-kafka}
+    user: "0:0"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    networks:
+      - cyberlog-network
+    restart: unless-stopped
+
+  vector:
+    image: timberio/vector:0.39.0-alpine
+    container_name: ${VECTOR_CONTAINER_NAME:-cyberlog-vector}
+    depends_on:
+      - kafka
+    environment:
+      VECTOR_CONFIG: /etc/vector/vector.toml
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-processed-logs-batches}
+    command: ["--config", "/etc/vector/vector.toml"]
+    volumes:
+      - ./vector/vector.toml:/etc/vector/vector.toml:ro
+      - ./vector/lua/chunk_logs.lua:/etc/vector/lua/chunk_logs.lua:ro
+      - external_logs:/data/external
+      - processed_logs:/data/processed
     networks:
       - cyberlog-network
     restart: unless-stopped
@@ -69,6 +126,15 @@ volumes:
     driver: local
   app_logs:
     driver: local
+  kafka_data:
+    driver: local
+    name: cyberlog_kafka_data
+  external_logs:
+    driver: local
+    name: cyberlog_external_logs
+  processed_logs:
+    driver: local
+    name: cyberlog_processed_logs
 
 networks:
   cyberlog-network:
