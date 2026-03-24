@@ -40,7 +40,6 @@
             required
           />
         </label>
-
         <label class="field password-field">
           <span class="sr-only">Пароль</span>
           <input
@@ -56,14 +55,18 @@
             @click="showPassword = !showPassword"
             :aria-label="showPassword ? 'Скрыть пароль' : 'Показать пароль'"
           >
-            <svg v-if="!showPassword" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M2 12c2.2-4 5.7-6 10-6s7.8 2 10 6c-2.2 4-5.7 6-10 6s-7.8-2-10-6Z" stroke="currentColor" stroke-width="1.8" />
-              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="m3 3 18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              <path d="M2 12c2.2-4 5.7-6 10-6 2 0 3.8.5 5.4 1.4M22 12c-2.2 4-5.7 6-10 6-2 0-3.8-.5-5.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
+            <img
+              v-if="!showPassword"
+              src="/open_eye_icon.svg"
+              alt=""
+              aria-hidden="true"
+            />
+            <img
+              v-else
+              src="/close_eye_icon.svg"
+              alt=""
+              aria-hidden="true"
+            />
           </button>
         </label>
 
@@ -151,7 +154,7 @@ const handleLogin = async () => {
 .login-panel {
   position: relative;
   z-index: 2;
-  width: min(470px, 24.5vw);
+  width: min(470px, 420px);
   min-width: 340px;
   height: 100vh;
   padding: clamp(26px, 3.6vh, 48px) 20px 22px;
@@ -173,9 +176,10 @@ const handleLogin = async () => {
 
 .brand-logo {
   display: block;
-  width: min(280px, 86%);
+  width: min(300px, 100%);
   height: auto;
   object-fit: contain;
+  margin-top: 50px;
 }
 
 .login-form {
@@ -183,6 +187,7 @@ const handleLogin = async () => {
   display: flex;
   flex-direction: column;
   gap: 30px;
+  margin-top: 50px;
 }
 
 .field {
@@ -208,6 +213,21 @@ const handleLogin = async () => {
   outline: none;
 }
 
+.password-field .field-input {
+  padding: 0 34px 0 0px;
+}
+
+.password-icon {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
 .field-input::placeholder {
   color: rgba(235, 239, 255, 0.62);
   font-weight: 300;
@@ -231,7 +251,7 @@ const handleLogin = async () => {
   padding: 0;
 }
 
-.toggle-password svg {
+.toggle-password img {
   width: 20px;
   height: 20px;
 }
@@ -241,26 +261,20 @@ const handleLogin = async () => {
   height: 44px;
   margin-top: 12px;
   align-self: center;
-  border: none;
+  border: solid 1px #3C3C3C;
   border-radius: 9px;
-  background: linear-gradient(180deg, #2a76e6, #1964d3);
+  background: #1964D3;
   color: #ffffff;
   font-size: 16px;
   font-weight: 400;
   font-family: inherit;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  cursor: pointer;;
 }
 
 .submit-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(25, 100, 211, 0.4);
+  background: #1963d3e4;
 }
 
-.submit-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
 
 .loader {
   width: 16px;
@@ -355,6 +369,7 @@ const handleLogin = async () => {
   .login-form {
     width: 100%;
     gap: 24px;
+    margin-top: clamp(14px, 3vh, 24px);
   }
 
   .field-input {
