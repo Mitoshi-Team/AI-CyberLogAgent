@@ -21,7 +21,9 @@ async def clear_user_context(user_id: int, database_url: str) -> int:
         await conn.close()
 
 
-async def process_chat_message(user_id: int, user_message: str, database_url: str) -> dict:
+async def process_chat_message(
+    user_id: int, user_message: str, database_url: str
+) -> dict:
     """Process user chat message and save user/agent messages.
 
     This integration is pipeline-oriented: for report-related questions it returns
@@ -34,10 +36,10 @@ async def process_chat_message(user_id: int, user_message: str, database_url: st
     conn = await asyncpg.connect(database_url, timeout=10)
     try:
         await conn.execute(
-            '''
+            """
             INSERT INTO public."Messages" (user_id, role, content, created_at)
             VALUES ($1, $2, $3, NOW())
-            ''',
+            """,
             user_id,
             "user",
             message,
@@ -60,12 +62,12 @@ async def process_chat_message(user_id: int, user_message: str, database_url: st
 
         if report_query:
             latest_report = await conn.fetchrow(
-                '''
+                """
                 SELECT r.report_id, r.description, r.created_at
                 FROM public."Reports" r
                 ORDER BY r.created_at DESC
                 LIMIT 1
-                '''
+                """
             )
             if latest_report:
                 response = (
@@ -88,10 +90,10 @@ async def process_chat_message(user_id: int, user_message: str, database_url: st
             mode = "assistant"
 
         await conn.execute(
-            '''
+            """
             INSERT INTO public."Messages" (user_id, role, content, created_at)
             VALUES ($1, $2, $3, NOW())
-            ''',
+            """,
             user_id,
             "agent",
             response,

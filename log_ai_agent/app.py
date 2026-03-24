@@ -76,7 +76,11 @@ async def _process_kafka_log_batch(payload: dict) -> None:
 
     source_file = batch.get("source_file", "unknown")
     source_files = batch.get("source_files")
-    source_label = ", ".join(source_files) if isinstance(source_files, list) and source_files else source_file
+    source_label = (
+        ", ".join(source_files)
+        if isinstance(source_files, list) and source_files
+        else source_file
+    )
     events_found = analysis_result.get("events_found", 0)
     report_description = (
         "AI pipeline: Agent1 -> RAG -> Agent2\n"
