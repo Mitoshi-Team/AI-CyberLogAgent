@@ -5,17 +5,17 @@ from typing import Any
 
 from langchain_gigachat.chat_models import GigaChat as LangChainGigaChat
 
-from log_ai_agent.config.cfg import GIGACHAT_API_KEY
+from ..config import AgentConfig
 
 logger = logging.getLogger(__name__)
 
 
 def create_gigachat_llm(
-    api_key: str = GIGACHAT_API_KEY,
-    model: str = "GigaChat",
-    temperature: float = 0.1,
-    max_tokens: int = 4000,
-    timeout: int = 90,
+    api_key: str | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    timeout: int | None = None,
     **kwargs: Any,
 ) -> LangChainGigaChat:
     """Create GigaChat LLM instance.
@@ -32,13 +32,23 @@ def create_gigachat_llm(
         LangChain GigaChat instance
 
     """
-    logger.info(f"Creating GigaChat LLM: model={model}, temp={temperature}")
+    cfg = AgentConfig.from_env()
+    api_key = api_key or cfg.gigachat_api_key
+    model = model or cfg.gigachat_model
+    temperature = cfg.temperature if temperature is None else temperature
+    max_tokens = cfg.max_tokens if max_tokens is None else max_tokens
+    timeout = cfg.timeout if timeout is None else timeout
+
+    logger.info(
+        f"Creating GigaChat LLM: model={model}, temp={temperature}, timeout={timeout}s"
+    )
 
     llm = LangChainGigaChat(
         credentials=api_key,
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout,
         verify_ssl_certs=False,
         **kwargs,
     )

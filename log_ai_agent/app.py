@@ -11,12 +11,15 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from log_ai_agent.ai_agent.gigachat import (
-    analyze_log_with_gigachat,
+from log_ai_agent.ai_agent_v2.app_integration import (
+    analyze_log_v2,
+    close_pipeline,
+    warmup_pipeline,
+)
+from log_ai_agent.ai_agent_v2.chat_integration import (
     clear_user_context,
     process_chat_message,
 )
-from log_ai_agent.ai_agent_v2.app_integration import analyze_log_v2, close_pipeline
 from log_ai_agent.config import commands
 from log_ai_agent.config.cfg import (
     KAFKA_AUTO_OFFSET_RESET,
@@ -48,7 +51,7 @@ PORT = int(os.getenv("PORT", 8000))
 
 
 async def _process_kafka_log_batch(payload: dict) -> None:
-    """Analyze Kafka batch with GigaChat and store result in DB."""
+    """Analyze Kafka batch with AI Agent v2 pipeline and store result in DB."""
     if not PIPELINE_KAFKA_AUTO_ANALYZE:
         return
 
@@ -69,12 +72,21 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         return
 
     log_content = "\n".join(messages)
-    analysis_result = await analyze_log_with_gigachat(log_content)
+    analysis_result = await analyze_log_v2(log_content)
 
     source_file = batch.get("source_file", "unknown")
+    source_files = batch.get("source_files")
+    source_label = (
+        ", ".join(source_files)
+        if isinstance(source_files, list) and source_files
+        else source_file
+    )
+    events_found = analysis_result.get("events_found", 0)
     report_description = (
-        f"Источник: {source_file}\n"
+        "AI pipeline: Agent1 -> RAG -> Agent2\n"
+        f"Источник: {source_label}\n"
         f"Размер батча: {batch.get('batch_size', len(messages))}\n"
+        f"Событий выделено Agent1: {events_found}\n"
         f"\n{analysis_result['description']}"
     )
 
@@ -107,12 +119,28 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             report_description,
         )
 
+        chat_message = (
+            "# Автоотчет по входящим логам\n\n"
+            f"{report_description}\n\n"
+            "_Сообщение добавлено автоматически из Kafka pipeline._"
+        )
+        inserted_messages = await conn.execute(
+            """
+            INSERT INTO public."Messages" (user_id, role, content, created_at)
+            SELECT user_id, 'agent', $1, NOW()
+            FROM public."Users"
+            """,
+            chat_message,
+        )
+
         logger.info(
-            "Kafka batch analyzed and saved: source=%s, records=%s, log_id=%s",
-            source_file,
+            "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, log_id=%s",
+            source_label,
             len(messages),
+            events_found,
             log_id,
         )
+        logger.info("Kafka report auto-posted to chat: %s", inserted_messages)
     finally:
         await conn.close()
 
@@ -134,6 +162,15 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting AI CyberLog Agent Backend...")
     logger.info(f"📊 Database URL: {DATABASE_URL}")
     logger.info(f"📦 Pipeline collected logs file: {PIPELINE_COLLECTED_LOGS_FILE}")
+
+    try:
+        logger.info("🔥 Warming up AI Agent v2 pipeline...")
+        await warmup_pipeline()
+        logger.info("✅ AI Agent v2 pipeline warmup complete")
+    except Exception:
+        logger.exception(
+            "AI Agent v2 pipeline warmup failed during startup; will retry on first request"
+        )
 
     if KAFKA_ENABLED:
         await kafka_log_consumer.start()
@@ -818,7 +855,7 @@ async def send_chat_message(request: ChatSendRequest):
 async def upload_log_file(
     user_id: int,
     file: UploadFile = File(...),
-    use_v2: bool = True,  # Новый параметр для выбора версии AI
+    use_v2: bool = True,
 ):
     """Загрузка и анализ лог-файла.
 
@@ -833,7 +870,7 @@ async def upload_log_file(
     Args:
         user_id: ID пользователя
         file: Log file to analyze
-        use_v2: Использовать ли AI Agent v2 (по умолчанию True)
+        use_v2: Deprecated. Анализ всегда выполняется через AI Agent v2.
 
     """
     try:
@@ -870,13 +907,10 @@ async def upload_log_file(
             f"размер: {len(content_str)} байт"
         )
 
-        # Анализируем лог через GigaChat (v1 или v2)
-        if use_v2:
-            logger.info("Используем AI Agent v2 для анализа")
-            analysis_result = await analyze_log_v2(content_str)
-        else:
-            logger.info("Используем AI Agent v1 для анализа")
-            analysis_result = await analyze_log_with_gigachat(content_str)
+        if not use_v2:
+            logger.info("Параметр use_v2=false устарел, используется AI Agent v2")
+        logger.info("Используем AI Agent v2 для анализа")
+        analysis_result = await analyze_log_v2(content_str)
 
         # Сохраняем лог в БД
         conn = await asyncpg.connect(DATABASE_URL, timeout=10)
@@ -925,16 +959,11 @@ async def upload_log_file(
             }
 
             # Добавляем метаданные v2 если доступны
-            if use_v2:
-                response["ai_version"] = "v2"
-                if "mitre_techniques" in analysis_result:
-                    response["mitre_techniques"] = analysis_result["mitre_techniques"]
-                if "processing_time_ms" in analysis_result:
-                    response["processing_time_ms"] = analysis_result[
-                        "processing_time_ms"
-                    ]
-            else:
-                response["ai_version"] = "v1"
+            response["ai_version"] = "v2"
+            if "mitre_techniques" in analysis_result:
+                response["mitre_techniques"] = analysis_result["mitre_techniques"]
+            if "processing_time_ms" in analysis_result:
+                response["processing_time_ms"] = analysis_result["processing_time_ms"]
 
             return response
 

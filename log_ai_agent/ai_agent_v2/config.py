@@ -5,13 +5,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _get_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class AgentConfig:
     """Configuration for AI Agent v2."""
 
     # GigaChat settings
     gigachat_api_key: str = ""
-    gigachat_model: str = "GigaChat"
+    gigachat_model: str = "GigaChat-2-Max"
     temperature: float = 0.1
     max_tokens: int = 4000
     timeout: int = 90
@@ -51,6 +58,13 @@ class AgentConfig:
         """
         return cls(
             gigachat_api_key=os.getenv("GIGACHAT_API_KEY", ""),
+            gigachat_model=os.getenv("GIGACHAT_MODEL", "GigaChat-2-Max"),
+            temperature=float(os.getenv("GIGACHAT_TEMPERATURE", "0.1")),
+            max_tokens=int(os.getenv("GIGACHAT_MAX_TOKENS", "4000")),
+            timeout=int(os.getenv("GIGACHAT_TIMEOUT", "90")),
+            use_rag=_get_bool_env("AI_V2_USE_RAG", True),
+            rag_top_k=int(os.getenv("AI_V2_RAG_TOP_K", "5")),
+            chroma_path=os.getenv("AI_V2_CHROMA_PATH", ""),
             debug=os.getenv("DEBUG", "False").lower() == "true",
         )
 
