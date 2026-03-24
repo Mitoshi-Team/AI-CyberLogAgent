@@ -151,9 +151,10 @@ class LogAnalysisPipeline:
             logger.info(f"✓ Pipeline complete in {results['total_time_sec']:.1f}s")
 
         except Exception as e:
-            logger.error(f"Pipeline error: {e}")
+            error_details = str(e) or f"{type(e).__name__}: {e!r}"
+            logger.exception("Pipeline error: %s", error_details)
             results["success"] = False
-            results["error"] = str(e)
+            results["error"] = error_details
             results["total_time_sec"] = time.time() - start_time
 
         return results

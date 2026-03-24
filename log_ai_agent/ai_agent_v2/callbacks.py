@@ -77,7 +77,11 @@ class ConsoleCallbackHandler(BaseCallbackHandler):
     ) -> Any:
         """Run when chain errors."""
         if not parent_run_id:
-            logger.error(f"✗ Error: Chain failed - {error}")
+            logger.error(
+                "✗ Error: Chain failed - %s (%r)",
+                type(error).__name__,
+                error,
+            )
 
     def on_llm_start(
         self,
