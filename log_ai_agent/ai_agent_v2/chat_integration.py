@@ -69,7 +69,9 @@ async def _generate_agent_response(
     history_lines: list[str] = []
     for row in reversed(history_rows):
         role = "Пользователь" if row["role"] == "user" else "Агент"
-        history_lines.append(f"[{row['created_at'].isoformat()}] {role}: {row['content']}")
+        history_lines.append(
+            f"[{row['created_at'].isoformat()}] {role}: {row['content']}"
+        )
 
     history_text = "\n".join(history_lines) if history_lines else "История отсутствует"
 
