@@ -1,8 +1,110 @@
 import logging
 
 import asyncpg
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from .chains.llm import create_gigachat_llm
 
 logger = logging.getLogger(__name__)
+
+
+CHAT_SYSTEM_PROMPT = """Ты - AI-ассистент по кибербезопасности в системе AI CyberLog Agent.
+Отвечай на русском языке, по существу и с практическими рекомендациями.
+
+Правила ответа:
+- Используй контекст диалога и данные последнего отчета, если они доступны.
+- Если данных для точного вывода недостаточно, явно укажи это и предложи следующий шаг.
+- Не выдумывай факты, которых нет в переданных данных.
+- Формулируй ответ как нормальный диалоговый ответ ассистента, без служебных меток.
+"""
+
+
+def _extract_llm_text(result: object) -> str:
+    """Normalize LangChain LLM output into plain text."""
+    content = getattr(result, "content", result)
+
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(p.strip() for p in parts if p and p.strip())
+
+    return str(content).strip()
+
+
+async def _generate_agent_response(
+    conn: asyncpg.Connection,
+    user_id: int,
+    user_message: str,
+) -> str:
+    """Generate chat response via LLM using recent conversation and latest report."""
+    history_rows = await conn.fetch(
+        """
+        SELECT role, content, created_at
+        FROM public."Messages"
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 10
+        """,
+        user_id,
+    )
+
+    latest_report = await conn.fetchrow(
+        """
+        SELECT r.report_id, r.description, r.created_at
+        FROM public."Reports" r
+        ORDER BY r.created_at DESC
+        LIMIT 1
+        """
+    )
+
+    history_lines: list[str] = []
+    for row in reversed(history_rows):
+        role = "Пользователь" if row["role"] == "user" else "Агент"
+        history_lines.append(f"[{row['created_at'].isoformat()}] {role}: {row['content']}")
+
+    history_text = "\n".join(history_lines) if history_lines else "История отсутствует"
+
+    if latest_report:
+        report_context = (
+            f"ID: {latest_report['report_id']}\n"
+            f"Время: {latest_report['created_at'].isoformat()}\n"
+            f"Описание:\n{latest_report['description']}"
+        )
+    else:
+        report_context = "Отчеты пока отсутствуют"
+
+    llm = create_gigachat_llm()
+    llm_result = await llm.ainvoke(
+        [
+            SystemMessage(content=CHAT_SYSTEM_PROMPT),
+            HumanMessage(
+                content=(
+                    "Контекст последнего отчета:\n"
+                    f"{report_context}\n\n"
+                    "История диалога (последние 10 сообщений):\n"
+                    f"{history_text}\n\n"
+                    "Текущее сообщение пользователя:\n"
+                    f"{user_message}\n\n"
+                    "Сформируй полезный ответ ассистента."
+                )
+            ),
+        ]
+    )
+
+    response = _extract_llm_text(llm_result)
+    if not response:
+        raise RuntimeError("LLM returned empty response")
+
+    return response
 
 
 async def clear_user_context(user_id: int, database_url: str) -> int:
@@ -24,11 +126,7 @@ async def clear_user_context(user_id: int, database_url: str) -> int:
 async def process_chat_message(
     user_id: int, user_message: str, database_url: str
 ) -> dict:
-    """Process user chat message and save user/agent messages.
-
-    This integration is pipeline-oriented: for report-related questions it returns
-    the latest generated report from the two-agent pipeline output stored in DB.
-    """
+    """Process user chat message and save user/agent messages."""
     message = (user_message or "").strip()
     if not message:
         raise ValueError("Message cannot be empty")
@@ -45,49 +143,12 @@ async def process_chat_message(
             message,
         )
 
-        lowered = message.lower()
-        report_query = any(
-            token in lowered
-            for token in [
-                "отчет",
-                "отч",
-                "инцидент",
-                "угроз",
-                "severity",
-                "критич",
-                "послед",
-                "лог",
-            ]
+        response = await _generate_agent_response(
+            conn=conn,
+            user_id=user_id,
+            user_message=message,
         )
-
-        if report_query:
-            latest_report = await conn.fetchrow(
-                """
-                SELECT r.report_id, r.description, r.created_at
-                FROM public."Reports" r
-                ORDER BY r.created_at DESC
-                LIMIT 1
-                """
-            )
-            if latest_report:
-                response = (
-                    f"Последний отчет #{latest_report['report_id']} "
-                    f"({latest_report['created_at'].isoformat()}):\n\n"
-                    f"{latest_report['description']}"
-                )
-                mode = "report_context"
-            else:
-                response = (
-                    "Пока нет сформированных отчетов. "
-                    "Загрузите лог в чат или отправьте внешние логи в pipeline."
-                )
-                mode = "no_reports"
-        else:
-            response = (
-                "Работаю через v2 pipeline (Agent1 -> RAG -> Agent2). "
-                "Спросите про последний отчет, уровень угрозы или рекомендации."
-            )
-            mode = "assistant"
+        mode = "agent_llm"
 
         await conn.execute(
             """

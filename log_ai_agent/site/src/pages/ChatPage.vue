@@ -261,12 +261,8 @@ const loadChatHistory = async () => {
     const userId = appStore.currentUser?.id
     if (!userId) {
       console.error('User not authenticated')
-      // Показываем начальное приветствие если пользователь не авторизован
-      messages.value = [{
-        role: 'ai',
-        text: 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
-        isNew: false,
-      }]
+      // Для нового/неавторизованного состояния чат остается пустым
+      messages.value = []
       return
     }
     
@@ -280,23 +276,15 @@ const loadChatHistory = async () => {
         isNew: false,
       }))
     } else {
-      // Если история пуста, показываем приветствие
-      messages.value = [{
-        role: 'ai',
-        text: 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
-        isNew: false,
-      }]
+      // Если история пуста, оставляем чат пустым
+      messages.value = []
     }
     
     scrollToBottom()
   } catch (error) {
     console.error('Error loading chat history:', error)
-    // В случае ошибки показываем приветствие
-    messages.value = [{
-      role: 'ai',
-      text: 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?',
-      isNew: false,
-    }]
+    // В случае ошибки также оставляем чат пустым
+    messages.value = []
   }
 }
 
@@ -615,25 +603,12 @@ const confirmNewChat = async () => {
     showNewChatModal.value = false
 
     // Очищаем сообщения в БД и контекст GigaChat
-    const response = await chat.clearMessages(userId)
+    await chat.clearMessages(userId)
 
     // Очищаем локальный массив сообщений
     messages.value = []
 
-    // Загружаем начальное приветствие и сохраняем его в БД
-    const welcomeMessage = 'Привет! Я CyberLog ассистент. Я помогу вам анализировать инциденты безопасности и предоставлять рекомендации. Какой у вас вопрос?'
-    
-    messages.value.push({
-      role: 'ai',
-      text: welcomeMessage,
-      isNew: false,
-    })
-
-    // Сохраняем приветствие в БД с ролью 'agent'
-    await chat.sendMessage(userId, 'agent', welcomeMessage)
-
     // Показываем уведомление с информацией об очистке
-    const deletedCount = response.data?.deleted_count || 0
     appStore.addNotification(
       `Новый чат начат`, 
       'success'
