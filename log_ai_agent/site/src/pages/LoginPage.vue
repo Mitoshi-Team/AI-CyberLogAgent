@@ -263,7 +263,7 @@ const handleLogin = async () => {
   align-self: center;
   border: solid 1px #3C3C3C;
   border-radius: 9px;
-  background: #1964D3;
+  background: #8079ED;
   color: #ffffff;
   font-size: 16px;
   font-weight: 400;
@@ -272,7 +272,7 @@ const handleLogin = async () => {
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: #1963d3e4;
+  background: #8179ede6;
 }
 
 
