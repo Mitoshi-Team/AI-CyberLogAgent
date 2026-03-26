@@ -1,6 +1,6 @@
-# Wavescan
+![Wavescan](./log_ai_agent/site/public/wavescan_logo.svg)
 
-![Wavescan](./log_ai_agent/site/public/wavescan_logo.png)
+# Wavescan
 
 ## Описание
 
