@@ -25,7 +25,7 @@
               v-if="msg.role === 'user'"
               class="flex justify-end"
             >
-              <div class="max-w-full sm:max-w-xl px-4 py-3 rounded-2xl rounded-br-md bg-[#7971F0] text-white">
+              <div class="max-w-full sm:max-w-xl px-4 py-3 rounded-2xl rounded-br-md bg-[#2B2B2B] text-white">
                 <p class="text-sm leading-relaxed break-words whitespace-pre-wrap">{{ msg.text }}</p>
               </div>
             </div>
@@ -715,7 +715,7 @@ const confirmNewChat = async () => {
   color: #c2c2c2;
   border-radius: 14px;
   padding: 9px 22px;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   line-height: 1;
   transition: all 0.2s ease;
 }

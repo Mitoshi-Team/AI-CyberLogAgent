@@ -80,7 +80,7 @@
   /* Кастомный скроллбар */
   .scrollbar-custom {
     scrollbar-width: thin;
-    scrollbar-color: rgb(51, 65, 85) transparent;
+    scrollbar-color: #2B2B2B transparent;
   }
 
   .scrollbar-custom::-webkit-scrollbar {

@@ -805,6 +805,26 @@ class ChatSendResponse(BaseModel):
     message: str | None = None
 
 
+async def _store_agent_fallback_message(user_id: int, text: str) -> None:
+    """Persist fallback assistant message so chat history remains consistent."""
+    if not DATABASE_URL:
+        return
+
+    conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+    try:
+        await conn.execute(
+            """
+            INSERT INTO public."Messages" (user_id, role, content, created_at)
+            VALUES ($1, $2, $3, NOW())
+            """,
+            user_id,
+            "agent",
+            text,
+        )
+    finally:
+        await conn.close()
+
+
 @app.post("/api/chat/send", response_model=ChatSendResponse)
 async def send_chat_message(request: ChatSendRequest):
     """Отправить сообщение AI агенту и получить ответ.
@@ -846,8 +866,39 @@ async def send_chat_message(request: ChatSendRequest):
         raise
     except Exception as e:
         logger.error(f"Error processing chat message: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Ошибка обработки сообщения: {str(e)}"
+        error_text = str(e)
+
+        if "Payment Required" in error_text or "402" in error_text:
+            fallback_text = (
+                "Сервис AI временно недоступен: внешний провайдер вернул ошибку тарифа "
+                "(402 Payment Required). Попробуйте позже или проверьте тариф/баланс API."
+            )
+            fallback_mode = "agent_unavailable_payment_required"
+            fallback_message = "Ответ сформирован в режиме деградации"
+        elif "All connection attempts failed" in error_text:
+            fallback_text = (
+                "Сервис AI временно недоступен из-за сетевой ошибки при обращении к LLM. "
+                "Попробуйте отправить сообщение еще раз через 1-2 минуты."
+            )
+            fallback_mode = "agent_unavailable_network"
+            fallback_message = "Ответ сформирован в режиме деградации"
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Ошибка обработки сообщения на сервере",
+            )
+
+        try:
+            await _store_agent_fallback_message(request.user_id, fallback_text)
+        except Exception as db_error:
+            logger.error(f"Failed to persist fallback chat message: {db_error}")
+
+        return ChatSendResponse(
+            success=False,
+            user_message=request.message,
+            agent_response=fallback_text,
+            mode=fallback_mode,
+            message=fallback_message,
         )
 
 

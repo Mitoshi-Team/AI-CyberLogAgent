@@ -48,6 +48,12 @@ services:
       PIPELINE_COLLECTED_LOGS_FILE: ${PIPELINE_COLLECTED_LOGS_FILE:-/app/shared/processed/collected_logs.txt}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -116,7 +122,8 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - cyberlog-network
     restart: unless-stopped

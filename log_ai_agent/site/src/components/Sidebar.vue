@@ -60,7 +60,7 @@
         :title="isCollapsed ? item.label : ''"
       >
         <div class="relative flex-shrink-0">
-          <img :src="item.icon" :alt="item.label" class="w-4 h-4" />
+          <img :src="item.icon" :alt="item.label" class="w-5 h-5" />
           <span 
             v-if="item.to === '/chat' && appStore.unreadChatMessages > 0"
             class="absolute -top-1 -right-1 w-3 h-3 bg-danger-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white animate-pulse"
@@ -71,7 +71,7 @@
         <span 
           :class="[
             'transition-all duration-300 whitespace-nowrap',
-            isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 hidden sm:inline text-sm'
+            isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 hidden sm:inline'
           ]"
         >
           {{ item.label }}
@@ -103,7 +103,7 @@
         <span 
           v-if="!isCollapsed"
           :class="[
-            'text-sm font-medium whitespace-nowrap hidden sm:inline transition-opacity duration-300 delay-100',
+            'font-medium whitespace-nowrap hidden sm:inline transition-opacity duration-300 delay-100',
             isCollapsed ? 'opacity-0' : 'opacity-100'
           ]"
         >
