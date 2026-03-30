@@ -348,6 +348,18 @@ const loadChatHistory = async () => {
         text: msg.content,
         isNew: false,
       }))
+
+      // При открытии чата прокручиваем к последнему сообщению пользователя,
+      // используя ту же логику top-align, что и при отправке сообщения.
+      const lastUserMessageIndex = [...messages.value]
+        .map(msg => msg.role)
+        .lastIndexOf('user')
+
+      if (lastUserMessageIndex >= 0) {
+        await scrollMessageToTop(lastUserMessageIndex)
+        topAlignSpacerHeight.value = Math.max(topAlignSpacerHeight.value - 54, 0)
+        return
+      }
     } else {
       // Если история пуста, оставляем чат пустым
       messages.value = []
