@@ -160,12 +160,22 @@
                 </button>
 
                 <button
-                  @click="sendMessage"
-                  :disabled="!canSendMessage"
+                  @click="handleSendControlClick"
+                  :disabled="!canUseSendControl"
                   class="w-9 h-9 rounded-xl bg-[#6675ff] hover:bg-[#7383ff] disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all"
                   :title="getRateLimitMessage"
                 >
-                  <img src="/send_icon.svg" alt="send" class="w-4 h-4 mx-auto" />
+                  <svg
+                    v-if="isLogAnalysisInProgress"
+                    class="w-4 h-4 mx-auto"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  <img v-else src="/send_icon.svg" alt="send" class="w-4 h-4 mx-auto" />
                 </button>
               </div>
             </div>
@@ -273,11 +283,13 @@ const chatContainer = ref(null)
 const messageInput = ref(null)
 const inputMessage = ref('')
 const isLoading = ref(false)
+const isLogAnalysisInProgress = ref(false)
 const lastMessageTime = ref(0)
 const isRateLimited = ref(false)
 const isEmptyFile = ref(false)
 const showNewChatModal = ref(false)
 let clearNotificationsTimer = null
+let logUploadAbortController = null
 
 // Константы ограничений
 const MAX_MESSAGE_LENGTH = 500
@@ -409,11 +421,17 @@ const canSendMessage = computed(() => {
 
 // Сообщение о причине блокировки
 const getRateLimitMessage = computed(() => {
+  if (isLogAnalysisInProgress.value) return 'Отменить анализ лога'
   if (isLoading.value) return 'Ожидание ответа агента...'
   if (isRateLimited.value) return 'Подождите 2 секунды перед следующим сообщением'
   if (inputMessage.value.length > MAX_MESSAGE_LENGTH) return 'Сообщение слишком длинное'
   if (!inputMessage.value.trim()) return 'Введите сообщение'
   return 'Отправить сообщение'
+})
+
+const canUseSendControl = computed(() => {
+  if (isLogAnalysisInProgress.value) return true
+  return canSendMessage.value
 })
 
 const scrollToBottom = () => {
@@ -582,6 +600,20 @@ const sendMessage = async () => {
   }
 }
 
+const cancelLogAnalysis = () => {
+  if (!isLogAnalysisInProgress.value || !logUploadAbortController) return
+  logUploadAbortController.abort()
+}
+
+const handleSendControlClick = () => {
+  if (isLogAnalysisInProgress.value) {
+    cancelLogAnalysis()
+    return
+  }
+
+  sendMessage()
+}
+
 const selectQuickQuestion = (question) => {
   inputMessage.value = question
   sendMessage()
@@ -626,10 +658,14 @@ const handleFileUpload = async (event) => {
   
   // Устанавливаем состояние загрузки
   isLoading.value = true
+  isLogAnalysisInProgress.value = true
+  logUploadAbortController = new AbortController()
   
   try {
     // Отправляем файл на сервер для анализа
-    const response = await logs.upload(userId, file)
+    const response = await logs.upload(userId, file, {
+      signal: logUploadAbortController.signal,
+    })
     
     if (response.data.success) {
       // Показываем только анализ от GigaChat
@@ -653,6 +689,20 @@ const handleFileUpload = async (event) => {
     }
     
   } catch (error) {
+    if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
+      const canceledMsg = 'Анализ лога отменен пользователем.'
+
+      messages.value.push({
+        role: 'ai',
+        text: canceledMsg,
+        isNew: false,
+      })
+
+      await saveChatMessage('agent', canceledMsg)
+      appStore.addNotification('Анализ лога отменен', 'info')
+      return
+    }
+
     console.error('Error uploading log file:', error)
     
     const errorMsg = `❌ **Ошибка при анализе файла**
@@ -669,11 +719,19 @@ ${error.response?.data?.detail || error.message || 'Неизвестная ош�
     
     appStore.addNotification('Ошибка при анализе файла логов', 'error')
   } finally {
+    logUploadAbortController = null
+    isLogAnalysisInProgress.value = false
     isLoading.value = false
     scrollToBottom()
     event.target.value = '' // Сбрасываем input
   }
 }
+
+onUnmounted(() => {
+  if (isLogAnalysisInProgress.value && logUploadAbortController) {
+    logUploadAbortController.abort()
+  }
+})
 
 const confirmNewChat = async () => {
   try {

@@ -103,7 +103,7 @@ export const reports = {
  * Работа с логами
  */
 export const logs = {
-  upload: (userId, file) => {
+  upload: (userId, file, options = {}) => {
     const formData = new FormData()
     formData.append('file', file)
     
@@ -111,6 +111,7 @@ export const logs = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      signal: options.signal,
     })
   },
 }
