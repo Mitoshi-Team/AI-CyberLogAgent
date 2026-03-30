@@ -444,10 +444,19 @@ const normalizeMessageText = (value) => {
   // Нормализуем переносы и удаляем ведущие переносы, если нет текста перед ними
   let normalized = value.replace(/\r\n/g, '\n').replace(/^\n+/, '')
 
-  // Между текстовыми фрагментами разрешаем только один перенос строки
-  normalized = normalized.replace(/\n{2,}/g, '\n')
+  // Между текстовыми фрагментами разрешаем максимум два переноса строки
+  normalized = normalized.replace(/\n{3,}/g, '\n\n')
 
   return normalized
+}
+
+const trimBoundaryEmptyLines = (value) => {
+  if (!value) return ''
+
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/^(?:[\t ]*\n)+/, '')
+    .replace(/(?:\n[\t ]*)+$/, '')
 }
 
 const handleMessageInput = () => {
@@ -471,8 +480,8 @@ const handleShiftEnter = (event) => {
   const caretPos = textarea?.selectionStart ?? currentValue.length
   const beforeCaret = currentValue.slice(0, caretPos)
 
-  // Не даем вставлять второй перенос подряд до следующего текста
-  if (beforeCaret.endsWith('\n')) {
+  // Разрешаем максимум два переноса подряд
+  if (beforeCaret.endsWith('\n\n')) {
     event.preventDefault()
   }
 }
@@ -480,6 +489,9 @@ const handleShiftEnter = (event) => {
 const sendMessage = async () => {
   // Проверка возможности отправки
   if (!canSendMessage.value) return
+
+  const userMessage = trimBoundaryEmptyLines(inputMessage.value)
+  if (!userMessage.trim()) return
   
   // Проверка частоты отправки (rate limiting)
   const now = Date.now()
@@ -505,11 +517,9 @@ const sendMessage = async () => {
   // Добавить сообщение пользователя
   messages.value.push({
     role: 'user',
-    text: inputMessage.value,
+    text: userMessage,
   })
 
-  const userMessage = inputMessage.value
-  
   inputMessage.value = ''
   isLoading.value = true
   
