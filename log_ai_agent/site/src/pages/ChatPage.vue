@@ -54,10 +54,10 @@
           </div>
 
           <div v-if="isLoading" class="flex justify-center pb-2">
-            <div class="flex gap-1.5 px-3 py-2 rounded-full bg-[#20232d] border border-[#2c3040]">
-              <div class="w-2 h-2 bg-[#7290ff] rounded-full animate-bounce" style="animation-delay: 0ms"/>
-              <div class="w-2 h-2 bg-[#7290ff] rounded-full animate-bounce" style="animation-delay: 150ms"/>
-              <div class="w-2 h-2 bg-[#7290ff] rounded-full animate-bounce" style="animation-delay: 300ms"/>
+            <div class="flex gap-1.5 px-3 py-2 rounded-full">
+              <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 0ms"/>
+              <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 150ms"/>
+              <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 300ms"/>
             </div>
           </div>
         </div>
