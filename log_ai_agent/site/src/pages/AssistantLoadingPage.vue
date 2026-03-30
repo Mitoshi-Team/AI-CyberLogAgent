@@ -81,7 +81,7 @@ onBeforeUnmount(() => {
 .assistant-loading-title {
   margin: 0;
   color: #eaf4ff;
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1.2;
   font-weight: 600;
 }
@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
 .assistant-loading-subtitle {
   margin: 14px 0 0;
   color: rgba(217, 233, 248, 0.82);
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.45;
 }
 
