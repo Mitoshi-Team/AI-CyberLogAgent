@@ -122,7 +122,6 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         chat_message = (
             "# Автоотчет по входящим логам\n\n"
             f"{report_description}\n\n"
-            "_Сообщение добавлено автоматически из Kafka pipeline._"
         )
         inserted_messages = await conn.execute(
             """
@@ -1034,11 +1033,7 @@ async def upload_log_file(
 
 # Словарь доступных команд
 AVAILABLE_COMMANDS = {
-    "collect_logs": "Собрать системные логи",
-    "show_logs": "Показать логи",
-    "hide_logs": "Скрыть логи",
-    "get_history": "Получить историю инцидентов",
-    "register": "Зарегистрировать нового пользователя или изменить существующего",
+    "register": "Зарегистрировать нового пользователя",
     "help": "Показать справку",
     "interactive": "Запустить консоль",
     "exit": "Выйти из консоли",
@@ -1068,16 +1063,8 @@ def execute_command(command: str):
     if command in ["exit", "quit", "q"]:
         return False
 
-    if command in ["help", "--help", "-h", "?"]:
+    if command in ["help", "?"]:
         show_help()
-    elif command == "collect_logs":
-        commands.collect_logs()
-    elif command == "show_logs":
-        commands.show_logs()
-    elif command == "hide_logs":
-        commands.hide_logs()
-    elif command == "get_history":
-        commands.get_history()
     elif command == "register":
         commands.register()
     else:
@@ -1090,23 +1077,23 @@ def execute_command(command: str):
 def run_interactive():
     """Запустить CLI консоль"""
     print("\n" + "=" * 60)
-    print("  🤖 AI CyberLog Agent - CLI")
+    print("  Wavescan - CLI")
     print("=" * 60)
     print("\n  Введите 'help' для просмотра доступных команд")
-    print("  Введите 'exit' или 'quit' для выхода из консоли\n")
+    print("  Введите 'exit' для выхода из консоли\n")
     print("=" * 60 + "\n")
 
     while True:
         try:
-            command = input("cyberlog> ").strip()
+            command = input("wavescan> ").strip()
             if not execute_command(command):
-                print("\n👋 Выход из консоли...\n")
+                print("\nВыход из консоли...\n")
                 break
         except KeyboardInterrupt:
-            print("\n\n👋 Прервано. Введите 'exit' для выхода или продолжайте.\n")
+            print("\n\nПрервано. Введите 'exit' для выхода или продолжайте работать.\n")
             continue
         except EOFError:
-            print("\n\n👋 Выход из консоли...\n")
+            print("\n\nВыход из консоли...\n")
             break
 
 

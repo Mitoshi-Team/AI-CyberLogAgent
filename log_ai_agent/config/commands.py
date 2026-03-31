@@ -153,27 +153,6 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
         traceback.print_exc()
         return False, None
 
-
-def collect_logs():
-    """Collect analyse_logs from the specified directory."""
-    print("Logs collected\n")  # ЗАГЛУШКА >>>
-
-
-def hide_logs():
-    """Hide the analyse_logs from view."""
-    print("Logs hidden\n")
-
-
-def show_logs():
-    """Display the analyse_logs."""
-    print("Logs shown\n")  # ЗАГЛУШКА >>>
-
-
-def get_history():
-    """Retrieve the incident history."""
-    print("Incidents history shown\n")  # ЗАГЛУШКА >>>
-
-
 def register():
     """Register a new user.
 
