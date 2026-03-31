@@ -111,12 +111,21 @@ export const useAppStore = defineStore('app', () => {
     localStorage.removeItem('current_user')
   }
 
+  const normalizeNotificationType = (type = 'info') => {
+    const aliasMap = {
+      error: 'danger',
+      warn: 'warning',
+    }
+    return aliasMap[type] || type
+  }
+
   /**
    * Показать уведомление немедленно
    */
   const showNotificationNow = (message, type = 'info', duration = 5000, playSound = false) => {
     const id = Math.random()
-    const notification = { id, message, type }
+    const normalizedType = normalizeNotificationType(type)
+    const notification = { id, message, type: normalizedType, duration }
     
     // Ограничение на 5 уведомлений - удаляем старые
     if (notifications.value.length >= 5) {

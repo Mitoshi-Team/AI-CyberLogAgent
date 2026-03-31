@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed top-4 right-4 space-y-2 max-w-xs z-50">
+  <div class="fixed top-4 right-4 space-y-3 max-w-sm z-50">
     <transition-group
       name="slide"
       tag="div"
@@ -10,24 +10,32 @@
         :key="notification.id"
         :class="['notification', `notification-${notification.type}`]"
       >
-        <div class="flex items-center gap-2">
-          <div :class="['notification-icon', `icon-${notification.type}`]">
-            <component :is="getIcon(notification.type)" />
+        <div class="notification-body">
+          <div class="flex items-center gap-3 flex-1 min-w-0">
+            <div :class="['notification-icon', `icon-${notification.type}`]">
+              <component :is="getIcon(notification.type)" />
+            </div>
+            <p class="notification-text">{{ notification.message }}</p>
           </div>
-          <p class="text-xs font-medium flex-1">{{ notification.message }}</p>
+          <button
+            @click="appStore.removeNotification(notification.id)"
+            class="notification-close"
+            aria-label="Закрыть уведомление"
+          >
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
         </div>
-        <button
-          @click="appStore.removeNotification(notification.id)"
-          class="text-slate-400 hover:text-slate-600 flex-shrink-0"
-        >
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fill-rule="evenodd"
-              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </button>
+        <div
+          v-if="notification.duration"
+          class="notification-progress"
+          :style="{ animationDuration: `${notification.duration}ms` }"
+        />
       </div>
     </transition-group>
   </div>
@@ -55,27 +63,39 @@ const getIcon = (type) => {
 
 <style scoped>
 .notification {
-  @apply flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg shadow-xl bg-dark-900/95 backdrop-blur-xl border;
+  @apply relative overflow-hidden px-4 py-3.5 rounded-xl bg-[#252525] border;
+}
+
+.notification-body {
+  @apply flex items-center justify-between gap-3;
 }
 
 .notification-success {
-  @apply border-l-4 border-success-500 border-t border-r border-b border-success-500/20 shadow-success-500/20;
+  @apply border-[#3C3C3C]/90 border-t border-r border-b;
 }
 
 .notification-warning {
-  @apply border-l-4 border-warning-500 border-t border-r border-b border-warning-500/20 shadow-warning-500/20;
+  @apply border-[#3C3C3C]/90 border-t border-r border-b;
 }
 
 .notification-danger {
-  @apply border-l-4 border-danger-500 border-t border-r border-b border-danger-500/20 shadow-danger-500/20;
+  @apply border-[#3C3C3C]/90 border-t border-r border-b;
 }
 
 .notification-info {
-  @apply border-l-4 border-primary-500 border-t border-r border-b border-primary-500/20 shadow-primary-500/20;
+  @apply border-[#3C3C3C]/90 border-t border-r border-b;
 }
 
 .notification-icon {
-  @apply w-5 h-5;
+  @apply w-6 h-6 flex-shrink-0;
+}
+
+.notification-text {
+  @apply text-sm font-medium text-dark-100 leading-5;
+}
+
+.notification-close {
+  @apply text-dark-400 hover:text-dark-200 flex-shrink-0 transition-colors;
 }
 
 .icon-success {
@@ -94,12 +114,41 @@ const getIcon = (type) => {
   @apply text-primary-400;
 }
 
-.notification p {
-  @apply text-dark-100;
+.notification-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  transform-origin: left center;
+  animation-name: notification-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
-.notification button {
-  @apply text-dark-400 hover:text-dark-200;
+.notification-success .notification-progress {
+  @apply bg-[#7971F0]/80;
+}
+
+.notification-warning .notification-progress {
+  @apply bg-[#7971F0]/80;
+}
+
+.notification-danger .notification-progress {
+  @apply bg-[#7971F0]/80;
+}
+
+.notification-info .notification-progress {
+  @apply bg-[#7971F0]/80;
+}
+
+@keyframes notification-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 .slide-enter-active {
@@ -111,7 +160,7 @@ const getIcon = (type) => {
 }
 
 .slide-enter-from {
-  @apply -translate-y-8 translate-x-8 opacity-0 scale-95;
+  @apply translate-x-full opacity-0 scale-95;
 }
 
 .slide-leave-to {
