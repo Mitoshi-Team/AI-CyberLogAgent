@@ -153,6 +153,7 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
         traceback.print_exc()
         return False, None
 
+
 def register():
     """Register a new user.
 
