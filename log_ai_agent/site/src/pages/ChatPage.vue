@@ -14,7 +14,8 @@
       <div
         v-if="messages.length > 0 || isLoading"
         ref="chatContainer"
-        class="flex-1 min-h-0 overflow-y-auto pt-8 pb-4 scrollbar-chat"
+        class="flex-1 min-h-0 overflow-y-auto pt-8 scrollbar-chat"
+        :style="{ paddingBottom: `${topAlignSpacerHeight}px` }"
       >
         <div class="mx-auto w-full max-w-3xl space-y-7">
           <div
@@ -24,7 +25,10 @@
           >
             <div
               v-if="msg.role === 'user'"
-              class="flex justify-end"
+              :class="[
+                'flex justify-end',
+                isLoading && index === messages.length - 1 ? 'mt-[48px]' : ''
+              ]"
             >
               <div class="max-w-full sm:max-w-xl px-4 py-3 rounded-2xl rounded-br-md bg-[#2B2B2B] text-white">
                 <p class="leading-relaxed break-words whitespace-pre-wrap">{{ msg.text }}</p>
@@ -53,12 +57,6 @@
               <p class="text-xs text-dark-500 mt-2 text-left">wavescan assistant</p>
             </div>
           </div>
-
-          <div
-            v-if="topAlignSpacerHeight > 0"
-            :style="{ height: `${topAlignSpacerHeight}px` }"
-            aria-hidden="true"
-          ></div>
 
           <div v-if="isLoading" class="flex justify-center pb-2">
             <div class="flex gap-1.5 px-3 py-2 rounded-full">
@@ -357,7 +355,7 @@ const loadChatHistory = async () => {
 
       if (lastUserMessageIndex >= 0) {
         await scrollMessageToTop(lastUserMessageIndex)
-        topAlignSpacerHeight.value = Math.max(topAlignSpacerHeight.value - 54, 0)
+        topAlignSpacerHeight.value = Math.max(topAlignSpacerHeight.value - 32, 0)
         return
       }
     } else {
