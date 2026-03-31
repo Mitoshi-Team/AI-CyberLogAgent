@@ -119,10 +119,7 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             report_description,
         )
 
-        chat_message = (
-            "# Автоотчет по входящим логам\n\n"
-            f"{report_description}\n\n"
-        )
+        chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
         inserted_messages = await conn.execute(
             """
             INSERT INTO public."Messages" (user_id, role, content, created_at)
