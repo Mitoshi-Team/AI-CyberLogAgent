@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from pathlib import Path
 
 import asyncpg
@@ -1267,7 +1267,7 @@ def _format_cli_datetime(value: datetime) -> str:
         return str(value)
 
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
 
     return value.astimezone(CLI_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1278,7 +1278,7 @@ def show_agent_logs(limit: int = 50):
         conn = commands.get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            '''
+            """
             SELECT
                 al.agent_log_id,
                 al.action_type_id,
@@ -1289,7 +1289,7 @@ def show_agent_logs(limit: int = 50):
             LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
             ORDER BY al.date DESC
             LIMIT %s
-            ''',
+            """,
             (limit,),
         )
         rows = cursor.fetchall()
@@ -1303,9 +1303,7 @@ def show_agent_logs(limit: int = 50):
         else:
             for row in reversed(rows):
                 date_str = _format_cli_datetime(row[4])
-                print(
-                    f"[{date_str}] id={row[0]} type={row[1]} ({row[2]}) | {row[3]}"
-                )
+                print(f"[{date_str}] id={row[0]} type={row[1]} ({row[2]}) | {row[3]}")
             print()
 
         cursor.close()
@@ -1320,7 +1318,7 @@ def show_user_logs(limit: int = 50):
         conn = commands.get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            '''
+            """
             SELECT
                 ul.user_log_id,
                 ul.user_id,
@@ -1334,7 +1332,7 @@ def show_user_logs(limit: int = 50):
             LEFT JOIN public."ActionTypes" at ON at.action_type_id = ul.action_type_id
             ORDER BY ul.date DESC
             LIMIT %s
-            ''',
+            """,
             (limit,),
         )
         rows = cursor.fetchall()
