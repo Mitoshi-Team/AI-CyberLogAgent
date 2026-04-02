@@ -155,6 +155,17 @@ async def _process_kafka_log_batch(payload: dict) -> None:
 
     log_content = "\n".join(messages)
     analysis_result = await analyze_log_v2(log_content)
+    analysis_error = str(analysis_result.get("error") or "")
+    lowered_analysis_error = analysis_error.lower()
+
+    if analysis_error and (
+        "payment required" in lowered_analysis_error or "402" in lowered_analysis_error
+    ):
+        logger.warning(
+            "Kafka batch analysis skipped due to external AI payment error: %s",
+            analysis_error,
+        )
+        return
 
     source_file = batch.get("source_file", "unknown")
     source_files = batch.get("source_files")
@@ -1143,6 +1154,25 @@ async def upload_log_file(
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
             analysis_result = await analyze_log_v2(content_str)
+            analysis_error = str(analysis_result.get("error") or "")
+            lowered_analysis_error = analysis_error.lower()
+
+            if analysis_error and (
+                "payment required" in lowered_analysis_error
+                or "402" in lowered_analysis_error
+            ):
+                await _try_insert_agent_log(
+                    conn,
+                    AGENT_ACTION_RESPOND,
+                    "Ответ на запрос: отчет не создан из-за ошибки внешнего AI сервиса (402 Payment Required)",
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=analysis_result.get(
+                        "description",
+                        "⚠️ Ошибка анализа: внешний AI сервис вернул 402 Payment Required.",
+                    ),
+                )
 
             await _try_insert_agent_log(
                 conn,

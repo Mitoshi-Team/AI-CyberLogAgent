@@ -54,7 +54,7 @@
                 class="markdown-content text-base leading-relaxed text-dark-200 text-left break-words"
                 v-html="renderMarkdown(msg.text)"
               ></div>
-              <p class="text-xs text-dark-500 mt-2 text-left">wavescan assistant</p>
+              <p class="text-xs text-dark-500 mt-2 text-left">Wavescan assistant</p>
             </div>
           </div>
 
@@ -878,6 +878,10 @@ const confirmNewChat = async () => {
   background: #252525;
   border: 1px solid #3C3C3C;
   box-shadow: none;
+}
+
+.chat-composer:focus-within {
+  border-color: #515151;
 }
 
 .quick-pill {
