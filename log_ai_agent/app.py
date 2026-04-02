@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone, UTC
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import asyncpg
