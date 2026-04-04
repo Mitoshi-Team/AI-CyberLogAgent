@@ -1,9 +1,9 @@
 """Chains module."""
 
+from ..config import LLMProvider
 from .agent1 import analyze_logs_primary, create_agent1_chain
 from .agent2 import create_agent2_chain, generate_final_report, parse_metadata
 from .llm import create_gigachat_llm, create_llm
-from ..config import LLMProvider
 from .rag_chain import retrieve_mitre_context, search_mitre_techniques
 
 __all__ = [
