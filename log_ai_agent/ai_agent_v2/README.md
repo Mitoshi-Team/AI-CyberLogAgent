@@ -10,6 +10,11 @@
   - **Agent 1**: Первичный анализ логов, выявление событий безопасности
   - **Agent 2**: Финальный отчёт с использованием контекста MITRE ATT&CK
 
+- **Гибкая LLM-архитектура**:
+  - **Ollama (on-premise)** — полная локальная работа, данные не покидают периметр
+  - **GigaChat (облако)** — автоматический fallback, если Ollama не настроен
+  - Автоматическое определение провайдера по переменным окружения
+
 - **RAG (Retrieval-Augmented Generation)**:
   - Векторный поиск по техникам MITRE ATT&CK
   - ChromaDB для хранения эмбеддингов
@@ -75,11 +80,22 @@ uv sync
 Создайте файл `.env` в корневой папке проекта:
 
 ```bash
-# GigaChat API (для LLM)
-GIGACHAT_CLIENT_ID=your_client_id
-GIGACHAT_CLIENT_SECRET=your_client_secret
-GIGACHAT_AUTH_URL=https://ngw.devices.sberbank.ru:9443/api/v2/oauth
-GIGACHAT_BASE_URL=https://gigachat.devices.sberbank.ru/api/v2
+# === LLM провайдер (выберите один) ===
+
+# Вариант 1: Ollama (on-premise / локальный сервер) — РЕКОМЕНДУЕТСЯ
+# Ollama должен быть запущен на указанном URL
+# Рекомендуемые модели: qwen2.5:7b, qwen2.5:14b, llama3.1:8b
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b
+
+# Вариант 2: GigaChat (облако) — fallback, если OLLAMA_URL не задан
+GIGACHAT_API_KEY=your_api_key
+GIGACHAT_MODEL=GigaChat-2-Max
+
+# Общие настройки LLM
+LLM_TEMPERATURE=0.1
+LLM_MAX_TOKENS=4000
+LLM_TIMEOUT=90
 
 # База данных (если используется)
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
@@ -88,6 +104,52 @@ DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
 ---
 
 ## Быстрый старт
+
+### Настройка Ollama (on-premise)
+
+Для полностью локальной работы (данные не покидают ваш периметр):
+
+1. **Установите Ollama** на отдельный сервер или локальную машину:
+
+```bash
+# Linux
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Windows — скачайте с https://ollama.com/download
+```
+
+2. **Запустите модель** (рекомендуемые модели для русского языка):
+
+```bash
+# Qwen 2.5 7B — хороший баланс качество/скорость
+ollama pull qwen2.5:7b
+
+# Qwen 2.5 14B — лучше качество, медленнее
+ollama pull qwen2.5:14b
+
+# Llama 3.1 8B — альтернатива
+ollama pull llama3.1:8b
+```
+
+3. **Убедитесь, что Ollama доступен по сети** (для удалённого сервера):
+
+```bash
+# Ollama по умолчанию слушает только localhost
+# Для доступа с других машин установите:
+export OLLAMA_HOST=0.0.0.0:11434
+ollama serve
+```
+
+4. **Настройте `.env`**:
+
+```bash
+OLLAMA_URL=http://<IP_OLLAMA_SERVER>:11434
+OLLAMA_MODEL=qwen2.5:7b
+# GIGACHAT_API_KEY — не нужен, если Ollama настроен
+```
+
+> **Приоритет провайдеров:** Если задан `OLLAMA_URL` — используется Ollama (on-premise).
+> Если `OLLAMA_URL` пустой — система fallback'ится на GigaChat (облако).
 
 ### Запуск теста RAG Flow
 
@@ -379,17 +441,34 @@ DEFAULT_MODEL = "sentence-transformers/rubert-base-cased"
 
 ### LLM
 
-GigaChat через `langchain-gigachat`:
+Система поддерживает **два провайдера** с автоматическим определением:
+
+**Приоритет 1: Ollama (on-premise)** — данные не покидают периметр
 
 ```python
-# В chains/agent1.py и chains/agent2.py
-from langchain_gigachat.chat_models import GigaChat
+# В .env:
+OLLAMA_URL=http://192.168.1.100:11434
+OLLAMA_MODEL=qwen2.5:7b
+```
 
-llm = GigaChat(
-    credentials=credentials,
-    model="GigaChat",
-    verify_ssl_certs=False,
-)
+**Приоритет 2: GigaChat (облако)** — fallback
+
+```python
+# В .env:
+GIGACHAT_API_KEY=your_api_key
+```
+
+**Использование в коде:**
+
+```python
+from log_ai_agent.ai_agent_v2 import create_llm, LLMProvider
+
+# Автоматический выбор провайдера (по .env)
+llm = create_llm()
+
+# Принудительное указание провайдера
+llm = create_llm(provider=LLMProvider.OLLAMA)
+llm = create_llm(provider=LLMProvider.GIGACHAT)
 ```
 
 ---

@@ -7,8 +7,15 @@ import sys
 from pathlib import Path
 
 # Add project root
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load .env file
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 
 # Enable debug logging
 logging.basicConfig(
