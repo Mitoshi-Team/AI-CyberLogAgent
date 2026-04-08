@@ -6,8 +6,15 @@ import sys
 from pathlib import Path
 
 # Add project root
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load .env file
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 
 from log_ai_agent.ai_agent_v2 import create_pipeline
 from log_ai_agent.ai_agent_v2.callbacks import get_callback_config

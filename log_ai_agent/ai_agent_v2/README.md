@@ -93,9 +93,9 @@ GIGACHAT_API_KEY=your_api_key
 GIGACHAT_MODEL=GigaChat-2-Max
 
 # Общие настройки LLM
-GIGACHAT_TEMPERATURE=0.1
-GIGACHAT_MAX_TOKENS=4000
-GIGACHAT_TIMEOUT=90
+LLM_TEMPERATURE=0.1
+LLM_MAX_TOKENS=4000
+LLM_TIMEOUT=90
 
 # База данных (если используется)
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
