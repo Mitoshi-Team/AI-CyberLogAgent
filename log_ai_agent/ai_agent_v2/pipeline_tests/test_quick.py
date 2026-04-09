@@ -63,8 +63,14 @@ async def main():
             print(
                 f"✓ Agent 2: severity={agent2.get('severity_level_id')}, threat={agent2.get('threat_type_id')}"
             )
+
+        if "agent3" in stages:
+            agent3 = stages["agent3"]
+            print(
+                f"✓ Agent 3 (final): severity={agent3.get('severity_level_id')}, threat={agent3.get('threat_type_id')}"
+            )
             print("\nReport preview:")
-            print(agent2.get("final_report", "")[:300])
+            print(agent3.get("final_report", "")[:300])
 
         print(f"\n✓ Total time: {results.get('total_time_sec', 0):.1f}s")
         print("\n" + "=" * 60)

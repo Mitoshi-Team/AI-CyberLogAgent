@@ -64,6 +64,8 @@ services:
       - app_logs:/app/logs
       - external_logs:/app/shared/external
       - processed_logs:/app/shared/processed
+      - embedding_models:/app/log_ai_agent/ai_agent_v2/embedding/models
+      - chroma_data:/app/log_ai_agent/ai_agent_v2/chroma_db
     networks:
       - cyberlog-network
     restart: unless-stopped
@@ -142,6 +144,12 @@ volumes:
   processed_logs:
     driver: local
     name: cyberlog_processed_logs
+  embedding_models:
+    driver: local
+    name: cyberlog_embedding_models
+  chroma_data:
+    driver: local
+    name: cyberlog_chroma_data
 
 networks:
   cyberlog-network:

@@ -80,10 +80,20 @@ async def main():
         # Agent 2
         if "agent2" in stages:
             agent2 = stages["agent2"]
-            print("\n✓ Agent 2 Output:")
+            print("\n✓ Agent 2 Output (детальный):")
             print(f"  Severity: {agent2.get('severity_level_id')}/4")
             print(f"  Threat: {agent2.get('threat_type_id')}/11")
             print(f"  MITRE Techniques: {agent2.get('mitre_techniques', [])}")
+
+        # Agent 3 (final)
+        if "agent3" in stages:
+            agent3 = stages["agent3"]
+            print("\n✓ Agent 3 Output (финальная суммаризация):")
+            print(f"  Severity: {agent3.get('severity_level_id')}/4")
+            print(f"  Threat: {agent3.get('threat_type_id')}/11")
+            print(f"  MITRE Techniques: {agent3.get('mitre_techniques', [])}")
+            print(f"  YARA Rules: {agent3.get('yara_rules', [])}")
+            print(f"  Sigma Rules: {agent3.get('sigma_rules', [])}")
 
         print(f"\n✓ Total time: {results.get('total_time_sec', 0):.1f}s")
         print("\n" + "=" * 60)

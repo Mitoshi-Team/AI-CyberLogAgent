@@ -47,4 +47,7 @@ secrets.py
 /log_ai_agent/ai_agent_v2/chroma_db/
 /log_ai_agent/ai_agent_v2/mitre_data/
 
+# Embedding models (downloaded, not committed)
+/log_ai_agent/ai_agent_v2/embedding/models/
+
 data/

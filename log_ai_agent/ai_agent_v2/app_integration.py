@@ -6,7 +6,7 @@ import os
 
 from .callbacks import get_callback_config
 from .config import AgentConfig
-from .pipeline.full_pipeline import LogAnalysisPipeline, create_pipeline
+from .pipeline import LogAnalysisPipeline, create_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -123,15 +123,15 @@ async def analyze_log_v2(log_content: str) -> dict:
                 backoff_seconds[attempt + 1] if attempt + 1 < max_attempts else 0,
             )
 
-    if results.get("success") and "agent2" in results.get("stages", {}):
+    if results.get("success") and "agent3" in results.get("stages", {}):
         agent1 = results["stages"].get("agent1", {})
-        agent2 = results["stages"]["agent2"]
+        agent3 = results["stages"]["agent3"]
 
         return {
-            "description": agent2.get("final_report", ""),
-            "severity_level_id": agent2.get("severity_level_id", 3),
-            "threat_type_id": agent2.get("threat_type_id", 11),
-            "mitre_techniques": agent2.get("mitre_techniques", []),
+            "description": agent3.get("final_report", ""),
+            "severity_level_id": agent3.get("severity_level_id", 3),
+            "threat_type_id": agent3.get("threat_type_id", 11),
+            "mitre_techniques": agent3.get("mitre_techniques", []),
             "events_found": agent1.get("events_found", 0),
             "processing_time_ms": results.get("total_time_sec", 0) * 1000,
         }
