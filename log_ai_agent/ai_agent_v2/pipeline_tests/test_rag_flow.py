@@ -119,15 +119,9 @@ async def main():
         print("=" * 60)
 
         print("\n📊 RAG FLOW SUMMARY:")
-        print(
-            "  Agent 1 → RAG (MITRE) → Agent 2 →┐"
-        )
-        print(
-            "  YARA Scan ────────────────────────┤→ Agent 3 → Final Report"
-        )
-        print(
-            "  Sigma Scan ───────────────────────┘"
-        )
+        print("  Agent 1 → RAG (MITRE) → Agent 2 →┐")
+        print("  YARA Scan ────────────────────────┤→ Agent 3 → Final Report")
+        print("  Sigma Scan ───────────────────────┘")
         print("\n✅ RAG comparison is working!")
 
     else:

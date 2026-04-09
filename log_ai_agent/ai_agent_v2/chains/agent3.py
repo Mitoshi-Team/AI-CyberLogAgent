@@ -273,7 +273,9 @@ async def generate_final_report(
     """
     chain = create_agent3_chain(llm)
 
-    mitre_techniques_str = ", ".join(mitre_techniques) if mitre_techniques else "Не определены"
+    mitre_techniques_str = (
+        ", ".join(mitre_techniques) if mitre_techniques else "Не определены"
+    )
 
     result = await chain.ainvoke(
         {

@@ -56,6 +56,7 @@ class EmbeddingManager:
 
         Raises:
             RuntimeError: If local model directory does not exist.
+
         """
         logger.info(f"Loading embeddings model from: {self.model_dir}")
 

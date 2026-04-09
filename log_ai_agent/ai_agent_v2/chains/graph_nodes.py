@@ -72,7 +72,9 @@ class PipelineNodes:
             )
             events_found = result.count("### Событие")
 
-            logger.info(f"[Node] Agent 1 complete: {events_found} events in {time.time()-start:.1f}s")
+            logger.info(
+                f"[Node] Agent 1 complete: {events_found} events in {time.time() - start:.1f}s"
+            )
             return {
                 "primary_analysis": result,
                 "events_found": events_found,
@@ -117,7 +119,7 @@ class PipelineNodes:
 
             logger.info(
                 f"[Node] MITRE RAG complete: {len(rag_result['mitre_techniques'])} "
-                f"techniques in {time.time()-start:.1f}s"
+                f"techniques in {time.time() - start:.1f}s"
             )
             return {
                 "mitre_context": rag_result["mitre_context"],
@@ -157,7 +159,7 @@ class PipelineNodes:
 
             logger.info(
                 f"[Node] Agent 2 complete: severity={agent2_result['severity_level_id']}, "
-                f"threat={agent2_result['threat_type_id']} in {time.time()-start:.1f}s"
+                f"threat={agent2_result['threat_type_id']} in {time.time() - start:.1f}s"
             )
             return {
                 "agent2_report": agent2_result["final_report"],
@@ -207,7 +209,7 @@ class PipelineNodes:
             yara_context = self._format_yara_context(matches)
 
             logger.info(
-                f"[Node] YARA scan complete: {len(matches)} matches in {time.time()-start:.1f}s"
+                f"[Node] YARA scan complete: {len(matches)} matches in {time.time() - start:.1f}s"
             )
             return {
                 "yara_matches": matches,
@@ -255,7 +257,7 @@ class PipelineNodes:
             sigma_context = self._format_sigma_context(matches)
 
             logger.info(
-                f"[Node] Sigma scan complete: {len(matches)} matches in {time.time()-start:.1f}s"
+                f"[Node] Sigma scan complete: {len(matches)} matches in {time.time() - start:.1f}s"
             )
             return {
                 "sigma_matches": matches,
@@ -301,13 +303,15 @@ class PipelineNodes:
                 mitre_techniques=state.get("mitre_techniques_final", []),
                 yara_context=state.get("yara_context", "YARA проверка не проводилась."),
                 yara_count=len(state.get("yara_matches", [])),
-                sigma_context=state.get("sigma_context", "Sigma проверка не проводилась."),
+                sigma_context=state.get(
+                    "sigma_context", "Sigma проверка не проводилась."
+                ),
                 sigma_count=len(state.get("sigma_matches", [])),
             )
 
             logger.info(
                 f"[Node] Agent 3 complete: severity={agent3_result['severity_level_id']}, "
-                f"threat={agent3_result['threat_type_id']} in {time.time()-start:.1f}s"
+                f"threat={agent3_result['threat_type_id']} in {time.time() - start:.1f}s"
             )
             return {
                 "final_report": agent3_result["final_report"],
@@ -345,7 +349,9 @@ class PipelineNodes:
 
         lines = ["### Совпадения YARA:"]
         for i, m in enumerate(matches, 1):
-            lines.append(f"{i}. **{m.get('rule', 'Unknown')}** — {m.get('description', '')}")
+            lines.append(
+                f"{i}. **{m.get('rule', 'Unknown')}** — {m.get('description', '')}"
+            )
             if m.get("meta"):
                 lines.append(f"   Мета: {m['meta']}")
         return "\n".join(lines)
@@ -358,7 +364,9 @@ class PipelineNodes:
 
         lines = ["### Совпадения Sigma:"]
         for i, m in enumerate(matches, 1):
-            lines.append(f"{i}. **{m.get('rule_id', 'Unknown')}** — {m.get('title', '')}")
+            lines.append(
+                f"{i}. **{m.get('rule_id', 'Unknown')}** — {m.get('title', '')}"
+            )
             if m.get("severity"):
                 lines.append(f"   Серьёзность: {m['severity']}")
         return "\n".join(lines)
