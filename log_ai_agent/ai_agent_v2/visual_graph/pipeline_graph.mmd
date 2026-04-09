@@ -1,0 +1,26 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	agent1(agent1)
+	mitre_rag(mitre_rag)
+	agent2(agent2)
+	yara_scan(yara_scan)
+	sigma_scan(sigma_scan)
+	agent3(agent3)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> agent1;
+	__start__ --> sigma_scan;
+	__start__ --> yara_scan;
+	agent1 --> mitre_rag;
+	agent2 --> agent3;
+	mitre_rag --> agent2;
+	sigma_scan --> agent3;
+	yara_scan --> agent3;
+	agent3 --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

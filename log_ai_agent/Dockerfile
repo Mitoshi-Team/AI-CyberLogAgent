@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv
 
+# Install huggingface_hub CLI for model download
+RUN uv pip install --system huggingface_hub
+
 WORKDIR /app
 
 COPY pyproject.toml ./
@@ -18,8 +21,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -e . && \
     uv pip install --system fastapi "uvicorn[standard]" psycopg2-binary sqlalchemy python-multipart
 
+# Copy entrypoint script
+RUN chmod +x /app/log_ai_agent/docker-entrypoint.sh
+
 WORKDIR /app/log_ai_agent
 
 EXPOSE 8000
 
-CMD ["python", "app.py"]
+# Download model at startup, then start app
+ENTRYPOINT ["/app/log_ai_agent/docker-entrypoint.sh"]
