@@ -175,6 +175,14 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         else source_file
     )
     events_found = analysis_result.get("events_found", 0)
+    if events_found <= 0:
+        logger.info(
+            "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
+            source_label,
+            len(messages),
+        )
+        return
+
     report_description = (
         "AI pipeline: Agent1 -> RAG -> Agent2\n"
         f"Источник: {source_label}\n"
