@@ -63,6 +63,9 @@ USER_ACTION_LOGOUT = 8
 USER_ACTION_SEND_LOGS = 9
 USER_ACTION_SEND_MESSAGE = 10
 
+MIN_LOG_LINES = 50
+MAX_LOG_LINES = 500
+
 
 async def _insert_agent_log(
     conn: asyncpg.Connection,
@@ -1132,9 +1135,20 @@ async def upload_log_file(
                 status_code=400, detail="Файл пустой. Загрузите файл с содержимым."
             )
 
+        # Проверяем допустимый диапазон строк в логе
+        non_empty_lines_count = sum(1 for line in content_str.splitlines() if line.strip())
+        if not (MIN_LOG_LINES <= non_empty_lines_count <= MAX_LOG_LINES):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Файл должен содержать от {MIN_LOG_LINES} до {MAX_LOG_LINES} непустых строк. "
+                    f"Этот файл содержит: {non_empty_lines_count}."
+                ),
+            )
+
         logger.info(
             f"Получен файл {file.filename} от пользователя {user_id}, "
-            f"размер: {len(content_str)} байт"
+            f"размер: {len(content_str)} байт, строк: {non_empty_lines_count}"
         )
 
         conn = await asyncpg.connect(DATABASE_URL, timeout=10)
