@@ -1136,7 +1136,9 @@ async def upload_log_file(
             )
 
         # Проверяем допустимый диапазон строк в логе
-        non_empty_lines_count = sum(1 for line in content_str.splitlines() if line.strip())
+        non_empty_lines_count = sum(
+            1 for line in content_str.splitlines() if line.strip()
+        )
         if not (MIN_LOG_LINES <= non_empty_lines_count <= MAX_LOG_LINES):
             raise HTTPException(
                 status_code=400,
