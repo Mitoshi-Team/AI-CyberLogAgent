@@ -1819,7 +1819,9 @@ def _setup_cli_history() -> None:
 
 def _fetch_runtime_status_from_api() -> dict | None:
     """Fetch status from running backend process for accurate CLI diagnostics."""
-    status_url = os.getenv("WAVESCAN_STATUS_URL", "http://127.0.0.1:8000/api/system/status")
+    status_url = os.getenv(
+        "WAVESCAN_STATUS_URL", "http://127.0.0.1:8000/api/system/status"
+    )
 
     try:
         with urllib.request.urlopen(status_url, timeout=2) as response:
@@ -1896,7 +1898,9 @@ def show_agent_status() -> None:
                     if last_error:
                         print(f"Последняя ошибка batch: {last_error}")
             else:
-                consumer_state = "запущен" if kafka_log_consumer._running else "остановлен"
+                consumer_state = (
+                    "запущен" if kafka_log_consumer._running else "остановлен"
+                )
                 print(f"Kafka consumer: {consumer_state} (локальный процесс CLI)")
                 print(
                     "Примечание: если консоль запущена отдельной командой python app.py interactive, "
