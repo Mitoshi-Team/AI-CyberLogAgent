@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
@@ -17,6 +18,11 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+try:
+    import readline
+except ImportError:  # pragma: no cover - environment dependent
+    readline = None
 
 from log_ai_agent.ai_agent_v2.app_integration import (
     analyze_log_v2,
@@ -40,7 +46,9 @@ from log_ai_agent.config.cfg import (
     KAFKA_TOPIC,
     PIPELINE_COLLECTED_LOGS_FILE,
     PIPELINE_CONSUMED_LOGS_FILE,
+    PIPELINE_EXTERNAL_LOGS_DIR,
     PIPELINE_KAFKA_AUTO_ANALYZE,
+    PIPELINE_PROCESSED_LOGS_DIR,
 )
 from log_ai_agent.pipeline.kafka_consumer import KafkaLogBatchConsumer
 from log_ai_agent.pipeline.log_ingest_api import router as pipeline_ingest_router
@@ -1448,6 +1456,9 @@ AVAILABLE_COMMANDS = {
     "register": "Зарегистрировать нового пользователя",
     "agent_logs": "Просмотр логов агента (опционально: agent_logs <limit>)",
     "user_logs": "Просмотр логов пользователей (опционально: user_logs <limit>)",
+    "pipeline_lines": "Показать текущее количество строк в external и processed",
+    "clear_pipeline_logs": "Полная очистка логов в external и processed",
+    "agent_status": "Показать текущий этап агента по последнему AgentLogs",
     "help": "Показать справку",
     "interactive": "Запустить консоль",
     "exit": "Выйти из консоли",
@@ -1500,9 +1511,9 @@ def show_agent_logs(limit: int = 50):
         )
         rows = cursor.fetchall()
 
-        print("\n" + "=" * 90)
+        print("\n" + "=" * 30)
         print(f"  Логи агента (последние {limit}")
-        print("=" * 90)
+        print("=" * 30)
 
         if not rows:
             print("\nЗаписей нет\n")
@@ -1543,9 +1554,9 @@ def show_user_logs(limit: int = 50):
         )
         rows = cursor.fetchall()
 
-        print("\n" + "=" * 110)
+        print("\n" + "=" * 30)
         print(f"  Логи пользователей (последние {limit})")
-        print("=" * 110)
+        print("=" * 30)
 
         if not rows:
             print("\nЗаписей нет\n")
@@ -1563,17 +1574,224 @@ def show_user_logs(limit: int = 50):
         print(f"❌ Ошибка получения логов пользователей: {e}")
 
 
+def _count_lines_in_file(path: Path) -> int:
+    """Count lines in a file using binary chunks for robustness."""
+    try:
+        with path.open("rb") as file_obj:
+            chunk_size = 1024 * 1024
+            line_count = 0
+            last_byte = None
+
+            while True:
+                chunk = file_obj.read(chunk_size)
+                if not chunk:
+                    break
+
+                line_count += chunk.count(b"\n")
+                last_byte = chunk[-1]
+
+            if last_byte is not None and last_byte != ord("\n"):
+                line_count += 1
+
+            return line_count
+    except Exception:
+        return 0
+
+
+def _collect_directory_stats(path: Path) -> tuple[int, int]:
+    """Return (files_count, lines_count) for all files under directory."""
+    files_count = 0
+    lines_count = 0
+
+    if not path.exists() or not path.is_dir():
+        return files_count, lines_count
+
+    for file_path in path.rglob("*"):
+        if not file_path.is_file():
+            continue
+
+        files_count += 1
+        lines_count += _count_lines_in_file(file_path)
+
+    return files_count, lines_count
+
+
+def _clear_directory_contents(path: Path) -> tuple[int, int]:
+    """Delete all files and subdirectories inside the given directory.
+
+    Returns:
+        tuple: (files_deleted, lines_deleted)
+    """
+    files_deleted = 0
+    lines_deleted = 0
+
+    for entry in path.iterdir():
+        if entry.is_dir():
+            for nested_file in entry.rglob("*"):
+                if nested_file.is_file():
+                    files_deleted += 1
+                    lines_deleted += _count_lines_in_file(nested_file)
+            shutil.rmtree(entry)
+            continue
+
+        lines_deleted += _count_lines_in_file(entry)
+        entry.unlink()
+        files_deleted += 1
+
+    return files_deleted, lines_deleted
+
+
+def show_pipeline_lines() -> None:
+    """Show current line counts in external and processed pipeline directories."""
+    external_logs_dir = os.getenv("PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external")
+    processed_logs_dir = os.getenv("PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed")
+
+    targets = {
+        "external": Path(external_logs_dir),
+        "processed": Path(processed_logs_dir),
+    }
+
+    print("\n" + "=" * 30)
+    print("  Статистика строк pipeline")
+    print("\n" + "=" * 30)
+
+    total_files = 0
+    total_lines = 0
+
+    for label, target in targets.items():
+        files_count, lines_count = _collect_directory_stats(target)
+        total_files += files_count
+        total_lines += lines_count
+        print(f"{label:10} files={files_count:<6} lines={lines_count:<10} path={target}")
+
+    print("\n")
+    print(f"Итог: files={total_files}, lines={total_lines}\n")
+
+
+def clear_pipeline_logs() -> None:
+    """Clear pipeline logs from external and processed shared directories."""
+    external_logs_dir = os.getenv("PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external")
+    processed_logs_dir = os.getenv("PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed")
+
+    targets = {
+        "external": Path(external_logs_dir),
+        "processed": Path(processed_logs_dir),
+    }
+
+    print("\n" + "=" * 30)
+    print("  Очистка pipeline логов")
+    print("\n" + "=" * 30)
+
+    total_files = 0
+    total_lines = 0
+
+    for label, target in targets.items():
+        if not target.exists():
+            print(f"⚠ Пропуск {label}: путь не существует -> {target}")
+            continue
+
+        if not target.is_dir():
+            print(f"⚠ Пропуск {label}: путь не является директорией -> {target}")
+            continue
+
+        files_deleted, lines_deleted = _clear_directory_contents(target)
+        total_files += files_deleted
+        total_lines += lines_deleted
+
+        print(
+            "✓ Очищено %s: файлов=%s, строк=%s, путь=%s"
+            % (label, files_deleted, lines_deleted, target)
+        )
+
+    print("-" * 90)
+    print(f"Итог: удалено файлов={total_files}, строк={total_lines}\n")
+
+
+def _setup_cli_history() -> None:
+    """Enable CLI command history navigation with arrow keys when readline is available."""
+    if readline is None:
+        return
+
+    history_path = Path.home() / ".wavescan_cli_history"
+
+    try:
+        if history_path.exists():
+            readline.read_history_file(str(history_path))
+    except Exception:
+        pass
+
+    readline.set_history_length(200)
+
+    def _persist_history() -> None:
+        try:
+            readline.write_history_file(str(history_path))
+        except Exception:
+            pass
+
+    import atexit
+
+    atexit.register(_persist_history)
+
+
+def show_agent_status() -> None:
+    """Show the latest known agent stage from AgentLogs."""
+    try:
+        conn = commands.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                al.action_type_id,
+                at.name,
+                al.description,
+                al.date
+            FROM public."AgentLogs" al
+            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
+            ORDER BY al.date DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        print("\n" + "=" * 30)
+        print("  Текущий этап агента:")
+        print("\n" + "=" * 30)
+
+        if not row:
+            print("Нет записей AgentLogs. Агент еще не выполнял действий.\n")
+            return
+
+        action_type_id, action_name, description, action_date = row
+        formatted_date = _format_cli_datetime(action_date)
+
+        print(
+            f"Этап: {action_name or 'неизвестно'} "
+            f"(action_type_id={action_type_id})"
+        )
+        print(f"Время этапа: {formatted_date}")
+        print(f"Описание: {description}")
+
+        if KAFKA_ENABLED:
+            consumer_state = "запущен" if kafka_log_consumer._running else "остановлен"
+            print(f"Kafka consumer: {consumer_state}")
+
+        print()
+    except Exception as e:
+        print(f"❌ Ошибка получения текущего этапа агента: {e}")
+
+
 def show_help():
     """Показать справку по использованию консоли."""
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 30)
     print("  Wavescan - CLI Команды")
-    print("=" * 60)
+    print("\n" + "=" * 30)
     print("\nДоступные команды:")
-    print("-" * 60)
+    print("-" * 30)
     for cmd, description in AVAILABLE_COMMANDS.items():
         print(f"  {cmd:15} - {description}")
-    print("\n")
-    print("=" * 60 + "\n")
+    print("=" * 30 + "\n")
 
 
 def execute_command(command: str):
@@ -1598,6 +1816,12 @@ def execute_command(command: str):
     elif cmd == "user_logs":
         limit = _parse_limit_arg(parts)
         show_user_logs(limit)
+    elif cmd == "pipeline_lines":
+        show_pipeline_lines()
+    elif cmd == "clear_pipeline_logs":
+        clear_pipeline_logs()
+    elif cmd == "agent_status":
+        show_agent_status()
     else:
         print(f"❌ Ошибка: неизвестная команда '{command}'")
         print("Введите 'help' чтобы увидеть доступные команды")
@@ -1607,12 +1831,14 @@ def execute_command(command: str):
 
 def run_interactive():
     """Запустить CLI консоль"""
-    print("\n" + "=" * 60)
+    _setup_cli_history()
+
+    print("\n" + "=" * 30)
     print("  Wavescan - CLI")
-    print("=" * 60)
+    print("=" * 30)
     print("\n  Введите 'help' для просмотра доступных команд")
     print("  Введите 'exit' для выхода из консоли\n")
-    print("=" * 60 + "\n")
+    print("=" * 30 + "\n")
 
     while True:
         try:
