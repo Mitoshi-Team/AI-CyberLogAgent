@@ -1,5 +1,5 @@
 #!/bin/bash
-# docker-entrypoint.sh — Download embedding model and start the app
+# docker-entrypoint.sh - Download embedding model and start the app
 
 set -e
 
@@ -17,7 +17,7 @@ download_model() {
         echo "  Found in HF cache, copying..."
         COMMIT=$(cat "$HF_CACHE/refs/main")
         cp -r "$HF_CACHE/snapshots/$COMMIT/"* "$MODEL_DIR/" 2>/dev/null && {
-            echo "  ✓ Copied from cache"
+            echo "  Copied from cache"
             return 0
         }
     fi
@@ -25,7 +25,7 @@ download_model() {
     # Try 2: Download from HuggingFace
     echo "  Not in cache, downloading from HuggingFace (~1.1 GB)..."
     if hf download intfloat/multilingual-e5-base --local-dir "$MODEL_DIR" 2>/dev/null; then
-        echo "  ✓ Downloaded"
+        echo "  Downloaded"
         return 0
     fi
     
@@ -35,20 +35,23 @@ download_model() {
 from huggingface_hub import snapshot_download
 snapshot_download('intfloat/multilingual-e5-base', local_dir='$MODEL_DIR', local_dir_use_symlinks=False)
 " && {
-        echo "  ✓ Downloaded via Python"
+        echo "  Downloaded via Python"
         return 0
     }
     
-    echo "  ✗ Failed to download embedding model!"
+    echo "  Failed to download embedding model!"
     echo "  RAG will be disabled. Pipeline will continue without MITRE ATT&CK."
     return 1
 }
 
 # Download model (non-blocking)
-if [ -d "$MODEL_DIR/config.json" ]; then
+if [ "${SKIP_EMBEDDING_DOWNLOAD:-0}" = "1" ]; then
+    echo "=== Embedding model download is skipped (SKIP_EMBEDDING_DOWNLOAD=1) ==="
+elif [ -f "$MODEL_DIR/config.json" ]; then
     echo "=== Embedding model already present ==="
 else
-    download_model || true
+    echo "=== Starting embedding model download in background ==="
+    (download_model || true) &
 fi
 
 # Start the application
