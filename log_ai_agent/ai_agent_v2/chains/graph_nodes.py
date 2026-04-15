@@ -6,10 +6,11 @@ Each node takes AnalysisState as input and returns a partial state update.
 
 import logging
 import time
-from typing import Any
 
 from langchain_core.language_models import BaseLanguageModel
 
+from ..engines.sigma_engine import SigmaEngine
+from ..engines.yara_engine import YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
 from ..models_types import AnalysisState
 from .agent1 import create_agent1_chain
@@ -38,8 +39,8 @@ class PipelineNodes:
         self,
         llm: BaseLanguageModel,
         chroma_mgr: ChromaDBManager | None = None,
-        yara_engine: Any | None = None,
-        sigma_engine: Any | None = None,
+        yara_engine: YaraEngine | None = None,
+        sigma_engine: SigmaEngine | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
     ):
@@ -178,7 +179,7 @@ class PipelineNodes:
             }
 
     # ===================================================================
-    # YARA SCAN — Rule-based malware detection (STUB)
+    # YARA SCAN — Rule-based malware detection
     # ===================================================================
 
     async def yara_scan_node(self, state: AnalysisState) -> dict:
@@ -186,8 +187,6 @@ class PipelineNodes:
 
         Reads: log_content
         Writes: yara_matches, yara_rules_matched, yara_context
-
-        NOTE: Currently a stub. Will be replaced with real YARA engine.
         """
         logger.info("[Node] YARA scan: checking rules")
         start = time.time()
@@ -201,9 +200,7 @@ class PipelineNodes:
             }
 
         try:
-            # TODO: Implement real YARA scan
-            # matches = self.yara_engine.scan(state["log_content"])
-            matches = []
+            matches = self.yara_engine.scan(state["log_content"])
 
             yara_rules_matched = [m.get("rule", "") for m in matches]
             yara_context = self._format_yara_context(matches)
@@ -226,7 +223,7 @@ class PipelineNodes:
             }
 
     # ===================================================================
-    # SIGMA SCAN — Rule-based SIEM detection (STUB)
+    # SIGMA SCAN — Rule-based SIEM detection
     # ===================================================================
 
     async def sigma_scan_node(self, state: AnalysisState) -> dict:
@@ -234,8 +231,6 @@ class PipelineNodes:
 
         Reads: log_content
         Writes: sigma_matches, sigma_rules_matched, sigma_context
-
-        NOTE: Currently a stub. Will be replaced with real Sigma engine.
         """
         logger.info("[Node] Sigma scan: checking rules")
         start = time.time()
@@ -249,9 +244,7 @@ class PipelineNodes:
             }
 
         try:
-            # TODO: Implement real Sigma scan
-            # matches = self.sigma_engine.scan(state["log_content"])
-            matches = []
+            matches = self.sigma_engine.scan(state["log_content"])
 
             sigma_rules_matched = [m.get("rule_id", "") for m in matches]
             sigma_context = self._format_sigma_context(matches)
@@ -365,7 +358,7 @@ class PipelineNodes:
         lines = ["### Совпадения Sigma:"]
         for i, m in enumerate(matches, 1):
             lines.append(
-                f"{i}. **{m.get('rule_id', 'Unknown')}** — {m.get('title', '')}"
+                f"{i}. **{m.get('title', 'Unknown')}** — {m.get('description', '')}"
             )
             if m.get("severity"):
                 lines.append(f"   Серьёзность: {m['severity']}")

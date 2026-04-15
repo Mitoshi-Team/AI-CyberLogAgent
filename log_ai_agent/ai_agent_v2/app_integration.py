@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 
 from .callbacks import get_callback_config
 from .config import AgentConfig
@@ -15,6 +16,15 @@ _pipeline: LogAnalysisPipeline | None = None
 _analyze_lock = asyncio.Lock()
 _MAX_ANALYSIS_LOG_CHARS = int(os.getenv("AI_V2_MAX_ANALYSIS_LOG_CHARS", "25000"))
 _agent_config: AgentConfig | None = None
+
+
+def _resolve_rules_path(relative_path: str) -> str | None:
+    """Resolve a rules path relative to the ai_agent_v2 package directory."""
+    base = Path(__file__).parent
+    full = (base / relative_path).resolve()
+    if full.exists():
+        return str(full)
+    return None
 
 
 def _is_rate_limited(error_msg: str) -> bool:
@@ -50,6 +60,11 @@ async def get_pipeline() -> LogAnalysisPipeline:
         _agent_config = AgentConfig.from_env()
         provider = _agent_config.detected_provider
         logger.info("Creating AI Agent v2 pipeline...")
+
+        # Resolve YARA and Sigma rules paths
+        yara_rules = _resolve_rules_path("rules/yara")
+        sigma_rules = _resolve_rules_path("rules/sigma")
+
         _pipeline = await create_pipeline(
             chroma_path=_agent_config.chroma_path,
             use_rag=_agent_config.use_rag,
@@ -58,15 +73,19 @@ async def get_pipeline() -> LogAnalysisPipeline:
                 "max_tokens": _agent_config.max_tokens,
                 "timeout": _agent_config.timeout,
             },
+            yara_rules_path=yara_rules,
+            sigma_rules_path=sigma_rules,
         )
         logger.info(
-            "AI Agent v2 backend config: provider=%s timeout=%ss temp=%s max_tokens=%s use_rag=%s rag_top_k=%s",
+            "AI Agent v2 backend config: provider=%s timeout=%ss temp=%s max_tokens=%s use_rag=%s rag_top_k=%s yara=%s sigma=%s",
             provider.value,
             _agent_config.timeout,
             _agent_config.temperature,
             _agent_config.max_tokens,
             _agent_config.use_rag,
             _agent_config.rag_top_k,
+            yara_rules is not None,
+            sigma_rules is not None,
         )
         logger.info("✓ AI Agent v2 pipeline created")
 

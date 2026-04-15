@@ -46,6 +46,7 @@ from langgraph.graph import END, START, StateGraph
 
 from ..chains.graph_nodes import PipelineNodes
 from ..chains.llm import create_llm
+from ..engines import SigmaEngine, YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
 from ..knowledge_base.mitre_loader import initialize_mitre_knowledge_base
 from ..models_types import AnalysisState
@@ -357,11 +358,29 @@ async def create_pipeline(
     llm_kwargs = llm_config or {}
     llm = create_llm(**llm_kwargs)
 
-    # TODO: Initialize YARA and Sigma engines when ready
-    # yara_engine = init_yara_engine(yara_rules_path) if yara_rules_path else None
-    # sigma_engine = init_sigma_engine(sigma_rules_path) if sigma_rules_path else None
+    # Initialize YARA and Sigma engines
     yara_engine = None
     sigma_engine = None
+
+    try:
+        if yara_rules_path:
+            logger.info(f"Initializing YARA engine with rules from: {yara_rules_path}")
+            yara_engine = YaraEngine(yara_rules_path)
+            logger.info(f"✓ YARA engine loaded {len(yara_engine.rules)} rules")
+    except Exception as e:
+        logger.warning(f"Failed to initialize YARA engine: {e}")
+        yara_engine = None
+
+    try:
+        if sigma_rules_path:
+            logger.info(
+                f"Initializing Sigma engine with rules from: {sigma_rules_path}"
+            )
+            sigma_engine = SigmaEngine(sigma_rules_path)
+            logger.info(f"✓ Sigma engine loaded {len(sigma_engine.rules)} rules")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Sigma engine: {e}")
+        sigma_engine = None
 
     # Create pipeline
     pipeline = LogAnalysisPipeline(
