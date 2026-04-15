@@ -7,7 +7,14 @@ from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
