@@ -1793,7 +1793,7 @@ def show_help():
     print("-" * 60)
     for cmd, description in AVAILABLE_COMMANDS.items():
         print(f"  {cmd:15} - {description}")
-    print("=" * 60 + "\n")
+    print("-" * 60 + "\n")
 
 
 def execute_command(command: str):
@@ -1831,20 +1831,64 @@ def execute_command(command: str):
     return True
 
 
+def _colorize_gradient_text(
+    text: str,
+    start_rgb: tuple[int, int, int],
+    end_rgb: tuple[int, int, int],
+) -> str:
+    """Apply a left-to-right ANSI truecolor gradient to text."""
+    if not text:
+        return text
+
+    length = len(text)
+    if length == 1:
+        r, g, b = start_rgb
+        return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
+
+    chars: list[str] = []
+    for idx, char in enumerate(text):
+        ratio = idx / (length - 1)
+        red = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio)
+        green = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio)
+        blue = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
+        chars.append(f"\033[38;2;{red};{green};{blue}m{char}")
+
+    return "".join(chars) + "\033[0m"
+
+
 def run_interactive():
     """Запустить CLI консоль"""
     _setup_cli_history()
 
+    use_colored_prompt = (
+        os.getenv("NO_COLOR") is None and os.getenv("TERM", "").lower() != "dumb"
+    )
+    prompt = "\033[95mwavescan>\033[0m " if use_colored_prompt else "wavescan> "
+
+    logo_lines = [
+        " ██╗    ██╗ █████╗ ██╗   ██╗███████╗███████╗ ██████╗ █████╗ ███╗   ██╗",
+        " ██║    ██║██╔══██╗██║   ██║██╔════╝██╔════╝██╔════╝██╔══██╗████╗  ██║",
+        " ██║ █╗ ██║███████║██║   ██║█████╗  ███████╗██║     ███████║██╔██╗ ██║",
+        " ██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ╚════██║██║     ██╔══██║██║╚██╗██║",
+        " ╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗███████║╚██████╗██║  ██║██║ ╚████║",
+        "  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝",
+    ]
+
+    print("")
+    if use_colored_prompt:
+        for line in logo_lines:
+            print(_colorize_gradient_text(line, (168, 85, 247), (56, 189, 248)))
+    else:
+        for line in logo_lines:
+            print(line)
     print("\n" + "=" * 60)
-    print("  Wavescan - CLI")
-    print("=" * 60)
     print("\n  Введите 'help' для просмотра доступных команд")
     print("  Введите 'exit' для выхода из консоли\n")
     print("=" * 60 + "\n")
 
     while True:
         try:
-            command = input("wavescan> ").strip()
+            command = input(prompt).strip()
             if not execute_command(command):
                 print("\nВыход из консоли...\n")
                 break
