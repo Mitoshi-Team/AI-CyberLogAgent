@@ -7,7 +7,7 @@ from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -24,8 +24,12 @@ from log_ai_agent.config import commands
 from log_ai_agent.config.cfg import (
     KAFKA_AUTO_OFFSET_RESET,
     KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_DLQ_ENABLED,
+    KAFKA_DLQ_TOPIC,
     KAFKA_ENABLED,
     KAFKA_GROUP_ID,
+    KAFKA_PROCESS_RETRY_ATTEMPTS,
+    KAFKA_RETRY_BACKOFF_SECONDS,
     KAFKA_TOPIC,
     PIPELINE_COLLECTED_LOGS_FILE,
     PIPELINE_CONSUMED_LOGS_FILE,
@@ -65,6 +69,93 @@ USER_ACTION_SEND_MESSAGE = 10
 
 MIN_LOG_LINES = 50
 MAX_LOG_LINES = 500
+
+
+class RealtimeConnectionHub:
+    """In-memory WebSocket hub for broadcasting realtime frontend events."""
+
+    def __init__(self) -> None:
+        self._connections: set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self._connections.discard(websocket)
+
+    async def broadcast(self, event: dict) -> None:
+        if not self._connections:
+            return
+
+        dead_connections: list[WebSocket] = []
+        for connection in list(self._connections):
+            try:
+                await connection.send_json(event)
+            except Exception:
+                dead_connections.append(connection)
+
+        for connection in dead_connections:
+            self.disconnect(connection)
+
+
+realtime_hub = RealtimeConnectionHub()
+
+
+def _map_severity_for_frontend(severity_level_id: int | None) -> str:
+    """Map backend severity level IDs to frontend severity labels."""
+    if severity_level_id == 1:
+        return "critical"
+    if severity_level_id == 2:
+        return "warning"
+    return "normal"
+
+
+async def _broadcast_chat_response_event(
+    user_id: int,
+    response_text: str,
+    mode: str | None,
+) -> None:
+    """Notify connected frontend clients about a new agent chat response."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "chat_response",
+                "user_id": user_id,
+                "mode": mode,
+                "preview": response_text[:200],
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast chat_response event: %s", error)
+
+
+async def _broadcast_incident_event(
+    title: str,
+    description: str,
+    severity_level_id: int | None,
+    source: str,
+) -> None:
+    """Broadcast a newly created incident/report event to connected clients."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "incident",
+                "incident": {
+                    "id": int(datetime.now(UTC).timestamp() * 1000),
+                    "title": title,
+                    "description": description,
+                    "severity": _map_severity_for_frontend(severity_level_id),
+                    "status": "open",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "source": source,
+                    "details": {},
+                },
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast incident event: %s", error)
 
 
 async def _insert_agent_log(
@@ -274,6 +365,13 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             log_id,
         )
         logger.info("Kafka report auto-posted to chat: %s", inserted_messages)
+
+        await _broadcast_incident_event(
+            title=f"Инцидент из Kafka потока ({source_label})",
+            description=report_description,
+            severity_level_id=analysis_result.get("severity_level_id"),
+            source="Kafka Pipeline",
+        )
     finally:
         await conn.close()
 
@@ -285,6 +383,10 @@ kafka_log_consumer = KafkaLogBatchConsumer(
     group_id=KAFKA_GROUP_ID,
     auto_offset_reset=KAFKA_AUTO_OFFSET_RESET,
     output_file=PIPELINE_CONSUMED_LOGS_FILE,
+    retry_attempts=KAFKA_PROCESS_RETRY_ATTEMPTS,
+    retry_backoff_seconds=KAFKA_RETRY_BACKOFF_SECONDS,
+    dlq_enabled=KAFKA_DLQ_ENABLED,
+    dlq_topic=KAFKA_DLQ_TOPIC,
     payload_handler=_process_kafka_log_batch,
 )
 
@@ -371,6 +473,30 @@ class ChatMessageResponse(BaseModel):
 async def root():
     """Главная страница API"""
     return {"message": "Wavescan API", "status": "running", "version": "1.0.0"}
+
+
+async def _serve_websocket(websocket: WebSocket):
+    """Realtime WebSocket endpoint for frontend notifications."""
+    await realtime_hub.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive; client messages are optional in current flow.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime_hub.disconnect(websocket)
+    except Exception as error:
+        logger.warning("WebSocket connection error: %s", error)
+        realtime_hub.disconnect(websocket)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await _serve_websocket(websocket)
+
+
+@app.websocket("/ws/")
+async def websocket_endpoint_slash(websocket: WebSocket):
+    await _serve_websocket(websocket)
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)
@@ -1036,6 +1162,12 @@ async def send_chat_message(request: ChatSendRequest):
             f"Chat message processed for user {request.user_id}, mode: {result['mode']}"
         )
 
+        await _broadcast_chat_response_event(
+            user_id=request.user_id,
+            response_text=result["response"],
+            mode=result.get("mode"),
+        )
+
         return ChatSendResponse(
             success=True,
             user_message=request.message,
@@ -1074,6 +1206,12 @@ async def send_chat_message(request: ChatSendRequest):
             await _store_agent_fallback_message(request.user_id, fallback_text)
         except Exception as db_error:
             logger.error(f"Failed to persist fallback chat message: {db_error}")
+
+        await _broadcast_chat_response_event(
+            user_id=request.user_id,
+            response_text=fallback_text,
+            mode=fallback_mode,
+        )
 
         return ChatSendResponse(
             success=False,
@@ -1273,6 +1411,13 @@ async def upload_log_file(
                 conn,
                 AGENT_ACTION_RESPOND,
                 f"Ответ на запрос загрузки логов: user_id={user_id}, report_id={report_id}",
+            )
+
+            await _broadcast_incident_event(
+                title=f"Новый инцидент из файла {file.filename}",
+                description=analysis_result["description"],
+                severity_level_id=analysis_result.get("severity_level_id"),
+                source="Manual Log Upload",
             )
 
             return response

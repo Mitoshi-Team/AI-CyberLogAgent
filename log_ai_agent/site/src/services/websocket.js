@@ -14,10 +14,12 @@ class WebSocketService {
   /**
    * Подключение к WebSocket серверу
    */
-  connect(url = 'ws://localhost:8000/ws') {
+  connect(url = null) {
+    const websocketUrl = url || this.getDefaultUrl()
+
     return new Promise((resolve, reject) => {
       try {
-        this.socket = new WebSocket(url)
+        this.socket = new WebSocket(websocketUrl)
 
         this.socket.onopen = () => {
           console.log('WebSocket connected')
@@ -43,12 +45,17 @@ class WebSocketService {
         this.socket.onclose = () => {
           console.log('WebSocket disconnected')
           this.notifyListeners('disconnect')
-          this.attemptReconnect(url)
+          this.attemptReconnect(websocketUrl)
         }
       } catch (error) {
         reject(error)
       }
     })
+  }
+
+  getDefaultUrl() {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProtocol}//${window.location.host}/ws/`
   }
 
   /**
