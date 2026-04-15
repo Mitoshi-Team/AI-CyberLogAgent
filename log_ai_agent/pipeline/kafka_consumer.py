@@ -136,7 +136,9 @@ class KafkaLogBatchConsumer:
                 for _, messages in message_groups.items():
                     for message in messages:
                         payload = message.value
-                        handled = await self._process_message_with_retry(message, payload)
+                        handled = await self._process_message_with_retry(
+                            message, payload
+                        )
                         if not handled:
                             raise RuntimeError(
                                 "Kafka message processing failed and DLQ publish was unsuccessful"
@@ -148,7 +150,9 @@ class KafkaLogBatchConsumer:
                 logger.error("Kafka consume error: %s", exc, exc_info=True)
                 await asyncio.sleep(5)
 
-    async def _process_message_with_retry(self, message: Any, payload: dict[str, Any]) -> bool:
+    async def _process_message_with_retry(
+        self, message: Any, payload: dict[str, Any]
+    ) -> bool:
         """Process one Kafka message with retries and optional DLQ fallback."""
         last_error: Exception | None = None
 
