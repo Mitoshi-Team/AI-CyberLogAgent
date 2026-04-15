@@ -1511,9 +1511,9 @@ def show_agent_logs(limit: int = 50):
         )
         rows = cursor.fetchall()
 
-        print("\n" + "=" * 30)
+        print("\n" + "=" * 60)
         print(f"  Логи агента (последние {limit}")
-        print("=" * 30)
+        print("=" * 60)
 
         if not rows:
             print("\nЗаписей нет\n")
@@ -1554,9 +1554,9 @@ def show_user_logs(limit: int = 50):
         )
         rows = cursor.fetchall()
 
-        print("\n" + "=" * 30)
+        print("\n" + "=" * 60)
         print(f"  Логи пользователей (последние {limit})")
-        print("=" * 30)
+        print("=" * 60)
 
         if not rows:
             print("\nЗаписей нет\n")
@@ -1651,9 +1651,9 @@ def show_pipeline_lines() -> None:
         "processed": Path(processed_logs_dir),
     }
 
-    print("\n" + "=" * 30)
+    print("\n" + "=" * 60)
     print("  Статистика строк pipeline")
-    print("\n" + "=" * 30)
+    print("=" * 60)
 
     total_files = 0
     total_lines = 0
@@ -1664,7 +1664,7 @@ def show_pipeline_lines() -> None:
         total_lines += lines_count
         print(f"{label:10} files={files_count:<6} lines={lines_count:<10} path={target}")
 
-    print("\n")
+    print("")
     print(f"Итог: files={total_files}, lines={total_lines}\n")
 
 
@@ -1678,9 +1678,9 @@ def clear_pipeline_logs() -> None:
         "processed": Path(processed_logs_dir),
     }
 
-    print("\n" + "=" * 30)
+    print("\n" + "=" * 60)
     print("  Очистка pipeline логов")
-    print("\n" + "=" * 30)
+    print("=" * 60)
 
     total_files = 0
     total_lines = 0
@@ -1755,9 +1755,9 @@ def show_agent_status() -> None:
         cursor.close()
         conn.close()
 
-        print("\n" + "=" * 30)
+        print("\n" + "=" * 60)
         print("  Текущий этап агента:")
-        print("\n" + "=" * 30)
+        print("=" * 60)
 
         if not row:
             print("Нет записей AgentLogs. Агент еще не выполнял действий.\n")
@@ -1784,14 +1784,14 @@ def show_agent_status() -> None:
 
 def show_help():
     """Показать справку по использованию консоли."""
-    print("\n" + "=" * 30)
+    print("\n" + "=" * 60)
     print("  Wavescan - CLI Команды")
-    print("\n" + "=" * 30)
+    print("=" * 60)
     print("\nДоступные команды:")
-    print("-" * 30)
+    print("-" * 60)
     for cmd, description in AVAILABLE_COMMANDS.items():
         print(f"  {cmd:15} - {description}")
-    print("=" * 30 + "\n")
+    print("=" * 60 + "\n")
 
 
 def execute_command(command: str):
@@ -1833,12 +1833,12 @@ def run_interactive():
     """Запустить CLI консоль"""
     _setup_cli_history()
 
-    print("\n" + "=" * 30)
+    print("\n" + "=" * 60)
     print("  Wavescan - CLI")
-    print("=" * 30)
+    print("=" * 60)
     print("\n  Введите 'help' для просмотра доступных команд")
     print("  Введите 'exit' для выхода из консоли\n")
-    print("=" * 30 + "\n")
+    print("=" * 60 + "\n")
 
     while True:
         try:
