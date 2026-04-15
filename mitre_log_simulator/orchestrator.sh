@@ -7,6 +7,7 @@ UNHEALTHY_FLAG_FILE="/tmp/unhealthy"
 STOP_REQUEST_FILE="/tmp/stop_requested"
 SIM_SYSLOG_FILE="/tmp/syslog_sim.log"
 GOLDEN_LOG_FILE="/var/log/golden/attack_timeline.log"
+STREAM_LOG_FILE="/var/log/golden/simulator_stream.log"
 
 ATTACK_MODE="${ATTACK_MODE:-random}"
 FIXED_TECHNIQUE="${FIXED_TECHNIQUE:-T1059}"
@@ -55,6 +56,7 @@ emit_stdout() {
   fi
 
   echo "${line}"
+  echo "${line}" >> "${STREAM_LOG_FILE}"
   epoch_now > "${LAST_STDOUT_TS_FILE}"
 
   LOG_LINES_EMITTED=$((LOG_LINES_EMITTED + 1))
@@ -435,6 +437,7 @@ main_loop() {
 bootstrap() {
   RANDOM="${RANDOM_SEED}"
   mkdir -p /var/log/golden
+  : > "${STREAM_LOG_FILE}"
   : > "${SIM_SYSLOG_FILE}"
   epoch_now > "${LAST_STDOUT_TS_FILE}"
   rm -f "${UNHEALTHY_FLAG_FILE}"

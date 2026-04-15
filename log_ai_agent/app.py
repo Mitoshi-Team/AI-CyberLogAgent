@@ -2,6 +2,8 @@ import logging
 import os
 import shutil
 import sys
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -113,6 +115,36 @@ class RealtimeConnectionHub:
 
 
 realtime_hub = RealtimeConnectionHub()
+
+runtime_analysis_state: dict[str, object] = {
+    "processing": False,
+    "current_batch_started_at": None,
+    "current_source": None,
+    "current_records": 0,
+    "last_batch_completed_at": None,
+    "last_events_found": None,
+    "last_error": None,
+}
+
+
+def _mark_runtime_processing(source_label: str, records_count: int) -> None:
+    """Track current Kafka batch processing stage for status endpoint."""
+    runtime_analysis_state["processing"] = True
+    runtime_analysis_state["current_batch_started_at"] = datetime.now(UTC).isoformat()
+    runtime_analysis_state["current_source"] = source_label
+    runtime_analysis_state["current_records"] = records_count
+    runtime_analysis_state["last_error"] = None
+
+
+def _mark_runtime_idle(
+    events_found: int | None = None,
+    error_text: str | None = None,
+) -> None:
+    """Mark Kafka batch processing completion for status endpoint."""
+    runtime_analysis_state["processing"] = False
+    runtime_analysis_state["last_batch_completed_at"] = datetime.now(UTC).isoformat()
+    runtime_analysis_state["last_events_found"] = events_found
+    runtime_analysis_state["last_error"] = error_text
 
 
 def _map_severity_for_frontend(severity_level_id: int | None) -> str:
@@ -260,20 +292,6 @@ async def _process_kafka_log_batch(payload: dict) -> None:
     if not messages:
         return
 
-    log_content = "\n".join(messages)
-    analysis_result = await analyze_log_v2(log_content)
-    analysis_error = str(analysis_result.get("error") or "")
-    lowered_analysis_error = analysis_error.lower()
-
-    if analysis_error and (
-        "payment required" in lowered_analysis_error or "402" in lowered_analysis_error
-    ):
-        logger.warning(
-            "Kafka batch analysis skipped due to external AI payment error: %s",
-            analysis_error,
-        )
-        return
-
     source_file = batch.get("source_file", "unknown")
     source_files = batch.get("source_files")
     source_label = (
@@ -281,112 +299,139 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         if isinstance(source_files, list) and source_files
         else source_file
     )
-    events_found = analysis_result.get("events_found", 0)
-    if events_found <= 0:
-        logger.info(
-            "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
-            source_label,
-            len(messages),
-        )
-        return
+    _mark_runtime_processing(source_label, len(messages))
 
-    report_description = (
-        "AI pipeline: Agent1 -> RAG -> Agent2\n"
-        f"Источник: {source_label}\n"
-        f"Размер батча: {batch.get('batch_size', len(messages))}\n"
-        f"Событий выделено Agent1: {events_found}\n"
-        f"\n{analysis_result['description']}"
-    )
+    log_content = "\n".join(messages)
+    events_found: int | None = None
+    runtime_error: str | None = None
 
-    conn = await asyncpg.connect(DATABASE_URL, timeout=10)
     try:
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_RECEIVE_LOGS,
-            f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
-        )
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_ANALYZE_LOGS,
-            "Анализ логов через AI Agent v2 (Kafka batch)",
-        )
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_MATCH_THREATS,
-            "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
-        )
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_BUILD_REPORT,
-            "Формирование итогового отчета по Kafka batch",
-        )
+        analysis_result = await analyze_log_v2(log_content)
+        analysis_error = str(analysis_result.get("error") or "")
+        lowered_analysis_error = analysis_error.lower()
 
-        log_row = await conn.fetchrow(
-            """
-            INSERT INTO public."Logs" (file_content, date)
-            VALUES ($1, NOW())
-            RETURNING log_id
-            """,
-            log_content,
-        )
-        log_id = log_row["log_id"]
-
-        await conn.execute(
-            """
-            INSERT INTO public."Reports" (
-                log_id,
-                severity_level_id,
-                threat_type_id,
-                description,
-                created_at
+        if analysis_error and (
+            "payment required" in lowered_analysis_error
+            or "402" in lowered_analysis_error
+        ):
+            runtime_error = analysis_error
+            logger.warning(
+                "Kafka batch analysis skipped due to external AI payment error: %s",
+                analysis_error,
             )
-            VALUES ($1, $2, $3, $4, NOW())
-            """,
-            log_id,
-            analysis_result["severity_level_id"],
-            analysis_result["threat_type_id"],
-            report_description,
+            return
+
+        events_found = analysis_result.get("events_found", 0)
+        if events_found <= 0:
+            logger.info(
+                "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
+                source_label,
+                len(messages),
+            )
+            return
+
+        report_description = (
+            "AI pipeline: Agent1 -> RAG -> Agent2\n"
+            f"Источник: {source_label}\n"
+            f"Размер батча: {batch.get('batch_size', len(messages))}\n"
+            f"Событий выделено Agent1: {events_found}\n"
+            f"\n{analysis_result['description']}"
         )
 
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_SAVE_REPORT,
-            f"Сохранение отчета по Kafka batch: log_id={log_id}",
-        )
+        conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+        try:
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_RECEIVE_LOGS,
+                f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
+            )
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_ANALYZE_LOGS,
+                "Анализ логов через AI Agent v2 (Kafka batch)",
+            )
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_MATCH_THREATS,
+                "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
+            )
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_BUILD_REPORT,
+                "Формирование итогового отчета по Kafka batch",
+            )
 
-        chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
-        inserted_messages = await conn.execute(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            SELECT user_id, 'agent', $1, NOW()
-            FROM public."Users"
-            """,
-            chat_message,
-        )
+            log_row = await conn.fetchrow(
+                """
+                INSERT INTO public."Logs" (file_content, date)
+                VALUES ($1, NOW())
+                RETURNING log_id
+                """,
+                log_content,
+            )
+            log_id = log_row["log_id"]
 
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_RESPOND,
-            "Ответ на запрос: автоответ опубликован в чат пользователя",
-        )
+            await conn.execute(
+                """
+                INSERT INTO public."Reports" (
+                    log_id,
+                    severity_level_id,
+                    threat_type_id,
+                    description,
+                    created_at
+                )
+                VALUES ($1, $2, $3, $4, NOW())
+                """,
+                log_id,
+                analysis_result["severity_level_id"],
+                analysis_result["threat_type_id"],
+                report_description,
+            )
 
-        logger.info(
-            "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, log_id=%s",
-            source_label,
-            len(messages),
-            events_found,
-            log_id,
-        )
-        logger.info("Kafka report auto-posted to chat: %s", inserted_messages)
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_SAVE_REPORT,
+                f"Сохранение отчета по Kafka batch: log_id={log_id}",
+            )
 
-        await _broadcast_incident_event(
-            title=f"Инцидент из Kafka потока ({source_label})",
-            description=report_description,
-            severity_level_id=analysis_result.get("severity_level_id"),
-            source="Kafka Pipeline",
-        )
+            chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
+            inserted_messages = await conn.execute(
+                """
+                INSERT INTO public."Messages" (user_id, role, content, created_at)
+                SELECT user_id, 'agent', $1, NOW()
+                FROM public."Users"
+                """,
+                chat_message,
+            )
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_RESPOND,
+                "Отправка автоотчета пользователям через чат",
+            )
+
+            logger.info(
+                "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, log_id=%s",
+                source_label,
+                len(messages),
+                events_found,
+                log_id,
+            )
+            logger.info("Kafka report auto-posted to chat: %s", inserted_messages)
+
+            await _broadcast_incident_event(
+                title=f"Инцидент из Kafka потока ({source_label})",
+                description=report_description,
+                severity_level_id=analysis_result.get("severity_level_id"),
+                source="Kafka Pipeline",
+            )
+        finally:
+            await conn.close()
+    except Exception as error:
+        runtime_error = str(error)
+        raise
     finally:
-        await conn.close()
+        _mark_runtime_idle(events_found=events_found, error_text=runtime_error)
 
 
 kafka_log_consumer = KafkaLogBatchConsumer(
@@ -602,6 +647,16 @@ async def health_check():
         "status": "healthy" if db_status == "connected" else "degraded",
         "database": db_status,
         "database_error": db_error if db_error else None,
+    }
+
+
+@app.get("/api/system/status")
+async def get_system_status():
+    """Return runtime status for backend, Kafka consumer and current analysis stage."""
+    return {
+        "kafka_enabled": KAFKA_ENABLED,
+        "consumer_running": bool(getattr(kafka_log_consumer, "_running", False)),
+        "analysis": runtime_analysis_state,
     }
 
 
@@ -1487,6 +1542,30 @@ def _format_cli_datetime(value: datetime) -> str:
     return value.astimezone(CLI_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _format_runtime_timestamp(value: object) -> str:
+    """Format ISO timestamp string from runtime status to CLI timezone."""
+    if value in (None, ""):
+        return "unknown"
+
+    if isinstance(value, datetime):
+        return _format_cli_datetime(value)
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return "unknown"
+
+        # Support both ISO with offset and trailing 'Z'.
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+            return _format_cli_datetime(parsed)
+        except ValueError:
+            return raw
+
+    return str(value)
+
+
 def show_agent_logs(limit: int = 50):
     """Show latest agent action logs for admin console."""
     try:
@@ -1738,6 +1817,25 @@ def _setup_cli_history() -> None:
     atexit.register(_persist_history)
 
 
+def _fetch_runtime_status_from_api() -> dict | None:
+    """Fetch status from running backend process for accurate CLI diagnostics."""
+    status_url = os.getenv("WAVESCAN_STATUS_URL", "http://127.0.0.1:8000/api/system/status")
+
+    try:
+        with urllib.request.urlopen(status_url, timeout=2) as response:
+            if response.status != 200:
+                return None
+            payload = response.read().decode("utf-8")
+            import json
+
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                return parsed
+            return None
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
+
+
 def show_agent_status() -> None:
     """Show the latest known agent stage from AgentLogs."""
     try:
@@ -1761,7 +1859,54 @@ def show_agent_status() -> None:
         conn.close()
 
         print("\n" + "=" * 60)
-        print("  Текущий этап агента:")
+        print("  Статус:")
+        print("=" * 60)
+
+        runtime_status = _fetch_runtime_status_from_api()
+
+        if KAFKA_ENABLED:
+            if runtime_status:
+                consumer_running = bool(runtime_status.get("consumer_running", False))
+                consumer_state = "запущен" if consumer_running else "остановлен"
+                print(f"Kafka consumer: {consumer_state}")
+
+                analysis = runtime_status.get("analysis")
+                if isinstance(analysis, dict):
+                    if analysis.get("processing"):
+                        started_at = _format_runtime_timestamp(
+                            analysis.get("current_batch_started_at")
+                        )
+                        print(
+                            "Обработка batch: выполняется | "
+                            f"source={analysis.get('current_source', 'unknown')} | "
+                            f"records={analysis.get('current_records', 0)} | "
+                            f"started_at={started_at}"
+                        )
+                    else:
+                        last_completed_at = _format_runtime_timestamp(
+                            analysis.get("last_batch_completed_at")
+                        )
+                        print(
+                            "Обработка batch: простаивает | "
+                            f"last_completed_at={last_completed_at} | "
+                            f"last_events_found={analysis.get('last_events_found', 'unknown')}"
+                        )
+
+                    last_error = analysis.get("last_error")
+                    if last_error:
+                        print(f"Последняя ошибка batch: {last_error}")
+            else:
+                consumer_state = "запущен" if kafka_log_consumer._running else "остановлен"
+                print(f"Kafka consumer: {consumer_state} (локальный процесс CLI)")
+                print(
+                    "Примечание: если консоль запущена отдельной командой python app.py interactive, "
+                    "этот статус может не отражать состояние основного backend-процесса."
+                )
+
+        print()
+
+        print("=" * 60)
+        print("  Последнее действие агента:")
         print("=" * 60)
 
         if not row:
@@ -1772,14 +1917,9 @@ def show_agent_status() -> None:
         formatted_date = _format_cli_datetime(action_date)
 
         print(f"Этап: {action_name or 'неизвестно'} (action_type_id={action_type_id})")
-        print(f"Время этапа: {formatted_date}")
+        print(f"Время: {formatted_date}")
         print(f"Описание: {description}")
 
-        if KAFKA_ENABLED:
-            consumer_state = "запущен" if kafka_log_consumer._running else "остановлен"
-            print(f"Kafka consumer: {consumer_state}")
-
-        print()
     except Exception as e:
         print(f"❌ Ошибка получения текущего этапа агента: {e}")
 
