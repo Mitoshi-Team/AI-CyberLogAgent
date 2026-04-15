@@ -46,9 +46,7 @@ from log_ai_agent.config.cfg import (
     KAFKA_TOPIC,
     PIPELINE_COLLECTED_LOGS_FILE,
     PIPELINE_CONSUMED_LOGS_FILE,
-    PIPELINE_EXTERNAL_LOGS_DIR,
     PIPELINE_KAFKA_AUTO_ANALYZE,
-    PIPELINE_PROCESSED_LOGS_DIR,
 )
 from log_ai_agent.pipeline.kafka_consumer import KafkaLogBatchConsumer
 from log_ai_agent.pipeline.log_ingest_api import router as pipeline_ingest_router
@@ -1621,6 +1619,7 @@ def _clear_directory_contents(path: Path) -> tuple[int, int]:
 
     Returns:
         tuple: (files_deleted, lines_deleted)
+
     """
     files_deleted = 0
     lines_deleted = 0
@@ -1644,7 +1643,9 @@ def _clear_directory_contents(path: Path) -> tuple[int, int]:
 def show_pipeline_lines() -> None:
     """Show current line counts in external and processed pipeline directories."""
     external_logs_dir = os.getenv("PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external")
-    processed_logs_dir = os.getenv("PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed")
+    processed_logs_dir = os.getenv(
+        "PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed"
+    )
 
     targets = {
         "external": Path(external_logs_dir),
@@ -1662,7 +1663,9 @@ def show_pipeline_lines() -> None:
         files_count, lines_count = _collect_directory_stats(target)
         total_files += files_count
         total_lines += lines_count
-        print(f"{label:10} files={files_count:<6} lines={lines_count:<10} path={target}")
+        print(
+            f"{label:10} files={files_count:<6} lines={lines_count:<10} path={target}"
+        )
 
     print("\n")
     print(f"Итог: files={total_files}, lines={total_lines}\n")
@@ -1671,7 +1674,9 @@ def show_pipeline_lines() -> None:
 def clear_pipeline_logs() -> None:
     """Clear pipeline logs from external and processed shared directories."""
     external_logs_dir = os.getenv("PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external")
-    processed_logs_dir = os.getenv("PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed")
+    processed_logs_dir = os.getenv(
+        "PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed"
+    )
 
     targets = {
         "external": Path(external_logs_dir),
@@ -1766,10 +1771,7 @@ def show_agent_status() -> None:
         action_type_id, action_name, description, action_date = row
         formatted_date = _format_cli_datetime(action_date)
 
-        print(
-            f"Этап: {action_name or 'неизвестно'} "
-            f"(action_type_id={action_type_id})"
-        )
+        print(f"Этап: {action_name or 'неизвестно'} (action_type_id={action_type_id})")
         print(f"Время этапа: {formatted_date}")
         print(f"Описание: {description}")
 
