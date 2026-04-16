@@ -5,36 +5,40 @@ This module builds the LangGraph StateGraph for the full analysis pipeline:
 Architecture:
 ┌─────────────────────────────────────────────┐
 │           log_content (input)               │
-└───┬──────────────┬──────────────┬───────────┘
-    │              │              │
-┌───▼───┐    ┌─────▼─────┐ ┌────▼────┐
-│Agent 1│    │parse_logs │ │  YARA   │
-└───┬───┘    └─────┬─────┘ └────┬────┘
-    │               │            │
-┌───▼───┐         ┌─┴───────────┴─┐
-│ RAG   │         │  parse_logs   │
-└───┬───┘         └───────┬───────┘
-    │               ┌─────▼─────┐
-┌───▼───┐          │   YARA    │
-│Agent 2│          └─────┬─────┘
-└───┬───┘          ┌─────▼─────┐
-    │               │   Sigma   │
-    │               └─────┬─────┘
-    └──────────────┌─────┴───────┘
-                   │
-            ┌──────▼──────┐
-            │   Agent 3   │
-            │ (summarize) │
-            └──────┬──────┘
-                   │
-            ┌──────▼──────┐
-            │  END (report)│
-            └─────────────┘
+└────┬────────────┬─────────────┬───────────┘
+     │            │             │
+┌────▼────┐ ┌───▼─────┐ ┌───▼──────┐
+│ Agent 1 │ │parse_logs│ │  YARA    │
+└────┬────┘ └────┬─────┘ └─────┬─────┘
+     │            │             │
+     │       ┌────┴─────┐       │
+     │       │parse_logs│       │
+     │       └────┬─────┘       │
+     │            │         ┌───▼──────┐
+     │            │         │  Sigma   │
+     │            └────┬────┴──────────┘
+     │                 │
+┌────▼────┐      ┌────▼────────────┐
+│ Agent 2 │◄─────│  Agent 2       │
+└────┬────┘      │ (RAG search)   │
+     │            └────┬────────────┘
+     │                 │
+     └────────┬────────┘
+              │
+       ┌──────▼──────┐
+       │   Agent 3   │
+       │ (summarize)  │
+       └──────┬──────┘
+              │
+       ┌──────▼──────┐
+       │  END (report)│
+       └─────────────┘
 
-The AI pipeline (Agent1→RAG→Agent2) runs sequentially.
-parse_logs runs in parallel with Agent1.
-YARA and Sigma run in parallel after parse_logs.
-Agent 3 waits for ALL branches to complete.
+Flow:
+- Agent1 and parse_logs run in parallel from START
+- Agent2 (with RAG) runs after Agent1
+- YARA and Sigma run in parallel after parse_logs
+- Agent3 waits for ALL branches to complete
 """
 
 import logging
@@ -72,47 +76,30 @@ def build_analysis_graph(
 
     workflow = StateGraph(AnalysisState)
 
-    # ---- Register nodes ----
     workflow.add_node("agent1", nodes.agent1_node)
     workflow.add_node("parse_logs", nodes.parse_logs_node)
-    workflow.add_node("mitre_rag", nodes.mitre_rag_node)
     workflow.add_node("agent2", nodes.agent2_node)
     workflow.add_node("yara_scan", nodes.yara_scan_node)
     workflow.add_node("sigma_scan", nodes.sigma_scan_node)
     workflow.add_node("agent3", nodes.agent3_node)
 
-    # ---- Edges: AI pipeline branch (sequential) ----
-    # Agent 1 → RAG → Agent 2
-    workflow.add_edge("agent1", "mitre_rag")
-    workflow.add_edge("mitre_rag", "agent2")
+    workflow.add_edge("agent1", "agent2")
 
-    # ---- Edges: Parse logs → YARA/Sigma (parallel) ----
     workflow.add_edge("parse_logs", "yara_scan")
     workflow.add_edge("parse_logs", "sigma_scan")
 
-    # ---- Edges: Parallel branches converge into Agent 3 ----
-    # AI branch → Agent 3
     workflow.add_edge("agent2", "agent3")
-
-    # YARA branch → Agent 3
     workflow.add_edge("yara_scan", "agent3")
-
-    # Sigma branch → Agent 3
     workflow.add_edge("sigma_scan", "agent3")
 
-    # Agent 3 → END
     workflow.add_edge("agent3", END)
 
-    # ---- Entry point: start 2 parallel branches ----
-    # Agent1 and parse_logs run in parallel from START
     workflow.add_edge(START, "agent1")
     workflow.add_edge(START, "parse_logs")
 
-    # ---- Compile without checkpointer (pipeline-style, single run) ----
-    # Checkpointer is for multi-turn conversations, not needed for batch analysis
     graph = workflow.compile()
 
-    logger.info("✓ LangGraph pipeline compiled successfully")
+    logger.info("LangGraph pipeline compiled successfully")
     logger.info(f"Graph nodes: {graph.get_graph().nodes}")
     return graph
 
@@ -120,20 +107,12 @@ def build_analysis_graph(
 class LogAnalysisPipeline:
     """Complete log analysis pipeline using LangGraph.
 
-    This class wraps the LangGraph graph and provides the same public API
-    as the previous implementation for backward compatibility.
-
     Flow:
-    1. Agent 1: Primary log analysis
-    2. RAG: Retrieve MITRE ATT&CK techniques
-    3. Agent 2: Generate detailed report
-    4. YARA Scan: Rule-based malware detection (parallel)
-    5. Sigma Scan: Rule-based SIEM detection (parallel)
-    6. Agent 3: Final summarization (all branches converge)
-
-    Usage:
-        pipeline = LogAnalysisPipeline(chroma_mgr, llm)
-        result = await pipeline.analyze(log_content)
+    1. Agent 1: Primary log analysis + suspicious_events
+    2. Agent 2: RAG search for each event + report generation
+    3. YARA Scan: Rule-based malware detection (parallel)
+    4. Sigma Scan: Rule-based SIEM detection (parallel)
+    5. Agent 3: Final summarization (all branches converge)
     """
 
     def __init__(
@@ -160,10 +139,8 @@ class LogAnalysisPipeline:
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
 
-        # Create or use provided LLM
         self.llm = llm or create_llm()
 
-        # Build nodes and graph
         self._nodes = PipelineNodes(
             llm=self.llm,
             chroma_mgr=self.chroma_mgr,
@@ -191,12 +168,11 @@ class LogAnalysisPipeline:
             config: Optional LangChain config (callbacks, etc.)
 
         Returns:
-            Dictionary with all results (backward-compatible format)
+            Dictionary with all results
 
         """
         start_time = time.time()
 
-        # Initial state
         initial_state: AnalysisState = {
             "log_content": log_content,
             "log_size": len(log_content),
@@ -204,9 +180,10 @@ class LogAnalysisPipeline:
             "error": None,
             "total_time_sec": 0.0,
             "processing_time_ms": 0.0,
-            # Defaults (will be overwritten by nodes)
             "parsed_logs": [],
             "primary_analysis": "",
+            "mini_report": "",
+            "suspicious_events": [],
             "events_found": 0,
             "mitre_context": "",
             "mitre_techniques": [],
@@ -230,7 +207,6 @@ class LogAnalysisPipeline:
         }
 
         try:
-            # Invoke the graph
             logger.info("Invoking LangGraph pipeline...")
 
             final_state = await self._graph.ainvoke(
@@ -240,32 +216,21 @@ class LogAnalysisPipeline:
 
             elapsed = time.time() - start_time
 
-            # ---- Build backward-compatible result ----
-            # Stage 1: Agent 1
             results["stages"]["agent1"] = {
                 "success": True,
                 "primary_analysis": final_state.get("primary_analysis", ""),
+                "mini_report": final_state.get("mini_report", ""),
+                "suspicious_events": final_state.get("suspicious_events", []),
                 "events_found": final_state.get("events_found", 0),
             }
 
-            # Stage 2: RAG
-            results["stages"]["rag"] = {
+            results["stages"]["agent2"] = {
                 "success": True,
                 "mitre_context": final_state.get("mitre_context", ""),
-                "techniques_count": len(final_state.get("mitre_techniques", [])),
+                "mitre_techniques": final_state.get("mitre_techniques_final", []),
                 "technique_ids": final_state.get("technique_ids", []),
             }
 
-            # Stage 3: Agent 2
-            results["stages"]["agent2"] = {
-                "success": True,
-                "final_report": final_state.get("agent2_report", ""),
-                "severity_level_id": final_state.get("severity_level_id", 3),
-                "threat_type_id": final_state.get("threat_type_id", 11),
-                "mitre_techniques": final_state.get("mitre_techniques_final", []),
-            }
-
-            # Stage 4: YARA (new)
             results["stages"]["yara"] = {
                 "success": True,
                 "matches": final_state.get("yara_matches", []),
@@ -273,7 +238,6 @@ class LogAnalysisPipeline:
                 "context": final_state.get("yara_context", ""),
             }
 
-            # Stage 5: Sigma (new)
             results["stages"]["sigma"] = {
                 "success": True,
                 "matches": final_state.get("sigma_matches", []),
@@ -281,7 +245,6 @@ class LogAnalysisPipeline:
                 "context": final_state.get("sigma_context", ""),
             }
 
-            # Stage 6: Agent 3 (final)
             results["stages"]["agent3"] = {
                 "success": True,
                 "final_report": final_state.get("final_report", ""),
@@ -292,7 +255,6 @@ class LogAnalysisPipeline:
                 "sigma_rules": final_state.get("sigma_rules_matched", []),
             }
 
-            # Summary
             results["success"] = True
             results["total_time_sec"] = elapsed
             results["final_report"] = final_state.get("final_report", "")
@@ -302,7 +264,7 @@ class LogAnalysisPipeline:
             results["events_found"] = final_state.get("events_found", 0)
 
             logger.info(
-                f"✓ LangGraph pipeline complete in {elapsed:.1f}s: "
+                f"LangGraph pipeline complete in {elapsed:.1f}s: "
                 f"severity={results['severity_level_id']}, threat={results['threat_type_id']}"
             )
 
@@ -325,14 +287,12 @@ async def create_pipeline(
 ) -> LogAnalysisPipeline:
     """Create and initialize analysis pipeline.
 
-    Convenience function to create pipeline with proper initialization.
-
     Args:
         chroma_path: Path to ChromaDB (auto-creates if needed)
         use_rag: Whether to use RAG
         llm_config: Optional LLM configuration
-        yara_rules_path: Path to YARA rules directory (future)
-        sigma_rules_path: Path to Sigma rules directory (future)
+        yara_rules_path: Path to YARA rules directory
+        sigma_rules_path: Path to Sigma rules directory
 
     Returns:
         Initialized LogAnalysisPipeline
@@ -340,7 +300,6 @@ async def create_pipeline(
     """
     logger.info("Creating LangGraph analysis pipeline...")
 
-    # Initialize ChromaDB if using RAG
     chroma_mgr = None
     if use_rag:
         if chroma_path is None:
@@ -351,20 +310,17 @@ async def create_pipeline(
             persist_directory=chroma_path,
         )
 
-        # Check if initialization actually succeeded
         if chroma_mgr is not None and not chroma_mgr.is_initialized:
             logger.warning(
-                "ChromaDB is not initialized — disabling RAG. "
+                "ChromaDB is not initialized - disabling RAG. "
                 "Pipeline will continue without MITRE ATT&CK context."
             )
             chroma_mgr = None
             use_rag = False
 
-    # Create LLM
     llm_kwargs = llm_config or {}
     llm = create_llm(**llm_kwargs)
 
-    # Initialize YARA and Sigma engines
     yara_engine = None
     sigma_engine = None
 
@@ -383,12 +339,11 @@ async def create_pipeline(
                 f"Initializing Sigma engine with rules from: {sigma_rules_path}"
             )
             sigma_engine = SigmaEngine(sigma_rules_path)
-            logger.info(f"✓ Sigma engine loaded {len(sigma_engine._rules)} rules")
+            logger.info(f"Sigma engine loaded {len(sigma_engine._rules)} rules")
     except Exception as e:
         logger.warning(f"Failed to initialize Sigma engine: {e}")
         sigma_engine = None
 
-    # Create pipeline
     pipeline = LogAnalysisPipeline(
         chroma_mgr=chroma_mgr,
         llm=llm,
@@ -397,5 +352,5 @@ async def create_pipeline(
         sigma_engine=sigma_engine,
     )
 
-    logger.info("✓ LangGraph pipeline created successfully")
+    logger.info("LangGraph pipeline created successfully")
     return pipeline

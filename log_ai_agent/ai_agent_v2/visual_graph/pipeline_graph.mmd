@@ -7,7 +7,6 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	agent1(agent1)
 	parse_logs(parse_logs)
-	mitre_rag(mitre_rag)
 	agent2(agent2)
 	yara_scan(yara_scan)
 	sigma_scan(sigma_scan)
@@ -15,9 +14,8 @@ graph TD;
 	__end__([<p>__end__</p>]):::last
 	__start__ --> agent1;
 	__start__ --> parse_logs;
-	agent1 --> mitre_rag;
+	agent1 --> agent2;
 	agent2 --> agent3;
-	mitre_rag --> agent2;
 	parse_logs --> sigma_scan;
 	parse_logs --> yara_scan;
 	sigma_scan --> agent3;

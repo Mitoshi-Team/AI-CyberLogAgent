@@ -4,6 +4,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -49,6 +51,7 @@ def _parse_logs(log_text: str) -> list[dict]:
     return parse_log_content(log_text)
 
 
+@pytest.mark.asyncio
 async def test_parser():
     """Test Apache log parser."""
     print("=" * 60)
@@ -80,6 +83,7 @@ async def test_parser():
     return True
 
 
+@pytest.mark.asyncio
 async def test_yara_sigma_engines():
     """Test YARA and Sigma engines with parsed logs.
 
@@ -135,6 +139,7 @@ async def test_yara_sigma_engines():
     return True
 
 
+@pytest.mark.asyncio
 async def test_full_pipeline_nodes():
     """Test pipeline nodes with new parse_logs flow."""
     print("\n" + "=" * 60)

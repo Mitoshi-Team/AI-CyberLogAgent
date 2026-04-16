@@ -4,26 +4,23 @@ This module defines all nodes used in the LangGraph StateGraph.
 Each node takes AnalysisState as input and returns a partial state update.
 """
 
+import asyncio
 import logging
 import time
+from typing import Any
 
 from langchain_core.language_models import BaseLanguageModel
 
 from ..engines.sigma_engine import SigmaEngine
 from ..engines.yara_engine import YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
-from ..models_types import AnalysisState
-from ..parsers.apache_parser import ApacheLogParser, parse_log_content
-from .agent1 import create_agent1_chain
+from ..models_types import AnalysisState, MITRETechnique, SuspiciousEvent
+from ..parsers.apache_parser import ApacheLogParser
+from .agent1 import analyze_logs_primary, create_agent1_chain
 from .agent2 import generate_final_report as generate_agent2_report
-from .rag_chain import retrieve_mitre_context
+from .rag_chain import rag_search_single_event, retrieve_mitre_context
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Factory: create all node functions with bound dependencies
-# ---------------------------------------------------------------------------
 
 
 class PipelineNodes:
@@ -52,46 +49,43 @@ class PipelineNodes:
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
 
-        # Pre-build chains
         self._agent1_chain = create_agent1_chain(llm)
-
-    # ===================================================================
-    # AGENT 1 — Primary log analysis
-    # ===================================================================
+        self._rag_semaphore = asyncio.Semaphore(3)
 
     async def agent1_node(self, state: AnalysisState) -> dict:
         """Node: Agent 1 — Primary log analysis.
 
         Reads: log_content
-        Writes: primary_analysis, events_found
+        Writes: primary_analysis, mini_report, suspicious_events, events_found
         """
         logger.info("[Node] Agent 1: Primary log analysis")
         start = time.time()
 
         try:
-            result = await self._agent1_chain.ainvoke(
-                {"log_content": state["log_content"]}
+            result = await analyze_logs_primary(
+                llm=self.llm,
+                log_content=state["log_content"],
             )
-            events_found = result.count("### Событие")
 
             logger.info(
-                f"[Node] Agent 1 complete: {events_found} events in {time.time() - start:.1f}s"
+                f"[Node] Agent 1 complete: {result['events_found']} events "
+                f"in {time.time() - start:.1f}s"
             )
             return {
-                "primary_analysis": result,
-                "events_found": events_found,
+                "primary_analysis": result["primary_analysis"],
+                "mini_report": result["mini_report"],
+                "suspicious_events": result["suspicious_events"],
+                "events_found": result["events_found"],
             }
 
         except Exception as e:
             logger.exception(f"[Node] Agent 1 failed: {e}")
             return {
-                "primary_analysis": f"Ошибка анализа: {e}",
+                "primary_analysis": f"Error: {e}",
+                "mini_report": "Analysis failed",
+                "suspicious_events": [],
                 "events_found": 0,
             }
-
-    # ===================================================================
-    # PARSE LOGS — Parse raw logs for YARA/Sigma
-    # ===================================================================
 
     async def parse_logs_node(self, state: AnalysisState) -> dict:
         """Node: Parse logs — Parse raw log content for YARA/Sigma scanning.
@@ -120,96 +114,111 @@ class PipelineNodes:
                 "parsed_logs": [],
             }
 
-    # ===================================================================
-    # MITRE RAG — Retrieve MITRE ATT&CK techniques
-    # ===================================================================
+    async def agent2_node(self, state: AnalysisState) -> dict:
+        """Node: Agent 2 — RAG search for each suspicious event + final report.
 
-    async def mitre_rag_node(self, state: AnalysisState) -> dict:
-        """Node: RAG — Retrieve MITRE ATT&CK context.
+        This node:
+        1. Loops through suspicious_events from Agent1
+        2. For each event, does RAG search (without timestamp)
+        3. Accumulates matched MITRE techniques
+        4. Generates final report with all data
 
-        Reads: primary_analysis
-        Writes: mitre_context, mitre_techniques, technique_ids, search_query
+        Reads: primary_analysis, suspicious_events, mitre_context
+        Writes: mitre_context, mitre_techniques_final, agent2_report
         """
-        logger.info("[Node] MITRE RAG: Retrieving techniques")
+        logger.info("[Node] Agent 2: RAG search + report generation")
         start = time.time()
+
+        suspicious_events = state.get("suspicious_events", [])
 
         if not self.use_rag or not self.chroma_mgr:
-            logger.warning("[Node] MITRE RAG: disabled or unavailable")
+            logger.warning("[Node] Agent 2: RAG disabled or unavailable")
             return {
-                "mitre_context": "RAG (MITRE ATT&CK) отключён.",
-                "mitre_techniques": [],
-                "technique_ids": [],
-                "search_query": "",
-            }
-
-        try:
-            rag_result = await retrieve_mitre_context(
-                llm=self.llm,
-                chroma_mgr=self.chroma_mgr,
-                primary_analysis=state["primary_analysis"],
-                k=self.rag_top_k,
-            )
-
-            logger.info(
-                f"[Node] MITRE RAG complete: {len(rag_result['mitre_techniques'])} "
-                f"techniques in {time.time() - start:.1f}s"
-            )
-            return {
-                "mitre_context": rag_result["mitre_context"],
-                "mitre_techniques": rag_result["mitre_techniques"],
-                "technique_ids": rag_result["technique_ids"],
-                "search_query": rag_result["search_query"],
-            }
-
-        except Exception as e:
-            logger.exception(f"[Node] MITRE RAG failed: {e}")
-            return {
-                "mitre_context": f"Ошибка RAG: {e}",
-                "mitre_techniques": [],
-                "technique_ids": [],
-                "search_query": "",
-            }
-
-    # ===================================================================
-    # AGENT 2 — Detailed AI report
-    # ===================================================================
-
-    async def agent2_node(self, state: AnalysisState) -> dict:
-        """Node: Agent 2 — Detailed AI report with MITRE context.
-
-        Reads: primary_analysis, mitre_context
-        Writes: agent2_report, mitre_techniques_final
-        Note: severity_level_id and threat_type_id are set by Agent 3
-        """
-        logger.info("[Node] Agent 2: Generating detailed report")
-        start = time.time()
-
-        try:
-            agent2_result = await generate_agent2_report(
-                llm=self.llm,
-                primary_analysis=state["primary_analysis"],
-                mitre_context=state.get("mitre_context", ""),
-            )
-
-            logger.info(
-                f"[Node] Agent 2 complete: severity={agent2_result['severity_level_id']}, "
-                f"threat={agent2_result['threat_type_id']} in {time.time() - start:.1f}s"
-            )
-            return {
-                "agent2_report": agent2_result["final_report"],
-                "mitre_techniques_final": agent2_result["mitre_techniques"],
-            }
-
-        except Exception as e:
-            logger.exception(f"[Node] Agent 2 failed: {e}")
-            return {
-                "agent2_report": f"Ошибка генерации отчёта: {e}",
+                "mitre_context": "RAG (MITRE ATT&CK) is disabled.",
                 "mitre_techniques_final": [],
+                "technique_ids": [],
             }
 
-    # ===================================================================
-    # YARA SCAN — Rule-based malware detection
-    # ===================================================================
+        logger.info(
+            f"[Node] Agent 2: Processing {len(suspicious_events)} events in parallel"
+        )
+
+        async def process_event(
+            i: int, event: SuspiciousEvent
+        ) -> tuple[int, MITRETechnique | None]:
+            description = event.get("description", "")
+
+            if not description:
+                return i, None
+
+            async with self._rag_semaphore:
+                try:
+                    rag_result = await rag_search_single_event(
+                        llm=self.llm,
+                        chroma_mgr=self.chroma_mgr,
+                        description=description,
+                        k=self.rag_top_k,
+                    )
+
+                    if rag_result.get("has_match"):
+                        technique: MITRETechnique = {
+                            "technique_id": rag_result.get("technique_id", ""),
+                            "name": rag_result.get("name", ""),
+                            "timestamp": event.get("timestamp"),
+                            "event": description,
+                            "log_line": event.get("log_line", ""),
+                        }
+                        logger.info(
+                            f"[Node] Agent 2: Event {i + 1}/{len(suspicious_events)} "
+                            f"matched {technique['technique_id']}"
+                        )
+                        return i, technique
+                    else:
+                        logger.debug(
+                            f"[Node] Agent 2: Event {i + 1}/{len(suspicious_events)} "
+                            f"no MITRE match"
+                        )
+                        return i, None
+
+                except Exception as e:
+                    logger.warning(
+                        f"[Node] Agent 2: RAG search failed for event {i}: {e}"
+                    )
+                    return i, None
+
+        tasks = [process_event(i, event) for i, event in enumerate(suspicious_events)]
+        results = await asyncio.gather(*tasks)
+
+        mitre_techniques_final: list[MITRETechnique] = []
+        mitre_context_parts: list[str] = []
+
+        for i, technique in sorted(results, key=lambda x: x[0]):
+            if technique:
+                mitre_techniques_final.append(technique)
+                mitre_context_parts.append(
+                    f"- {technique['technique_id']} ({technique['name']}): "
+                    f"{technique['event']} at {technique.get('timestamp', 'N/A')}"
+                )
+
+        mitre_context = (
+            "Found MITRE techniques:\n" + "\n".join(mitre_context_parts)
+            if mitre_context_parts
+            else "No MITRE techniques found for suspicious events."
+        )
+
+        technique_ids = [
+            t["technique_id"] for t in mitre_techniques_final if t.get("technique_id")
+        ]
+        logger.info(
+            f"[Node] Agent 2 RAG complete: {len(mitre_techniques_final)} techniques "
+            f"from {len(suspicious_events)} events in {time.time() - start:.1f}s"
+        )
+
+        return {
+            "mitre_context": mitre_context,
+            "mitre_techniques_final": mitre_techniques_final,
+            "technique_ids": technique_ids,
+        }
 
     async def yara_scan_node(self, state: AnalysisState) -> dict:
         """Node: YARA scan — Rule-based malware detection.
@@ -225,7 +234,7 @@ class PipelineNodes:
             return {
                 "yara_matches": [],
                 "yara_rules_matched": [],
-                "yara_context": "YARA проверка не настроена.",
+                "yara_context": "YARA check not configured.",
             }
 
         try:
@@ -251,12 +260,8 @@ class PipelineNodes:
             return {
                 "yara_matches": [],
                 "yara_rules_matched": [],
-                "yara_context": f"Ошибка YARA: {e}",
+                "yara_context": f"YARA error: {e}",
             }
-
-    # ===================================================================
-    # SIGMA SCAN — Rule-based SIEM detection
-    # ===================================================================
 
     async def sigma_scan_node(self, state: AnalysisState) -> dict:
         """Node: Sigma scan — Rule-based SIEM detection.
@@ -272,7 +277,7 @@ class PipelineNodes:
             return {
                 "sigma_matches": [],
                 "sigma_rules_matched": [],
-                "sigma_context": "Sigma проверка не настроена.",
+                "sigma_context": "Sigma check not configured.",
             }
 
         try:
@@ -298,21 +303,14 @@ class PipelineNodes:
             return {
                 "sigma_matches": [],
                 "sigma_rules_matched": [],
-                "sigma_context": f"Ошибка Sigma: {e}",
+                "sigma_context": f"Sigma error: {e}",
             }
-
-    # ===================================================================
-    # AGENT 3 — Final summarization
-    # ===================================================================
 
     async def agent3_node(self, state: AnalysisState) -> dict:
         """Node: Agent 3 — Final report summarization.
 
         Reads: All previous nodes' outputs
-        Writes: final_report, recommendations, severity_level_id, threat_type_id,
-                mitre_techniques, yara_rules, sigma_rules, events_found
-
-        NOTE: Imports here to avoid circular dependency.
+        Writes: final_report, recommendations, severity_level_id, threat_type_id
         """
         logger.info("[Node] Agent 3: Final summarization")
         start = time.time()
@@ -320,80 +318,87 @@ class PipelineNodes:
         try:
             from .agent3 import generate_final_report as generate_agent3_report
 
+            mitre_techniques = state.get("mitre_techniques_final", [])
+
+            mitre_techniques_str = (
+                ", ".join(
+                    [
+                        f"{t['technique_id']} ({t['name']})"
+                        for t in mitre_techniques
+                        if t.get("technique_id")
+                    ]
+                )
+                or "No MITRE techniques found"
+            )
+
             agent3_result = await generate_agent3_report(
                 llm=self.llm,
-                primary_analysis=state["primary_analysis"],
+                primary_analysis=state.get("primary_analysis", ""),
+                mini_report=state.get("mini_report", ""),
                 events_found=state.get("events_found", 0),
                 mitre_context=state.get("mitre_context", ""),
                 agent2_report=state.get("agent2_report", ""),
                 severity_level_id=state.get("severity_level_id", 3),
                 threat_type_id=state.get("threat_type_id", 11),
-                mitre_techniques=state.get("mitre_techniques_final", []),
-                yara_context=state.get("yara_context", "YARA проверка не проводилась."),
+                mitre_techniques=mitre_techniques,
+                yara_context=state.get("yara_context", "YARA check not performed."),
                 yara_count=len(state.get("yara_matches", [])),
-                sigma_context=state.get(
-                    "sigma_context", "Sigma проверка не проводилась."
-                ),
+                sigma_context=state.get("sigma_context", "Sigma check not performed."),
                 sigma_count=len(state.get("sigma_matches", [])),
             )
 
             logger.info(
-                f"[Node] Agent 3 complete: severity={agent3_result['severity_level_id']}, "
-                f"threat={agent3_result['threat_type_id']} in {time.time() - start:.1f}s"
+                f"[Node] Agent 3 complete: severity={agent3_result.get('severity_level_id', 3)}, "
+                f"threat={agent3_result.get('threat_type_id', 11)} in {time.time() - start:.1f}s"
             )
             return {
-                "final_report": agent3_result["final_report"],
+                "final_report": agent3_result.get("final_report", ""),
                 "recommendations": [],
-                "severity_level_id": agent3_result["severity_level_id"],
-                "threat_type_id": agent3_result["threat_type_id"],
-                "yara_rules_matched": agent3_result["yara_rules"],
-                "sigma_rules_matched": agent3_result["sigma_rules"],
-                "events_found": agent3_result["events_found"],
+                "severity_level_id": agent3_result.get("severity_level_id", 3),
+                "threat_type_id": agent3_result.get("threat_type_id", 11),
+                "yara_rules_matched": agent3_result.get("yara_rules", []),
+                "sigma_rules_matched": agent3_result.get("sigma_rules", []),
+                "events_found": agent3_result.get("events_found", 0),
             }
 
         except Exception as e:
             logger.exception(f"[Node] Agent 3 failed: {e}")
             return {
-                "final_report": f"Ошибка суммаризации: {e}",
+                "final_report": f"Error: {e}",
                 "recommendations": [],
                 "severity_level_id": 3,
                 "threat_type_id": 11,
-                "mitre_techniques_final": [],
                 "yara_rules_matched": [],
                 "sigma_rules_matched": [],
                 "events_found": 0,
             }
 
-    # ===================================================================
-    # Helpers
-    # ===================================================================
-
     @staticmethod
     def _format_yara_context(matches: list[dict]) -> str:
         """Format YARA matches into readable text."""
         if not matches:
-            return "Совпадений с YARA-правилами не обнаружено."
+            return "No YARA rule matches found."
 
-        lines = ["### Совпадения YARA:"]
+        lines = ["### YARA Matches:"]
         for i, m in enumerate(matches, 1):
             lines.append(
                 f"{i}. **{m.get('rule', 'Unknown')}** — {m.get('description', '')}"
             )
-            if m.get("meta"):
-                lines.append(f"   Мета: {m['meta']}")
+            if m.get("matched_strings"):
+                lines.append(f"   Matched: {', '.join(m['matched_strings'][:3])}")
         return "\n".join(lines)
 
     @staticmethod
     def _format_sigma_context(matches: list[dict]) -> str:
         """Format Sigma matches into readable text."""
         if not matches:
-            return "Совпадений с Sigma-правилами не обнаружено."
+            return "No Sigma rule matches found."
 
-        lines = ["### Совпадения Sigma:"]
+        lines = ["### Sigma Matches:"]
         for i, m in enumerate(matches, 1):
             lines.append(
                 f"{i}. **{m.get('title', 'Unknown')}** — {m.get('description', '')}"
             )
             if m.get("severity"):
-                lines.append(f"   Серьёзность: {m['severity']}")
+                lines.append(f"   Severity: {m['severity']}")
         return "\n".join(lines)
