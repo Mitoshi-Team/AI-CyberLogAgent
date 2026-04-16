@@ -7,22 +7,23 @@ Architecture:
 │           log_content (input)               │
 └───┬──────────────┬──────────────┬───────────┘
     │              │              │
-┌───▼───┐    ┌────▼────┐   ┌────▼────┐
-│Agent 1│    │  YARA   │   │  Sigma  │
-└───┬───┘    └─────────┘   └─────────┘
-    │
-┌───▼───┐
-│ RAG   │
-└───┬───┘
-    │
-┌───▼───┐
-│Agent 2│
-└───┬───┘
-    │
-    └──────────────┬──────────────┐
-                   │              │
-            ┌──────▼──────┐       │
-            │   Agent 3   │◄──────┘
+┌───▼───┐    ┌─────▼─────┐ ┌────▼────┐
+│Agent 1│    │parse_logs │ │  YARA   │
+└───┬───┘    └─────┬─────┘ └────┬────┘
+    │               │            │
+┌───▼───┐         ┌─┴───────────┴─┐
+│ RAG   │         │  parse_logs   │
+└───┬───┘         └───────┬───────┘
+    │               ┌─────▼─────┐
+┌───▼───┐          │   YARA    │
+│Agent 2│          └─────┬─────┘
+└───┬───┘          ┌─────▼─────┐
+    │               │   Sigma   │
+    │               └─────┬─────┘
+    └──────────────┌─────┴───────┘
+                   │
+            ┌──────▼──────┐
+            │   Agent 3   │
             │ (summarize) │
             └──────┬──────┘
                    │
@@ -30,8 +31,9 @@ Architecture:
             │  END (report)│
             └─────────────┘
 
-The AI pipeline (Agent1→RAG→Agent2) runs sequentially,
-while YARA and Sigma scans run in parallel from the start.
+The AI pipeline (Agent1→RAG→Agent2) runs sequentially.
+parse_logs runs in parallel with Agent1.
+YARA and Sigma run in parallel after parse_logs.
 Agent 3 waits for ALL branches to complete.
 """
 
@@ -72,6 +74,7 @@ def build_analysis_graph(
 
     # ---- Register nodes ----
     workflow.add_node("agent1", nodes.agent1_node)
+    workflow.add_node("parse_logs", nodes.parse_logs_node)
     workflow.add_node("mitre_rag", nodes.mitre_rag_node)
     workflow.add_node("agent2", nodes.agent2_node)
     workflow.add_node("yara_scan", nodes.yara_scan_node)
@@ -82,6 +85,10 @@ def build_analysis_graph(
     # Agent 1 → RAG → Agent 2
     workflow.add_edge("agent1", "mitre_rag")
     workflow.add_edge("mitre_rag", "agent2")
+
+    # ---- Edges: Parse logs → YARA/Sigma (parallel) ----
+    workflow.add_edge("parse_logs", "yara_scan")
+    workflow.add_edge("parse_logs", "sigma_scan")
 
     # ---- Edges: Parallel branches converge into Agent 3 ----
     # AI branch → Agent 3
@@ -96,10 +103,10 @@ def build_analysis_graph(
     # Agent 3 → END
     workflow.add_edge("agent3", END)
 
-    # ---- Entry point: start 3 parallel branches ----
+    # ---- Entry point: start 2 parallel branches ----
+    # Agent1 and parse_logs run in parallel from START
     workflow.add_edge(START, "agent1")
-    workflow.add_edge(START, "yara_scan")
-    workflow.add_edge(START, "sigma_scan")
+    workflow.add_edge(START, "parse_logs")
 
     # ---- Compile without checkpointer (pipeline-style, single run) ----
     # Checkpointer is for multi-turn conversations, not needed for batch analysis
@@ -198,6 +205,7 @@ class LogAnalysisPipeline:
             "total_time_sec": 0.0,
             "processing_time_ms": 0.0,
             # Defaults (will be overwritten by nodes)
+            "parsed_logs": [],
             "primary_analysis": "",
             "events_found": 0,
             "mitre_context": "",
@@ -205,8 +213,6 @@ class LogAnalysisPipeline:
             "technique_ids": [],
             "search_query": "",
             "agent2_report": "",
-            "severity_level_id": 3,
-            "threat_type_id": 11,
             "mitre_techniques_final": [],
             "yara_matches": [],
             "yara_rules_matched": [],
@@ -366,7 +372,7 @@ async def create_pipeline(
         if yara_rules_path:
             logger.info(f"Initializing YARA engine with rules from: {yara_rules_path}")
             yara_engine = YaraEngine(yara_rules_path)
-            logger.info(f"✓ YARA engine loaded {len(yara_engine.rules)} rules")
+            logger.info(f"YARA engine loaded {yara_engine.rules_count} rule files")
     except Exception as e:
         logger.warning(f"Failed to initialize YARA engine: {e}")
         yara_engine = None
@@ -377,7 +383,7 @@ async def create_pipeline(
                 f"Initializing Sigma engine with rules from: {sigma_rules_path}"
             )
             sigma_engine = SigmaEngine(sigma_rules_path)
-            logger.info(f"✓ Sigma engine loaded {len(sigma_engine.rules)} rules")
+            logger.info(f"✓ Sigma engine loaded {len(sigma_engine._rules)} rules")
     except Exception as e:
         logger.warning(f"Failed to initialize Sigma engine: {e}")
         sigma_engine = None

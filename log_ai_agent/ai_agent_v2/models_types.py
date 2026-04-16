@@ -2,13 +2,16 @@
 
 from typing import TypedDict
 
+from .parsers.apache_parser import ParsedLog
+
 
 class AnalysisState(TypedDict, total=False):
     """State type for LangGraph analysis pipeline.
 
     This TypedDict defines the state that flows through the analysis pipeline.
-    The pipeline has 4 parallel branches that converge in Agent 3:
+    The pipeline has parallel branches that converge in Agent 3:
     - AI Pipeline: Agent 1 → RAG (MITRE) → Agent 2
+    - Parse Logs: Parse raw logs for YARA/Sigma
     - YARA Scan: Rule-based malware detection
     - Sigma Scan: Rule-based SIEM detection
     - Agent 3: Final summarization
@@ -40,12 +43,16 @@ class AnalysisState(TypedDict, total=False):
                ┌──────▼──────┐
                │  END (report)│
                └─────────────┘
+
+    Note: parse_logs runs in parallel with Agent1, both receive log_content.
+          YARA and Sigma run in parallel after parse_logs.
     """
 
     # ===== INPUT =====
     log_content: str
+    parsed_logs: list[ParsedLog]
 
-    # ===== AGENT 1 OUTPUT =====
+    # ===== PARSE LOGS OUTPUT =====
     primary_analysis: str
     events_found: int
 

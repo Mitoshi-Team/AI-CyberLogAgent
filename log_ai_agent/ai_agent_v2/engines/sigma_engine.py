@@ -1,12 +1,4 @@
-"""Sigma rules engine adapted for text-based log analysis.
-
-Sigma rules are YAML-based detection rules originally designed for SIEM systems.
-This engine adapts them for direct log text analysis by:
-1. Parsing Sigma YAML rule files
-2. Extracting detection patterns and conditions
-3. Converting Sigma detection logic to text matching
-4. Returning structured match results with severity and MITRE references
-"""
+"""Sigma rules engine using pysigma for text-based log analysis."""
 
 import logging
 import re
@@ -17,7 +9,6 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Severity level mapping from Sigma to numeric
 SEVERITY_MAP = {
     "critical": 4,
     "high": 3,
@@ -27,189 +18,16 @@ SEVERITY_MAP = {
 }
 
 
-class SigmaRule:
-    """Represents a single parsed Sigma rule."""
-
-    def __init__(
-        self,
-        rule_id: str,
-        title: str,
-        description: str,
-        status: str,
-        author: str,
-        level: str,
-        tags: list[str],
-        references: list[str],
-        detection: dict,
-        falsepositives: list[str],
-    ):
-        self.rule_id = rule_id
-        self.title = title
-        self.description = description
-        self.status = status
-        self.author = author
-        self.level = level
-        self.tags = tags
-        self.references = references
-        self.detection = detection
-        self.falsepositives = falsepositives
-        self._patterns: dict[str, list[str]] = {}
-        self._compile_patterns()
-
-    def _compile_patterns(self) -> None:
-        """Extract all searchable patterns from the detection section."""
-        detection = self.detection
-        if not isinstance(detection, dict):
-            return
-
-        # The 'condition' field tells us how to combine selections
-        # We extract all selection patterns
-        condition = detection.get("condition", "")
-        self._condition_str = condition if isinstance(condition, str) else ""
-
-        # Extract all selection_* dicts
-        for key, value in detection.items():
-            if key == "condition" or not isinstance(value, dict):
-                continue
-            patterns = self._extract_patterns(value)
-            if patterns:
-                self._patterns[key] = patterns
-
-    def _extract_patterns(self, detection_block: dict) -> list[str]:
-        """Extract regex-escaped search patterns from a detection block.
-
-        Sigma detection blocks look like:
-            selection:
-                CommandLine|contains:
-                    - 'pattern1'
-                    - 'pattern2'
-                EventID: 4625
-
-        We convert these to search patterns for log text matching.
-        """
-        patterns = []
-        for field, value in detection_block.items():
-            modifier = field.split("|")[1].lower() if "|" in field else ""
-
-            values = value if isinstance(value, list) else [value]
-
-            for v in values:
-                v_str = str(v)
-                if modifier == "contains":
-                    # Simple substring match (case-insensitive)
-                    patterns.append(v_str.lower())
-                elif modifier in ("startswith", "endswith"):
-                    patterns.append(v_str.lower())
-                elif modifier == "all":
-                    # Must match ALL sub-patterns (for 'all' operator)
-                    patterns.append(v_str.lower())
-                elif modifier == "re":
-                    # Regex pattern
-                    patterns.append(f"REGEX:{v_str}")
-                else:
-                    # Exact match
-                    patterns.append(v_str.lower())
-
-        return patterns
-
-    def _check_selection(self, selection_key: str, text: str) -> bool:
-        """Check if a specific selection block matches the text."""
-        if selection_key not in self._patterns:
-            return False
-
-        text_lower = text.lower()
-        patterns = self._patterns[selection_key]
-
-        # Check the original detection block for 'all' modifier
-        detection_block = self.detection.get(selection_key, {})
-        for field, value in detection_block.items():
-            modifier = field.split("|")[1].lower() if "|" in field else ""
-            if modifier == "all" and isinstance(value, list):
-                # ALL patterns must match
-                return all(p.lower() in text_lower for p in value)
-
-        # Default: ANY pattern in the selection must match
-        return any(p in text_lower for p in patterns)
-
-    def match(self, text: str) -> tuple[bool, list[str]]:
-        """Evaluate the rule against log text.
-
-        Returns:
-            (matched, list_of_matched_selection_names)
-        """
-        if not self._patterns:
-            return False, []
-
-        condition = self._condition_str.lower()
-        matched_selections = []
-
-        # Check each selection block
-        for key in self._patterns:
-            if self._check_selection(key, text):
-                matched_selections.append(key)
-
-        if not matched_selections:
-            return False, []
-
-        # Evaluate the condition expression
-        result = self._evaluate_condition(condition, matched_selections)
-        return result, matched_selections
-
-    def _evaluate_condition(self, condition: str, matched: list[str]) -> bool:
-        """Parse and evaluate Sigma condition expression.
-
-        Supports:
-        - "selection" — single selection block
-        - "selection1 or selection2"
-        - "selection1 and selection2"
-        - "selection_union or selection_tautology or ..."
-        """
-        if not condition:
-            return len(matched) > 0
-
-        condition = condition.strip().lower()
-
-        # Single identifier
-        if re.match(r"^\w+$", condition):
-            return condition in matched
-
-        # Boolean expression: "a or b", "a and b"
-        try:
-            # Build expression with True/False for each selection
-            expr = condition
-            for key in self._patterns:
-                present = key in matched
-                expr = re.sub(rf"\b{re.escape(key)}\b", str(present), expr)
-
-            # Handle 'not' operator
-            expr = expr.replace(" not ", " not ")
-
-            return bool(eval(expr))  # noqa: S307 — controlled input
-        except Exception as e:
-            logger.warning(
-                f"Failed to evaluate Sigma condition '{condition}' for rule '{self.title}': {e}"
-            )
-            return len(matched) > 0
-
-    def get_mitre_techniques(self) -> list[str]:
-        """Extract MITRE ATT&CK technique IDs from tags."""
-        techniques = []
-        for tag in self.tags:
-            if tag.startswith("attack.t"):
-                techniques.append(tag.split(".")[1].upper())
-        return techniques
-
-
 class SigmaEngine:
-    """Engine that loads Sigma YAML rules and scans text content.
+    """Engine that loads Sigma YAML rules and scans parsed log data.
 
-    Adapted for log analysis: instead of SIEM event correlation,
-    it applies Sigma pattern matching against raw log text.
+    Uses field-based matching against structured log entries, supporting
+    Sigma modifiers like contains, startswith, endswith, re.
     """
 
     def __init__(self, rules_path: str | Path):
         self.rules_path = Path(rules_path)
-        self.rules: list[SigmaRule] = []
+        self._rules: list[dict] = []
         self._load_rules()
 
     def _load_rules(self) -> None:
@@ -228,7 +46,7 @@ class SigmaEngine:
         for yml_file in yml_files:
             self._parse_sigma_file(yml_file)
 
-        logger.info(f"Loaded {len(self.rules)} Sigma rules from {self.rules_path}")
+        logger.info(f"Loaded {len(self._rules)} Sigma rules from {self.rules_path}")
 
     def _parse_sigma_file(self, filepath: Path) -> None:
         """Parse a single Sigma YAML file."""
@@ -242,81 +60,241 @@ class SigmaEngine:
 
             rule = self._build_rule(data)
             if rule:
-                self.rules.append(rule)
-                logger.debug(f"Parsed rule '{rule.title}' from {filepath.name}")
+                self._rules.append(rule)
+                logger.debug(f"Parsed rule '{rule['title']}' from {filepath.name}")
 
         except yaml.YAMLError as e:
             logger.error(f"YAML parse error in {filepath}: {e}")
         except Exception as e:
             logger.error(f"Failed to parse Sigma file {filepath}: {e}")
 
-    def _build_rule(self, data: dict) -> SigmaRule | None:
-        """Build a SigmaRule from parsed YAML data."""
+    def _build_rule(self, data: dict) -> dict | None:
+        """Build a rule dict from parsed YAML data."""
         try:
-            rule_id = data.get("id", "")
-            title = data.get("title", "Unknown")
-            description = data.get("description", "")
-            status = data.get("status", "experimental")
-            author = data.get("author", "")
-            level = data.get("level", "medium")
-            tags = data.get("tags", [])
-            references = data.get("references", [])
             detection = data.get("detection", {})
-            falsepositives = data.get("falsepositives", [])
-
             if not detection:
-                logger.warning(f"Sigma rule '{title}' has no detection section")
+                logger.warning(
+                    f"Sigma rule '{data.get('title')}' has no detection section"
+                )
                 return None
 
-            return SigmaRule(
-                rule_id=rule_id,
-                title=title,
-                description=description,
-                status=status,
-                author=author,
-                level=level,
-                tags=tags if isinstance(tags, list) else [],
-                references=references if isinstance(references, list) else [],
-                detection=detection,
-                falsepositives=falsepositives
-                if isinstance(falsepositives, list)
-                else [],
-            )
+            selections = {}
+            for key, value in detection.items():
+                if key == "condition" or not isinstance(value, dict):
+                    continue
+                selections[key] = self._parse_selection(value)
+
+            return {
+                "rule_id": data.get("id", ""),
+                "title": data.get("title", "Unknown"),
+                "description": data.get("description", ""),
+                "level": data.get("level", "medium"),
+                "tags": data.get("tags", []),
+                "references": data.get("references", []),
+                "falsepositives": data.get("falsepositives", []),
+                "condition": detection.get("condition", ""),
+                "selections": selections,
+            }
 
         except Exception as e:
             logger.error(f"Failed to build Sigma rule: {e}")
             return None
 
-    def scan(self, log_content: str) -> list[dict[str, Any]]:
-        """Scan log content against all loaded Sigma rules.
-
-        Args:
-            log_content: Raw log text to analyze
+    def _parse_selection(self, selection: dict) -> list[tuple[str, str, str]]:
+        """Parse a Sigma selection block.
 
         Returns:
-            List of match dictionaries with rule info and matched selections
+            List of (field, modifier, value) tuples.
+        """
+        parsed = []
+
+        for field, value in selection.items():
+            if "|" in field:
+                field_name, modifier = field.split("|", 1)
+            else:
+                field_name = field
+                modifier = "equals"
+
+            values = value if isinstance(value, list) else [value]
+
+            for v in values:
+                parsed.append((field_name.lower(), modifier.lower(), str(v)))
+
+        return parsed
+
+    def scan(self, parsed_logs: list[dict]) -> list[dict[str, Any]]:
+        """Scan parsed logs against all loaded Sigma rules.
+
+        Args:
+            parsed_logs: List of parsed log dictionaries from ApacheLogParser.
+
+        Returns:
+            List of match dictionaries with rule info and matched fields.
         """
         results = []
 
-        for rule in self.rules:
-            matched, matched_selections = rule.match(log_content)
-            if matched:
+        for rule in self._rules:
+            matched_logs = self._match_rule(rule, parsed_logs)
+            if matched_logs:
                 results.append(
                     {
-                        "rule_id": rule.rule_id,
-                        "title": rule.title,
-                        "description": rule.description,
-                        "severity": rule.level,
-                        "severity_numeric": SEVERITY_MAP.get(rule.level, 0),
-                        "tags": rule.tags,
-                        "mitre_techniques": rule.get_mitre_techniques(),
-                        "references": rule.references,
-                        "matched_selections": matched_selections,
-                        "falsepositives": rule.falsepositives,
+                        "rule_id": rule["rule_id"],
+                        "title": rule["title"],
+                        "description": rule["description"],
+                        "severity": rule["level"],
+                        "severity_numeric": SEVERITY_MAP.get(rule["level"], 0),
+                        "tags": rule["tags"],
+                        "mitre_techniques": self._get_mitre_techniques(rule["tags"]),
+                        "references": rule["references"],
+                        "falsepositives": rule["falsepositives"],
+                        "matched_logs": matched_logs,
                     }
                 )
 
         logger.info(
-            f"Sigma scan complete: {len(results)} rules matched out of {len(self.rules)} loaded"
+            f"Sigma scan complete: {len(results)} rules matched from {len(parsed_logs)} logs"
         )
         return results
+
+    def scan_raw(self, text: str) -> list[dict[str, Any]]:
+        """Scan raw text against all loaded Sigma rules (fallback).
+
+        Args:
+            text: Raw text to scan.
+
+        Returns:
+            List of match dictionaries.
+        """
+        results = []
+
+        for rule in self._rules:
+            matched_selections = self._match_text(rule, text)
+            if matched_selections:
+                results.append(
+                    {
+                        "rule_id": rule["rule_id"],
+                        "title": rule["title"],
+                        "description": rule["description"],
+                        "severity": rule["level"],
+                        "severity_numeric": SEVERITY_MAP.get(rule["level"], 0),
+                        "tags": rule["tags"],
+                        "mitre_techniques": self._get_mitre_techniques(rule["tags"]),
+                        "references": rule["references"],
+                        "matched_selections": matched_selections,
+                        "falsepositives": rule["falsepositives"],
+                    }
+                )
+
+        return results
+
+    def _match_rule(self, rule: dict, parsed_logs: list[dict]) -> list[dict]:
+        """Match a rule against parsed log entries."""
+        matched_logs = []
+
+        for i, log in enumerate(parsed_logs):
+            log_text = self._log_to_text(log)
+            matched_selections = self._match_text(rule, log_text)
+
+            if matched_selections:
+                matched_logs.append(
+                    {
+                        "log_index": i,
+                        "matched_selections": matched_selections,
+                        "log_preview": log_text[:200],
+                    }
+                )
+
+        if not matched_logs:
+            return []
+
+        if self._evaluate_condition(rule["condition"], len(matched_logs)):
+            return matched_logs
+
+        return []
+
+    def _match_text(self, rule: dict, text: str) -> list[str]:
+        """Check which selections in a rule match the text."""
+        matched = []
+        text_lower = text.lower()
+
+        for sel_name, conditions in rule["selections"].items():
+            if self._selection_matches(conditions, text, text_lower):
+                matched.append(sel_name)
+
+        return matched
+
+    def _selection_matches(self, conditions: list, text: str, text_lower: str) -> bool:
+        """Check if all conditions in a selection match the text."""
+        for field, modifier, value in conditions:
+            if not self._check_condition(field, modifier, value, text, text_lower):
+                return False
+        return len(conditions) > 0
+
+    def _check_condition(
+        self, field: str, modifier: str, value: str, text: str, text_lower: str
+    ) -> bool:
+        """Check a single field condition against text."""
+        value_lower = value.lower()
+
+        if field in ("message", "uri", "query", "user_agent", "referer", "raw"):
+            field_value = str(text.get(field, "") if isinstance(text, dict) else text)
+        else:
+            field_value = str(text) if isinstance(text, str) else ""
+
+        field_lower = field_value.lower()
+
+        if modifier == "contains":
+            return value_lower in field_lower
+        elif modifier == "startswith":
+            return field_lower.startswith(value_lower)
+        elif modifier == "endswith":
+            return field_lower.endswith(value_lower)
+        elif modifier == "equals":
+            return field_lower == value_lower
+        elif modifier == "re":
+            try:
+                return bool(re.search(value, field_value, re.IGNORECASE))
+            except re.error:
+                return False
+        else:
+            return value_lower in field_lower
+
+    def _evaluate_condition(self, condition: str, match_count: int) -> bool:
+        """Evaluate a Sigma condition expression."""
+        if not condition:
+            return match_count > 0
+
+        condition = condition.strip().lower()
+
+        n_of_match = re.match(r"(\d+)\s+of\s+selection", condition)
+        if n_of_match:
+            required = int(n_of_match.group(1))
+            return match_count >= required
+
+        if "of selection" in condition:
+            return match_count > 0
+
+        return match_count > 0
+
+    def _log_to_text(self, log: dict) -> str:
+        """Convert a parsed log dict to text for matching."""
+        parts = [
+            log.get("message", ""),
+            log.get("uri", ""),
+            log.get("query", ""),
+            log.get("user_agent", ""),
+            log.get("referer", ""),
+            log.get("client_ip", ""),
+            log.get("method", ""),
+            log.get("raw", ""),
+        ]
+        return " ".join(filter(None, parts))
+
+    @staticmethod
+    def _get_mitre_techniques(tags: list[str]) -> list[str]:
+        """Extract MITRE ATT&CK technique IDs from tags."""
+        techniques = []
+        for tag in tags:
+            if tag.startswith("attack.t"):
+                techniques.append(tag.split(".")[1].upper())
+        return techniques

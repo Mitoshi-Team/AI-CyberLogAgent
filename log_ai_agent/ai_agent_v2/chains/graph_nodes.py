@@ -13,6 +13,7 @@ from ..engines.sigma_engine import SigmaEngine
 from ..engines.yara_engine import YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
 from ..models_types import AnalysisState
+from ..parsers.apache_parser import ApacheLogParser, parse_log_content
 from .agent1 import create_agent1_chain
 from .agent2 import generate_final_report as generate_agent2_report
 from .rag_chain import retrieve_mitre_context
@@ -89,6 +90,37 @@ class PipelineNodes:
             }
 
     # ===================================================================
+    # PARSE LOGS — Parse raw logs for YARA/Sigma
+    # ===================================================================
+
+    async def parse_logs_node(self, state: AnalysisState) -> dict:
+        """Node: Parse logs — Parse raw log content for YARA/Sigma scanning.
+
+        Reads: log_content
+        Writes: parsed_logs
+        """
+        logger.info("[Node] Parse logs: parsing log content")
+        start = time.time()
+
+        try:
+            parser = ApacheLogParser()
+            parsed_logs = parser.parse(state["log_content"])
+
+            logger.info(
+                f"[Node] Parse logs complete: {len(parsed_logs)} entries parsed "
+                f"in {time.time() - start:.1f}s"
+            )
+            return {
+                "parsed_logs": parsed_logs,
+            }
+
+        except Exception as e:
+            logger.exception(f"[Node] Parse logs failed: {e}")
+            return {
+                "parsed_logs": [],
+            }
+
+    # ===================================================================
     # MITRE RAG — Retrieve MITRE ATT&CK techniques
     # ===================================================================
 
@@ -146,7 +178,8 @@ class PipelineNodes:
         """Node: Agent 2 — Detailed AI report with MITRE context.
 
         Reads: primary_analysis, mitre_context
-        Writes: agent2_report, severity_level_id, threat_type_id, mitre_techniques_final
+        Writes: agent2_report, mitre_techniques_final
+        Note: severity_level_id and threat_type_id are set by Agent 3
         """
         logger.info("[Node] Agent 2: Generating detailed report")
         start = time.time()
@@ -164,8 +197,6 @@ class PipelineNodes:
             )
             return {
                 "agent2_report": agent2_result["final_report"],
-                "severity_level_id": agent2_result["severity_level_id"],
-                "threat_type_id": agent2_result["threat_type_id"],
                 "mitre_techniques_final": agent2_result["mitre_techniques"],
             }
 
@@ -173,8 +204,6 @@ class PipelineNodes:
             logger.exception(f"[Node] Agent 2 failed: {e}")
             return {
                 "agent2_report": f"Ошибка генерации отчёта: {e}",
-                "severity_level_id": 3,
-                "threat_type_id": 11,
                 "mitre_techniques_final": [],
             }
 
@@ -185,7 +214,7 @@ class PipelineNodes:
     async def yara_scan_node(self, state: AnalysisState) -> dict:
         """Node: YARA scan — Rule-based malware detection.
 
-        Reads: log_content
+        Reads: parsed_logs
         Writes: yara_matches, yara_rules_matched, yara_context
         """
         logger.info("[Node] YARA scan: checking rules")
@@ -200,9 +229,12 @@ class PipelineNodes:
             }
 
         try:
-            matches = self.yara_engine.scan(state["log_content"])
+            parsed_logs = state.get("parsed_logs", [])
+            matches = self.yara_engine.scan(parsed_logs)
 
-            yara_rules_matched = [m.get("rule", "") for m in matches]
+            yara_rules_matched = list(
+                {m.get("rule", "") for m in matches if m.get("rule")}
+            )
             yara_context = self._format_yara_context(matches)
 
             logger.info(
@@ -229,7 +261,7 @@ class PipelineNodes:
     async def sigma_scan_node(self, state: AnalysisState) -> dict:
         """Node: Sigma scan — Rule-based SIEM detection.
 
-        Reads: log_content
+        Reads: parsed_logs
         Writes: sigma_matches, sigma_rules_matched, sigma_context
         """
         logger.info("[Node] Sigma scan: checking rules")
@@ -244,9 +276,12 @@ class PipelineNodes:
             }
 
         try:
-            matches = self.sigma_engine.scan(state["log_content"])
+            parsed_logs = state.get("parsed_logs", [])
+            matches = self.sigma_engine.scan(parsed_logs)
 
-            sigma_rules_matched = [m.get("rule_id", "") for m in matches]
+            sigma_rules_matched = list(
+                {m.get("rule_id", "") for m in matches if m.get("rule_id")}
+            )
             sigma_context = self._format_sigma_context(matches)
 
             logger.info(
@@ -308,10 +343,9 @@ class PipelineNodes:
             )
             return {
                 "final_report": agent3_result["final_report"],
-                "recommendations": [],  # Extracted from report if needed
+                "recommendations": [],
                 "severity_level_id": agent3_result["severity_level_id"],
                 "threat_type_id": agent3_result["threat_type_id"],
-                "mitre_techniques_final": agent3_result["mitre_techniques"],
                 "yara_rules_matched": agent3_result["yara_rules"],
                 "sigma_rules_matched": agent3_result["sigma_rules"],
                 "events_found": agent3_result["events_found"],

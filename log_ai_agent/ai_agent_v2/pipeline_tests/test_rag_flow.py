@@ -29,22 +29,22 @@ async def main():
     print("  AI Agent v2 - RAG Flow Test")
     print("=" * 60)
 
-    # Sample logs
+    # Sample logs (Apache syslog format)
     log_content = """
-2026-03-21 10:15:45 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:46 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:47 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:16:00 ERROR SQL syntax error near 'SELECT * FROM users WHERE id=1 OR 1=1--'
+[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
+[Wed Dec 17 13:06:07 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
+[Wed Dec 17 13:06:08 2025] [error] [client 89.23.74.19] Multiple failed login attempts detected
+[Wed Dec 17 13:06:15 2025] [error] [client 45.17.158.24] SQL injection attempt: OR 1=1 DROP TABLE users
 """
 
-    print("\n📝 Creating pipeline with RAG...")
+    print("\n[INFO] Creating pipeline with RAG...")
 
     # Create pipeline with RAG enabled
     pipeline = await create_pipeline(
         use_rag=True,
     )
 
-    print("✓ Pipeline created\n")
+    print("[OK] Pipeline created\n")
     print("=" * 60)
     print("  RAG FLOW")
     print("=" * 60)
@@ -66,7 +66,7 @@ async def main():
         # Agent 1 output
         if "agent1" in stages:
             agent1 = stages["agent1"]
-            print(f"\n✓ Agent 1 found {agent1['events_found']} events:")
+            print(f"\n[OK] Agent 1 found {agent1['events_found']} events:")
             print(f"\n{agent1['primary_analysis'][:300]}...")
 
         # RAG output
@@ -77,7 +77,7 @@ async def main():
             rag = stages["rag"]
             print("Input: Agent 1 output (used for vector search)")
             print(f"Search query: '{rag.get('search_query', 'N/A')[:100]}...'")
-            print(f"\n✓ Found {rag['techniques_count']} MITRE techniques:")
+            print(f"\n[OK] Found {rag['techniques_count']} MITRE techniques:")
 
             for i, tech_id in enumerate(rag.get("technique_ids", [])[:5], 1):
                 print(f"  {i}. {tech_id}")
@@ -86,25 +86,25 @@ async def main():
             print(f"{rag['mitre_context'][:400]}...")
 
         # Agent 2 output
-        print("\n\n[3] Agent 2: Детальный AI отчёт")
+        print("\n\n[3] Agent 2: Detailed AI report")
         print("-" * 60)
 
         if "agent2" in stages:
             agent2 = stages["agent2"]
             print("Input: Agent 1 output + MITRE context")
-            print("\n✓ Agent 2 Report:")
+            print("\n[OK] Agent 2 Report:")
             print(f"  Severity: {agent2['severity_level_id']}/4")
             print(f"  Threat Type: {agent2['threat_type_id']}/11")
             print(f"  MITRE Techniques: {agent2['mitre_techniques']}")
 
         # Agent 3 output
-        print("\n\n[4] Agent 3: Финальная суммаризация")
+        print("\n\n[4] Agent 3: Final summarization")
         print("-" * 60)
 
         if "agent3" in stages:
             agent3 = stages["agent3"]
             print("Input: Agent 2 + MITRE + YARA + Sigma")
-            print("\n✓ Agent 3 Final Report:")
+            print("\n[OK] Agent 3 Final Report:")
             print(f"  Severity: {agent3['severity_level_id']}/4")
             print(f"  Threat Type: {agent3['threat_type_id']}/11")
             print(f"  MITRE Techniques: {agent3['mitre_techniques']}")
@@ -115,17 +115,17 @@ async def main():
             print(f"{agent3['final_report'][:400]}...")
 
         print("\n" + "=" * 60)
-        print(f"✓ Total time: {result['total_time_sec']:.1f}s")
+        print(f"[OK] Total time: {result['total_time_sec']:.1f}s")
         print("=" * 60)
 
-        print("\n📊 RAG FLOW SUMMARY:")
-        print("  Agent 1 → RAG (MITRE) → Agent 2 →┐")
-        print("  YARA Scan ────────────────────────┤→ Agent 3 → Final Report")
-        print("  Sigma Scan ───────────────────────┘")
-        print("\n✅ RAG comparison is working!")
+        print("\n[RAG FLOW SUMMARY]")
+        print("  Agent 1 -> RAG (MITRE) -> Agent 2 ->|")
+        print("  parse_logs -> YARA ----------------|-> Agent 3 -> Final Report")
+        print("  parse_logs -> Sigma ---------------|")
+        print("\n[OK] RAG comparison is working!")
 
     else:
-        print(f"✗ Test failed: {result.get('error', 'Unknown error')}")
+        print(f"[X] Test failed: {result.get('error', 'Unknown error')}")
         sys.exit(1)
 
 

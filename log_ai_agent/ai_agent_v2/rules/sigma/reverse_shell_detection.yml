@@ -1,0 +1,41 @@
+title: Suspicious Reverse Shell Connection
+id: apache-revshell-001
+status: experimental
+description: Detects indicators of reverse shell connections used for remote command execution after initial compromise.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1059/
+tags:
+    - attack.execution
+    - attack.t1059
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_bash:
+        message|contains:
+            - 'bash -i'
+            - '/bin/sh -i'
+            - '/dev/tcp/'
+    selection_netcat:
+        message|contains:
+            - 'nc -e'
+            - 'nc -c'
+            - 'ncat --exec'
+            - 'ncat -e'
+    selection_python:
+        message|contains:
+            - 'python -c'
+            - 'python3 -c'
+            - 'socket'
+            - 'connect'
+    selection_powershell:
+        message|contains:
+            - 'Net.Sockets.TCPClient'
+            - 'IEX (New-Object'
+    condition: selection_bash or selection_netcat or selection_python or selection_powershell
+falsepositives:
+    - Legitimate remote administration tools
+    - DevOps automation scripts
+level: critical

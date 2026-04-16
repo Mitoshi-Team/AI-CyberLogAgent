@@ -1,0 +1,42 @@
+title: Remote File Inclusion Attempt
+id: apache-rfi-001
+status: experimental
+description: Detects Remote File Inclusion (RFI) attempts to include external files.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1190/
+tags:
+    - attack.initial_access
+    - attack.t1190
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_rfi:
+        query|contains:
+            - 'http://'
+            - 'https://'
+            - 'ftp://'
+            - 'php://'
+            - 'data://'
+            - 'expect://'
+            - 'file://'
+        message|contains:
+            - 'http://'
+            - 'https://'
+            - 'ftp://'
+            - 'php://'
+    selection_wrapper:
+        query|contains:
+            - '?cmd='
+            - '?exec='
+            - '?shell='
+            - '?payload='
+        message|contains:
+            - '?cmd='
+            - '?exec='
+    condition: selection_rfi or selection_wrapper
+falsepositives:
+    - Legitimate file inclusion in applications
+level: high
