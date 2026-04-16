@@ -1,6 +1,7 @@
 [sources.external_log_files]
 type = "file"
 include = ["/data/external/**/*.log", "/data/external/**/*.txt"]
+exclude = ["/data/external/attack_timeline.log"]
 ignore_older_secs = 0
 read_from = "beginning"
 fingerprint.strategy = "device_and_inode"
@@ -34,6 +35,11 @@ topic = "${KAFKA_TOPIC}"
 encoding.codec = "json"
 batch.max_events = 250
 batch.timeout_secs = 10
+
+[sinks.kafka_batches.buffer]
+type = "disk"
+max_size = 268435488
+when_full = "block"
 
 [sinks.kafka_batches.librdkafka_options]
 "message.timeout.ms" = "310000"

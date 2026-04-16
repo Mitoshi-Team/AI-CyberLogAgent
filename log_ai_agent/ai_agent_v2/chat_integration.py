@@ -8,7 +8,7 @@ from .chains.llm import create_llm
 logger = logging.getLogger(__name__)
 
 
-CHAT_SYSTEM_PROMPT = """Ты - AI-ассистент по кибербезопасности в системе AI CyberLog Agent.
+CHAT_SYSTEM_PROMPT = """Ты - AI-ассистент по кибербезопасности в системе Wavescan.
 Отвечай на русском языке, по существу и с практическими рекомендациями.
 
 Правила ответа:

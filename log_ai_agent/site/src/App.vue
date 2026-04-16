@@ -24,11 +24,14 @@
 <script setup>
 import { useAppStore } from '@/stores/app'
 import { onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import NotificationStack from '@/components/NotificationStack.vue'
 import websocketService from '@/services/websocket'
 
 const appStore = useAppStore()
+const route = useRoute()
+const websocketEnabled = import.meta.env.VITE_ENABLE_WEBSOCKET !== 'false'
 
 onMounted(() => {
   // Попытка восстановления сессии
@@ -37,7 +40,7 @@ onMounted(() => {
   }
 
   // Подключение к WebSocket для получения уведомлений
-  if (appStore.isAuthenticated) {
+  if (appStore.isAuthenticated && websocketEnabled) {
     // Пытаемся подключиться, но не показываем ошибки
     websocketService.connect().catch((error) => {
       console.warn('WebSocket connection failed:', error)
@@ -47,6 +50,17 @@ onMounted(() => {
     websocketService.on('message', (data) => {
       if (data.type === 'incident') {
         appStore.addIncident(data.incident)
+        return
+      }
+
+      if (data.type === 'chat_response' && data.user_id === appStore.currentUser?.id) {
+        const isOnChatPage = route.path === '/chat'
+        const isTabVisible = document.visibilityState === 'visible'
+
+        if (!isOnChatPage || !isTabVisible) {
+          appStore.addUnreadChatMessage()
+          appStore.addNotification('Новый ответ от AI агента в чате', 'info', 5000, true)
+        }
       }
     })
 

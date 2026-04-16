@@ -43,6 +43,10 @@ services:
       KAFKA_TOPIC: ${KAFKA_TOPIC:-processed-logs-batches}
       KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-cyberlog-backend-group}
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-earliest}
+      KAFKA_PROCESS_RETRY_ATTEMPTS: ${KAFKA_PROCESS_RETRY_ATTEMPTS:-3}
+      KAFKA_RETRY_BACKOFF_SECONDS: ${KAFKA_RETRY_BACKOFF_SECONDS:-2}
+      KAFKA_DLQ_ENABLED: ${KAFKA_DLQ_ENABLED:-true}
+      KAFKA_DLQ_TOPIC: ${KAFKA_DLQ_TOPIC:-processed-logs-batches-dlq}
       PIPELINE_EXTERNAL_LOGS_DIR: ${PIPELINE_EXTERNAL_LOGS_DIR:-/app/shared/external}
       PIPELINE_PROCESSED_LOGS_DIR: ${PIPELINE_PROCESSED_LOGS_DIR:-/app/shared/processed}
       PIPELINE_COLLECTED_LOGS_FILE: ${PIPELINE_COLLECTED_LOGS_FILE:-/app/shared/processed/collected_logs.txt}
@@ -105,10 +109,14 @@ services:
       VECTOR_CONFIG: /etc/vector/vector.toml
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       KAFKA_TOPIC: ${KAFKA_TOPIC:-processed-logs-batches}
+      CHUNK_BATCH_SIZE: ${CHUNK_BATCH_SIZE:-250}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-20}
+      CHUNK_FLUSH_INTERVAL_SECONDS: ${CHUNK_FLUSH_INTERVAL_SECONDS:-300}
     command: ["--config", "/etc/vector/vector.toml"]
     volumes:
       - ./vector/vector.toml:/etc/vector/vector.toml:ro
       - ./vector/lua/chunk_logs.lua:/etc/vector/lua/chunk_logs.lua:ro
+      - vector_data:/var/lib/vector
       - external_logs:/data/external
       - processed_logs:/data/processed
     networks:
@@ -140,16 +148,19 @@ volumes:
     name: cyberlog_kafka_data
   external_logs:
     driver: local
-    name: cyberlog_external_logs
+    name: ${PIPELINE_EXTERNAL_LOGS_VOLUME_NAME:-cyberlog_external_logs}
   processed_logs:
     driver: local
-    name: cyberlog_processed_logs
+    name: ${PIPELINE_PROCESSED_LOGS_VOLUME_NAME:-cyberlog_processed_logs}
   embedding_models:
     driver: local
     name: cyberlog_embedding_models
   chroma_data:
     driver: local
     name: cyberlog_chroma_data
+  vector_data:
+    driver: local
+    name: ${VECTOR_DATA_VOLUME_NAME:-cyberlog_vector_data}
 
 networks:
   cyberlog-network:

@@ -1,6 +1,29 @@
-local BATCH_SIZE = 250
-local OVERLAP = 20
-local FLUSH_INTERVAL_SECONDS = 300
+local function read_env_int(name, default_value, min_value)
+  if os == nil or os.getenv == nil then
+    return default_value
+  end
+
+  local raw = os.getenv(name)
+  if raw == nil or raw:match("^%s*$") then
+    return default_value
+  end
+
+  local value = tonumber(raw)
+  if value == nil then
+    return default_value
+  end
+
+  value = math.floor(value)
+  if min_value ~= nil and value < min_value then
+    return default_value
+  end
+
+  return value
+end
+
+local BATCH_SIZE = read_env_int("CHUNK_BATCH_SIZE", 250, 1)
+local OVERLAP = read_env_int("CHUNK_OVERLAP", 20, 0)
+local FLUSH_INTERVAL_SECONDS = read_env_int("CHUNK_FLUSH_INTERVAL_SECONDS", 300, 1)
 
 local state = {
   queue = {},

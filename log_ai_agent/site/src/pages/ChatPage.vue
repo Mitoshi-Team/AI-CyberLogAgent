@@ -448,12 +448,12 @@ watch(() => route.path, (newPath) => {
   if (newPath === '/chat') {
     // Очищаем с задержкой, чтобы пользователь увидел выделенные сообщения
     clearNotifications(false)
-    nextTick(updateCustomScrollbar)
+    nextTick(() => updateCustomScrollbar())
   }
 }, { immediate: true })
 
 watch([messages, isLoading, topAlignSpacerHeight], () => {
-  nextTick(updateCustomScrollbar)
+  nextTick(() => updateCustomScrollbar())
 }, { deep: true })
 
 // Очистка при возвращении фокуса на вкладку
@@ -784,10 +784,6 @@ const sendMessage = async () => {
     
     console.log('📦 Full API Response:', response.data)
     
-    const isOnChatPage = route.path === '/chat'
-    const isTabVisible = document.visibilityState === 'visible'
-    const shouldNotify = !isOnChatPage || !isTabVisible
-    
     const aiResponse = response.data.agent_response
     const responseMode = response.data.mode || 'UNKNOWN'
     
@@ -800,15 +796,9 @@ const sendMessage = async () => {
     messages.value.push({
       role: 'ai',
       text: aiResponse,
-      isNew: shouldNotify, // Помечаем как новое, если пользователь не видит чат
+      isNew: false,
     })
     await reduceTopAlignSpacerByLastAssistantMessage()
-    
-    // Если пользователь не видит чат (другая страница или вкладка), увеличиваем счетчик и отправляем уведомление
-    if (shouldNotify) {
-      appStore.addUnreadChatMessage()
-      appStore.addNotification('Новый ответ от AI агента в чате', 'info', 5000, true) // playSound = true
-    }
     
   } catch (error) {
     console.error('Error sending message to AI:', error)
@@ -913,11 +903,6 @@ const handleFileUpload = async (event) => {
       
       // Сохраняем ответ в БД
       await saveChatMessage('agent', analysisMsg)
-      
-      appStore.addNotification(
-        `Файл ${file.name} успешно проанализирован`,
-        'success'
-      )
     } else {
       throw new Error(response.data.message || 'Ошибка при анализе файла')
     }

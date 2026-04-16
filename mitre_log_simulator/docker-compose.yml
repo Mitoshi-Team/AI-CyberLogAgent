@@ -1,0 +1,25 @@
+services:
+  mitre-log-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mitre-log-simulator:latest
+    container_name: mitre-log-simulator
+    restart: ${RESTART_POLICY:-unless-stopped}
+    environment:
+      ATTACK_MODE: ${ATTACK_MODE:-random}
+      FIXED_TECHNIQUE: ${FIXED_TECHNIQUE:-T1059}
+      ATTACK_INTERVAL: ${ATTACK_INTERVAL:-90}
+      ATTACK_INTERVAL_MIN: ${ATTACK_INTERVAL_MIN:-60}
+      ATTACK_INTERVAL_MAX: ${ATTACK_INTERVAL_MAX:-120}
+      LOG_RATE: ${LOG_RATE:-200}
+      MAX_LOG_LINES: ${MAX_LOG_LINES:-0}
+      RANDOM_SEED: ${RANDOM_SEED:-42}
+      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-target-node-01}
+    volumes:
+      - shared_external_logs:/var/log/golden
+
+volumes:
+  shared_external_logs:
+    external: true
+    name: ${SHARED_EXTERNAL_LOGS_VOLUME_NAME:-cyberlog_external_logs}

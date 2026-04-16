@@ -1,15 +1,30 @@
 import logging
 import os
+import shutil
 import sys
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+try:
+    import readline
+except ImportError:  # pragma: no cover - environment dependent
+    readline = None
 
 from log_ai_agent.ai_agent_v2.app_integration import (
     analyze_log_v2,
@@ -24,8 +39,12 @@ from log_ai_agent.config import commands
 from log_ai_agent.config.cfg import (
     KAFKA_AUTO_OFFSET_RESET,
     KAFKA_BOOTSTRAP_SERVERS,
+    KAFKA_DLQ_ENABLED,
+    KAFKA_DLQ_TOPIC,
     KAFKA_ENABLED,
     KAFKA_GROUP_ID,
+    KAFKA_PROCESS_RETRY_ATTEMPTS,
+    KAFKA_RETRY_BACKOFF_SECONDS,
     KAFKA_TOPIC,
     PIPELINE_COLLECTED_LOGS_FILE,
     PIPELINE_CONSUMED_LOGS_FILE,
@@ -65,6 +84,123 @@ USER_ACTION_SEND_MESSAGE = 10
 
 MIN_LOG_LINES = 50
 MAX_LOG_LINES = 500
+
+
+class RealtimeConnectionHub:
+    """In-memory WebSocket hub for broadcasting realtime frontend events."""
+
+    def __init__(self) -> None:
+        self._connections: set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self._connections.discard(websocket)
+
+    async def broadcast(self, event: dict) -> None:
+        if not self._connections:
+            return
+
+        dead_connections: list[WebSocket] = []
+        for connection in list(self._connections):
+            try:
+                await connection.send_json(event)
+            except Exception:
+                dead_connections.append(connection)
+
+        for connection in dead_connections:
+            self.disconnect(connection)
+
+
+realtime_hub = RealtimeConnectionHub()
+
+runtime_analysis_state: dict[str, object] = {
+    "processing": False,
+    "current_batch_started_at": None,
+    "current_source": None,
+    "current_records": 0,
+    "last_batch_completed_at": None,
+    "last_events_found": None,
+    "last_error": None,
+}
+
+
+def _mark_runtime_processing(source_label: str, records_count: int) -> None:
+    """Track current Kafka batch processing stage for status endpoint."""
+    runtime_analysis_state["processing"] = True
+    runtime_analysis_state["current_batch_started_at"] = datetime.now(UTC).isoformat()
+    runtime_analysis_state["current_source"] = source_label
+    runtime_analysis_state["current_records"] = records_count
+    runtime_analysis_state["last_error"] = None
+
+
+def _mark_runtime_idle(
+    events_found: int | None = None,
+    error_text: str | None = None,
+) -> None:
+    """Mark Kafka batch processing completion for status endpoint."""
+    runtime_analysis_state["processing"] = False
+    runtime_analysis_state["last_batch_completed_at"] = datetime.now(UTC).isoformat()
+    runtime_analysis_state["last_events_found"] = events_found
+    runtime_analysis_state["last_error"] = error_text
+
+
+def _map_severity_for_frontend(severity_level_id: int | None) -> str:
+    """Map backend severity level IDs to frontend severity labels."""
+    if severity_level_id == 1:
+        return "critical"
+    if severity_level_id == 2:
+        return "warning"
+    return "normal"
+
+
+async def _broadcast_chat_response_event(
+    user_id: int,
+    response_text: str,
+    mode: str | None,
+) -> None:
+    """Notify connected frontend clients about a new agent chat response."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "chat_response",
+                "user_id": user_id,
+                "mode": mode,
+                "preview": response_text[:200],
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast chat_response event: %s", error)
+
+
+async def _broadcast_incident_event(
+    title: str,
+    description: str,
+    severity_level_id: int | None,
+    source: str,
+) -> None:
+    """Broadcast a newly created incident/report event to connected clients."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "incident",
+                "incident": {
+                    "id": int(datetime.now(UTC).timestamp() * 1000),
+                    "title": title,
+                    "description": description,
+                    "severity": _map_severity_for_frontend(severity_level_id),
+                    "status": "open",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "source": source,
+                    "details": {},
+                },
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast incident event: %s", error)
 
 
 async def _insert_agent_log(
@@ -156,20 +292,6 @@ async def _process_kafka_log_batch(payload: dict) -> None:
     if not messages:
         return
 
-    log_content = "\n".join(messages)
-    analysis_result = await analyze_log_v2(log_content)
-    analysis_error = str(analysis_result.get("error") or "")
-    lowered_analysis_error = analysis_error.lower()
-
-    if analysis_error and (
-        "payment required" in lowered_analysis_error or "402" in lowered_analysis_error
-    ):
-        logger.warning(
-            "Kafka batch analysis skipped due to external AI payment error: %s",
-            analysis_error,
-        )
-        return
-
     source_file = batch.get("source_file", "unknown")
     source_files = batch.get("source_files")
     source_label = (
@@ -177,105 +299,139 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         if isinstance(source_files, list) and source_files
         else source_file
     )
-    events_found = analysis_result.get("events_found", 0)
-    if events_found <= 0:
-        logger.info(
-            "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
-            source_label,
-            len(messages),
-        )
-        return
+    _mark_runtime_processing(source_label, len(messages))
 
-    report_description = (
-        "AI pipeline: Agent1 -> RAG -> Agent2\n"
-        f"Источник: {source_label}\n"
-        f"Размер батча: {batch.get('batch_size', len(messages))}\n"
-        f"Событий выделено Agent1: {events_found}\n"
-        f"\n{analysis_result['description']}"
-    )
+    log_content = "\n".join(messages)
+    events_found: int | None = None
+    runtime_error: str | None = None
 
-    conn = await asyncpg.connect(DATABASE_URL, timeout=10)
     try:
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_RECEIVE_LOGS,
-            f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
-        )
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_ANALYZE_LOGS,
-            "Анализ логов через AI Agent v2 (Kafka batch)",
-        )
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_MATCH_THREATS,
-            "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
-        )
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_BUILD_REPORT,
-            "Формирование итогового отчета по Kafka batch",
-        )
+        analysis_result = await analyze_log_v2(log_content)
+        analysis_error = str(analysis_result.get("error") or "")
+        lowered_analysis_error = analysis_error.lower()
 
-        log_row = await conn.fetchrow(
-            """
-            INSERT INTO public."Logs" (file_content, date)
-            VALUES ($1, NOW())
-            RETURNING log_id
-            """,
-            log_content,
-        )
-        log_id = log_row["log_id"]
-
-        await conn.execute(
-            """
-            INSERT INTO public."Reports" (
-                log_id,
-                severity_level_id,
-                threat_type_id,
-                description,
-                created_at
+        if analysis_error and (
+            "payment required" in lowered_analysis_error
+            or "402" in lowered_analysis_error
+        ):
+            runtime_error = analysis_error
+            logger.warning(
+                "Kafka batch analysis skipped due to external AI payment error: %s",
+                analysis_error,
             )
-            VALUES ($1, $2, $3, $4, NOW())
-            """,
-            log_id,
-            analysis_result["severity_level_id"],
-            analysis_result["threat_type_id"],
-            report_description,
+            return
+
+        events_found = analysis_result.get("events_found", 0)
+        if events_found <= 0:
+            logger.info(
+                "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
+                source_label,
+                len(messages),
+            )
+            return
+
+        report_description = (
+            "AI pipeline: Agent1 -> RAG -> Agent2\n"
+            f"Источник: {source_label}\n"
+            f"Размер батча: {batch.get('batch_size', len(messages))}\n"
+            f"Событий выделено Agent1: {events_found}\n"
+            f"\n{analysis_result['description']}"
         )
 
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_SAVE_REPORT,
-            f"Сохранение отчета по Kafka batch: log_id={log_id}",
-        )
+        conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+        try:
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_RECEIVE_LOGS,
+                f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
+            )
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_ANALYZE_LOGS,
+                "Анализ логов через AI Agent v2 (Kafka batch)",
+            )
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_MATCH_THREATS,
+                "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
+            )
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_BUILD_REPORT,
+                "Формирование итогового отчета по Kafka batch",
+            )
 
-        chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
-        inserted_messages = await conn.execute(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            SELECT user_id, 'agent', $1, NOW()
-            FROM public."Users"
-            """,
-            chat_message,
-        )
+            log_row = await conn.fetchrow(
+                """
+                INSERT INTO public."Logs" (file_content, date)
+                VALUES ($1, NOW())
+                RETURNING log_id
+                """,
+                log_content,
+            )
+            log_id = log_row["log_id"]
 
-        await _try_insert_agent_log(
-            conn,
-            AGENT_ACTION_RESPOND,
-            "Ответ на запрос: автоответ опубликован в чат пользователя",
-        )
+            await conn.execute(
+                """
+                INSERT INTO public."Reports" (
+                    log_id,
+                    severity_level_id,
+                    threat_type_id,
+                    description,
+                    created_at
+                )
+                VALUES ($1, $2, $3, $4, NOW())
+                """,
+                log_id,
+                analysis_result["severity_level_id"],
+                analysis_result["threat_type_id"],
+                report_description,
+            )
 
-        logger.info(
-            "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, log_id=%s",
-            source_label,
-            len(messages),
-            events_found,
-            log_id,
-        )
-        logger.info("Kafka report auto-posted to chat: %s", inserted_messages)
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_SAVE_REPORT,
+                f"Сохранение отчета по Kafka batch: log_id={log_id}",
+            )
+
+            chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
+            inserted_messages = await conn.execute(
+                """
+                INSERT INTO public."Messages" (user_id, role, content, created_at)
+                SELECT user_id, 'agent', $1, NOW()
+                FROM public."Users"
+                """,
+                chat_message,
+            )
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_RESPOND,
+                "Отправка автоотчета пользователям через чат",
+            )
+
+            logger.info(
+                "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, log_id=%s",
+                source_label,
+                len(messages),
+                events_found,
+                log_id,
+            )
+            logger.info("Kafka report auto-posted to chat: %s", inserted_messages)
+
+            await _broadcast_incident_event(
+                title=f"Инцидент из Kafka потока ({source_label})",
+                description=report_description,
+                severity_level_id=analysis_result.get("severity_level_id"),
+                source="Kafka Pipeline",
+            )
+        finally:
+            await conn.close()
+    except Exception as error:
+        runtime_error = str(error)
+        raise
     finally:
-        await conn.close()
+        _mark_runtime_idle(events_found=events_found, error_text=runtime_error)
 
 
 kafka_log_consumer = KafkaLogBatchConsumer(
@@ -285,6 +441,10 @@ kafka_log_consumer = KafkaLogBatchConsumer(
     group_id=KAFKA_GROUP_ID,
     auto_offset_reset=KAFKA_AUTO_OFFSET_RESET,
     output_file=PIPELINE_CONSUMED_LOGS_FILE,
+    retry_attempts=KAFKA_PROCESS_RETRY_ATTEMPTS,
+    retry_backoff_seconds=KAFKA_RETRY_BACKOFF_SECONDS,
+    dlq_enabled=KAFKA_DLQ_ENABLED,
+    dlq_topic=KAFKA_DLQ_TOPIC,
     payload_handler=_process_kafka_log_batch,
 )
 
@@ -292,7 +452,7 @@ kafka_log_consumer = KafkaLogBatchConsumer(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle events для приложения"""
-    logger.info("🚀 Starting AI CyberLog Agent Backend...")
+    logger.info("🚀 Starting Wavescan Backend...")
     logger.info(f"📊 Database URL: {DATABASE_URL}")
     logger.info(f"📦 Pipeline collected logs file: {PIPELINE_COLLECTED_LOGS_FILE}")
 
@@ -313,14 +473,14 @@ async def lifespan(app: FastAPI):
     if KAFKA_ENABLED:
         await kafka_log_consumer.stop()
 
-    logger.info("🛑 Shutting down AI CyberLog Agent Backend...")
+    logger.info("🛑 Shutting down Wavescan Backend...")
     # Close AI Agent v2 resources
     await close_pipeline()
 
 
 # Создание FastAPI приложения
 app = FastAPI(
-    title="AI CyberLog Agent API",
+    title="Wavescan API",
     description="Backend API for AI-powered log analysis and incident monitoring",
     version="1.0.0",
     lifespan=lifespan,
@@ -370,7 +530,31 @@ class ChatMessageResponse(BaseModel):
 @app.get("/")
 async def root():
     """Главная страница API"""
-    return {"message": "AI CyberLog Agent API", "status": "running", "version": "1.0.0"}
+    return {"message": "Wavescan API", "status": "running", "version": "1.0.0"}
+
+
+async def _serve_websocket(websocket: WebSocket):
+    """Realtime WebSocket endpoint for frontend notifications."""
+    await realtime_hub.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive; client messages are optional in current flow.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime_hub.disconnect(websocket)
+    except Exception as error:
+        logger.warning("WebSocket connection error: %s", error)
+        realtime_hub.disconnect(websocket)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await _serve_websocket(websocket)
+
+
+@app.websocket("/ws/")
+async def websocket_endpoint_slash(websocket: WebSocket):
+    await _serve_websocket(websocket)
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)
@@ -463,6 +647,16 @@ async def health_check():
         "status": "healthy" if db_status == "connected" else "degraded",
         "database": db_status,
         "database_error": db_error if db_error else None,
+    }
+
+
+@app.get("/api/system/status")
+async def get_system_status():
+    """Return runtime status for backend, Kafka consumer and current analysis stage."""
+    return {
+        "kafka_enabled": KAFKA_ENABLED,
+        "consumer_running": bool(getattr(kafka_log_consumer, "_running", False)),
+        "analysis": runtime_analysis_state,
     }
 
 
@@ -1036,6 +1230,12 @@ async def send_chat_message(request: ChatSendRequest):
             f"Chat message processed for user {request.user_id}, mode: {result['mode']}"
         )
 
+        await _broadcast_chat_response_event(
+            user_id=request.user_id,
+            response_text=result["response"],
+            mode=result.get("mode"),
+        )
+
         return ChatSendResponse(
             success=True,
             user_message=request.message,
@@ -1074,6 +1274,12 @@ async def send_chat_message(request: ChatSendRequest):
             await _store_agent_fallback_message(request.user_id, fallback_text)
         except Exception as db_error:
             logger.error(f"Failed to persist fallback chat message: {db_error}")
+
+        await _broadcast_chat_response_event(
+            user_id=request.user_id,
+            response_text=fallback_text,
+            mode=fallback_mode,
+        )
 
         return ChatSendResponse(
             success=False,
@@ -1275,6 +1481,13 @@ async def upload_log_file(
                 f"Ответ на запрос загрузки логов: user_id={user_id}, report_id={report_id}",
             )
 
+            await _broadcast_incident_event(
+                title=f"Новый инцидент из файла {file.filename}",
+                description=analysis_result["description"],
+                severity_level_id=analysis_result.get("severity_level_id"),
+                source="Manual Log Upload",
+            )
+
             return response
 
         finally:
@@ -1296,6 +1509,9 @@ AVAILABLE_COMMANDS = {
     "register": "Зарегистрировать нового пользователя",
     "agent_logs": "Просмотр логов агента (опционально: agent_logs <limit>)",
     "user_logs": "Просмотр логов пользователей (опционально: user_logs <limit>)",
+    "pipeline_lines": "Показать текущее количество строк в external и processed",
+    "clear_pipeline_logs": "Полная очистка логов в external и processed",
+    "agent_status": "Показать текущий этап агента по последнему AgentLogs",
     "help": "Показать справку",
     "interactive": "Запустить консоль",
     "exit": "Выйти из консоли",
@@ -1326,6 +1542,30 @@ def _format_cli_datetime(value: datetime) -> str:
     return value.astimezone(CLI_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _format_runtime_timestamp(value: object) -> str:
+    """Format ISO timestamp string from runtime status to CLI timezone."""
+    if value in (None, ""):
+        return "unknown"
+
+    if isinstance(value, datetime):
+        return _format_cli_datetime(value)
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return "unknown"
+
+        # Support both ISO with offset and trailing 'Z'.
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+            return _format_cli_datetime(parsed)
+        except ValueError:
+            return raw
+
+    return str(value)
+
+
 def show_agent_logs(limit: int = 50):
     """Show latest agent action logs for admin console."""
     try:
@@ -1348,9 +1588,9 @@ def show_agent_logs(limit: int = 50):
         )
         rows = cursor.fetchall()
 
-        print("\n" + "=" * 90)
+        print("\n" + "=" * 60)
         print(f"  Логи агента (последние {limit}")
-        print("=" * 90)
+        print("=" * 60)
 
         if not rows:
             print("\nЗаписей нет\n")
@@ -1391,9 +1631,9 @@ def show_user_logs(limit: int = 50):
         )
         rows = cursor.fetchall()
 
-        print("\n" + "=" * 110)
+        print("\n" + "=" * 60)
         print(f"  Логи пользователей (последние {limit})")
-        print("=" * 110)
+        print("=" * 60)
 
         if not rows:
             print("\nЗаписей нет\n")
@@ -1411,6 +1651,283 @@ def show_user_logs(limit: int = 50):
         print(f"❌ Ошибка получения логов пользователей: {e}")
 
 
+def _count_lines_in_file(path: Path) -> int:
+    """Count lines in a file using binary chunks for robustness."""
+    try:
+        with path.open("rb") as file_obj:
+            chunk_size = 1024 * 1024
+            line_count = 0
+            last_byte = None
+
+            while True:
+                chunk = file_obj.read(chunk_size)
+                if not chunk:
+                    break
+
+                line_count += chunk.count(b"\n")
+                last_byte = chunk[-1]
+
+            if last_byte is not None and last_byte != ord("\n"):
+                line_count += 1
+
+            return line_count
+    except Exception:
+        return 0
+
+
+def _collect_directory_stats(path: Path) -> tuple[int, int]:
+    """Return (files_count, lines_count) for all files under directory."""
+    files_count = 0
+    lines_count = 0
+
+    if not path.exists() or not path.is_dir():
+        return files_count, lines_count
+
+    for file_path in path.rglob("*"):
+        if not file_path.is_file():
+            continue
+
+        files_count += 1
+        lines_count += _count_lines_in_file(file_path)
+
+    return files_count, lines_count
+
+
+def _clear_directory_contents(path: Path) -> tuple[int, int]:
+    """Delete all files and subdirectories inside the given directory.
+
+    Returns:
+        tuple: (files_deleted, lines_deleted)
+
+    """
+    files_deleted = 0
+    lines_deleted = 0
+
+    for entry in path.iterdir():
+        if entry.is_dir():
+            for nested_file in entry.rglob("*"):
+                if nested_file.is_file():
+                    files_deleted += 1
+                    lines_deleted += _count_lines_in_file(nested_file)
+            shutil.rmtree(entry)
+            continue
+
+        lines_deleted += _count_lines_in_file(entry)
+        entry.unlink()
+        files_deleted += 1
+
+    return files_deleted, lines_deleted
+
+
+def show_pipeline_lines() -> None:
+    """Show current line counts in external and processed pipeline directories."""
+    external_logs_dir = os.getenv("PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external")
+    processed_logs_dir = os.getenv(
+        "PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed"
+    )
+
+    targets = {
+        "external": Path(external_logs_dir),
+        "processed": Path(processed_logs_dir),
+    }
+
+    print("\n" + "=" * 60)
+    print("  Статистика строк pipeline")
+    print("=" * 60)
+
+    total_files = 0
+    total_lines = 0
+
+    for label, target in targets.items():
+        files_count, lines_count = _collect_directory_stats(target)
+        total_files += files_count
+        total_lines += lines_count
+        print(
+            f"{label:10} files={files_count:<6} lines={lines_count:<10} path={target}"
+        )
+
+    print("")
+    print(f"Итог: files={total_files}, lines={total_lines}\n")
+
+
+def clear_pipeline_logs() -> None:
+    """Clear pipeline logs from external and processed shared directories."""
+    external_logs_dir = os.getenv("PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external")
+    processed_logs_dir = os.getenv(
+        "PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed"
+    )
+
+    targets = {
+        "external": Path(external_logs_dir),
+        "processed": Path(processed_logs_dir),
+    }
+
+    print("\n" + "=" * 60)
+    print("  Очистка pipeline логов")
+    print("=" * 60)
+
+    total_files = 0
+    total_lines = 0
+
+    for label, target in targets.items():
+        if not target.exists():
+            print(f"⚠ Пропуск {label}: путь не существует -> {target}")
+            continue
+
+        if not target.is_dir():
+            print(f"⚠ Пропуск {label}: путь не является директорией -> {target}")
+            continue
+
+        files_deleted, lines_deleted = _clear_directory_contents(target)
+        total_files += files_deleted
+        total_lines += lines_deleted
+
+        print(
+            "✓ Очищено %s: файлов=%s, строк=%s, путь=%s"
+            % (label, files_deleted, lines_deleted, target)
+        )
+
+    print("-" * 90)
+    print(f"Итог: удалено файлов={total_files}, строк={total_lines}\n")
+
+
+def _setup_cli_history() -> None:
+    """Enable CLI command history navigation with arrow keys when readline is available."""
+    if readline is None:
+        return
+
+    history_path = Path.home() / ".wavescan_cli_history"
+
+    try:
+        if history_path.exists():
+            readline.read_history_file(str(history_path))
+    except Exception:
+        pass
+
+    readline.set_history_length(200)
+
+    def _persist_history() -> None:
+        try:
+            readline.write_history_file(str(history_path))
+        except Exception:
+            pass
+
+    import atexit
+
+    atexit.register(_persist_history)
+
+
+def _fetch_runtime_status_from_api() -> dict | None:
+    """Fetch status from running backend process for accurate CLI diagnostics."""
+    status_url = os.getenv(
+        "WAVESCAN_STATUS_URL", "http://127.0.0.1:8000/api/system/status"
+    )
+
+    try:
+        with urllib.request.urlopen(status_url, timeout=2) as response:
+            if response.status != 200:
+                return None
+            payload = response.read().decode("utf-8")
+            import json
+
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                return parsed
+            return None
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
+
+
+def show_agent_status() -> None:
+    """Show the latest known agent stage from AgentLogs."""
+    try:
+        conn = commands.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                al.action_type_id,
+                at.name,
+                al.description,
+                al.date
+            FROM public."AgentLogs" al
+            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
+            ORDER BY al.date DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        print("\n" + "=" * 60)
+        print("  Статус:")
+        print("=" * 60)
+
+        runtime_status = _fetch_runtime_status_from_api()
+
+        if KAFKA_ENABLED:
+            if runtime_status:
+                consumer_running = bool(runtime_status.get("consumer_running", False))
+                consumer_state = "запущен" if consumer_running else "остановлен"
+                print(f"Kafka consumer: {consumer_state}")
+
+                analysis = runtime_status.get("analysis")
+                if isinstance(analysis, dict):
+                    if analysis.get("processing"):
+                        started_at = _format_runtime_timestamp(
+                            analysis.get("current_batch_started_at")
+                        )
+                        print(
+                            "Обработка batch: выполняется | "
+                            f"source={analysis.get('current_source', 'unknown')} | "
+                            f"records={analysis.get('current_records', 0)} | "
+                            f"started_at={started_at}"
+                        )
+                    else:
+                        last_completed_at = _format_runtime_timestamp(
+                            analysis.get("last_batch_completed_at")
+                        )
+                        print(
+                            "Обработка batch: простаивает | "
+                            f"last_completed_at={last_completed_at} | "
+                            f"last_events_found={analysis.get('last_events_found', 'unknown')}"
+                        )
+
+                    last_error = analysis.get("last_error")
+                    if last_error:
+                        print(f"Последняя ошибка batch: {last_error}")
+            else:
+                consumer_state = (
+                    "запущен" if kafka_log_consumer._running else "остановлен"
+                )
+                print(f"Kafka consumer: {consumer_state} (локальный процесс CLI)")
+                print(
+                    "Примечание: если консоль запущена отдельной командой python app.py interactive, "
+                    "этот статус может не отражать состояние основного backend-процесса."
+                )
+
+        print()
+
+        print("=" * 60)
+        print("  Последнее действие агента:")
+        print("=" * 60)
+
+        if not row:
+            print("Нет записей AgentLogs. Агент еще не выполнял действий.\n")
+            return
+
+        action_type_id, action_name, description, action_date = row
+        formatted_date = _format_cli_datetime(action_date)
+
+        print(f"Этап: {action_name or 'неизвестно'} (action_type_id={action_type_id})")
+        print(f"Время: {formatted_date}")
+        print(f"Описание: {description}")
+
+    except Exception as e:
+        print(f"❌ Ошибка получения текущего этапа агента: {e}")
+
+
 def show_help():
     """Показать справку по использованию консоли."""
     print("\n" + "=" * 60)
@@ -1420,8 +1937,7 @@ def show_help():
     print("-" * 60)
     for cmd, description in AVAILABLE_COMMANDS.items():
         print(f"  {cmd:15} - {description}")
-    print("\n")
-    print("=" * 60 + "\n")
+    print("-" * 60 + "\n")
 
 
 def execute_command(command: str):
@@ -1446,6 +1962,12 @@ def execute_command(command: str):
     elif cmd == "user_logs":
         limit = _parse_limit_arg(parts)
         show_user_logs(limit)
+    elif cmd == "pipeline_lines":
+        show_pipeline_lines()
+    elif cmd == "clear_pipeline_logs":
+        clear_pipeline_logs()
+    elif cmd == "agent_status":
+        show_agent_status()
     else:
         print(f"❌ Ошибка: неизвестная команда '{command}'")
         print("Введите 'help' чтобы увидеть доступные команды")
@@ -1453,18 +1975,64 @@ def execute_command(command: str):
     return True
 
 
+def _colorize_gradient_text(
+    text: str,
+    start_rgb: tuple[int, int, int],
+    end_rgb: tuple[int, int, int],
+) -> str:
+    """Apply a left-to-right ANSI truecolor gradient to text."""
+    if not text:
+        return text
+
+    length = len(text)
+    if length == 1:
+        r, g, b = start_rgb
+        return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
+
+    chars: list[str] = []
+    for idx, char in enumerate(text):
+        ratio = idx / (length - 1)
+        red = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio)
+        green = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio)
+        blue = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
+        chars.append(f"\033[38;2;{red};{green};{blue}m{char}")
+
+    return "".join(chars) + "\033[0m"
+
+
 def run_interactive():
     """Запустить CLI консоль"""
+    _setup_cli_history()
+
+    use_colored_prompt = (
+        os.getenv("NO_COLOR") is None and os.getenv("TERM", "").lower() != "dumb"
+    )
+    prompt = "\033[95mwavescan>\033[0m " if use_colored_prompt else "wavescan> "
+
+    logo_lines = [
+        " ██╗    ██╗ █████╗ ██╗   ██╗███████╗███████╗ ██████╗ █████╗ ███╗   ██╗",
+        " ██║    ██║██╔══██╗██║   ██║██╔════╝██╔════╝██╔════╝██╔══██╗████╗  ██║",
+        " ██║ █╗ ██║███████║██║   ██║█████╗  ███████╗██║     ███████║██╔██╗ ██║",
+        " ██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ╚════██║██║     ██╔══██║██║╚██╗██║",
+        " ╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗███████║╚██████╗██║  ██║██║ ╚████║",
+        "  ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝",
+    ]
+
+    print("")
+    if use_colored_prompt:
+        for line in logo_lines:
+            print(_colorize_gradient_text(line, (168, 85, 247), (56, 189, 248)))
+    else:
+        for line in logo_lines:
+            print(line)
     print("\n" + "=" * 60)
-    print("  Wavescan - CLI")
-    print("=" * 60)
     print("\n  Введите 'help' для просмотра доступных команд")
     print("  Введите 'exit' для выхода из консоли\n")
     print("=" * 60 + "\n")
 
     while True:
         try:
-            command = input("wavescan> ").strip()
+            command = input(prompt).strip()
             if not execute_command(command):
                 print("\nВыход из консоли...\n")
                 break

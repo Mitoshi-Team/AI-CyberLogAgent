@@ -25,6 +25,10 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "processed-logs-batches")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "cyberlog-backend-group")
 KAFKA_AUTO_OFFSET_RESET = os.getenv("KAFKA_AUTO_OFFSET_RESET", "earliest")
+KAFKA_PROCESS_RETRY_ATTEMPTS = int(os.getenv("KAFKA_PROCESS_RETRY_ATTEMPTS", "3"))
+KAFKA_RETRY_BACKOFF_SECONDS = float(os.getenv("KAFKA_RETRY_BACKOFF_SECONDS", "2"))
+KAFKA_DLQ_ENABLED = _get_bool_env("KAFKA_DLQ_ENABLED", True)
+KAFKA_DLQ_TOPIC = os.getenv("KAFKA_DLQ_TOPIC", "processed-logs-batches-dlq")
 
 PIPELINE_EXTERNAL_LOGS_DIR = os.getenv(
     "PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external"
