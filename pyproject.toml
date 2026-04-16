@@ -10,6 +10,7 @@ dependencies = [
     "bcrypt==5.0.0",
     "fastapi==0.124.4",
     "gigachat==0.1.43",
+    "grandalf>=0.8",
     "huggingface-hub==0.36.0",
     "langchain==0.3.27",
     "langchain-chroma==0.2.6",
@@ -24,12 +25,14 @@ dependencies = [
     "psycopg2-binary==2.9.11",
     "python-dotenv==1.2.1",
     "python-multipart==0.0.20",
+    "pyyaml>=6.0",
     "ruff>=0.14.9",
     "scikit-learn==1.6.1",
     "sentence-transformers==5.2.0",
     "taxii2-client>=2.3.0",
     "tenacity==9.0.0",
     "uvicorn==0.38.0",
+    "yara-python>=4.5.4",
 ]
 
 [project.optional-dependencies]

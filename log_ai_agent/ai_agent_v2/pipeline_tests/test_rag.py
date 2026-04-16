@@ -33,20 +33,20 @@ async def main():
     print("  AI Agent v2 - RAG Test with Detailed Logging")
     print("=" * 60)
 
-    # Sample logs with clear attack patterns
+    # Sample logs with clear attack patterns (Apache syslog format)
     log_content = """
-2026-03-21 10:15:45 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:46 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:47 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:48 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:16:00 ERROR SQL syntax error near 'SELECT * FROM users WHERE id=1 OR 1=1--'
+[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
+[Wed Dec 17 13:06:07 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
+[Wed Dec 17 13:06:08 2025] [error] [client 89.23.74.19] Multiple failed login attempts detected
+[Wed Dec 17 13:06:10 2025] [error] [client 89.23.74.19] Possible brute force attack from 89.23.74.19
+[Wed Dec 17 13:06:15 2025] [error] [client 45.17.158.24] SQL injection attempt: OR 1=1 DROP TABLE users
 """
 
     print("\n1. Creating pipeline with RAG enabled...")
     pipeline = await create_pipeline(
         use_rag=True,  # Enable RAG
     )
-    print("✓ Pipeline created\n")
+    print("[OK] Pipeline created\n")
 
     print("2. Analyzing logs...\n")
     print("-" * 60)
@@ -65,13 +65,13 @@ async def main():
         # Agent 1
         if "agent1" in stages:
             agent1 = stages["agent1"]
-            print(f"\n✓ Agent 1 Output ({agent1.get('events_found', 0)} events):")
+            print(f"\n[OK] Agent 1 Output ({agent1.get('events_found', 0)} events):")
             print(f"  {agent1.get('primary_analysis', '')[:200]}...")
 
         # RAG
         if "rag" in stages:
             rag = stages["rag"]
-            print("\n✓ RAG Search:")
+            print("\n[OK] RAG Search:")
             print(f"  Techniques found: {rag.get('techniques_count', 0)}")
             print(f"  Technique IDs: {rag.get('technique_ids', [])}")
             print("\n  MITRE Context:")
@@ -80,7 +80,7 @@ async def main():
         # Agent 2
         if "agent2" in stages:
             agent2 = stages["agent2"]
-            print("\n✓ Agent 2 Output (детальный):")
+            print("\n[OK] Agent 2 Output (detailed):")
             print(f"  Severity: {agent2.get('severity_level_id')}/4")
             print(f"  Threat: {agent2.get('threat_type_id')}/11")
             print(f"  MITRE Techniques: {agent2.get('mitre_techniques', [])}")
@@ -88,20 +88,20 @@ async def main():
         # Agent 3 (final)
         if "agent3" in stages:
             agent3 = stages["agent3"]
-            print("\n✓ Agent 3 Output (финальная суммаризация):")
+            print("\n[OK] Agent 3 Output (final summarization):")
             print(f"  Severity: {agent3.get('severity_level_id')}/4")
             print(f"  Threat: {agent3.get('threat_type_id')}/11")
             print(f"  MITRE Techniques: {agent3.get('mitre_techniques', [])}")
             print(f"  YARA Rules: {agent3.get('yara_rules', [])}")
             print(f"  Sigma Rules: {agent3.get('sigma_rules', [])}")
 
-        print(f"\n✓ Total time: {results.get('total_time_sec', 0):.1f}s")
+        print(f"\n[OK] Total time: {results.get('total_time_sec', 0):.1f}s")
         print("\n" + "=" * 60)
         print("  TEST COMPLETE")
         print("=" * 60)
 
     else:
-        print(f"✗ Analysis failed: {results.get('error', 'Unknown error')}")
+        print(f"[X] Analysis failed: {results.get('error', 'Unknown error')}")
         sys.exit(1)
 
 

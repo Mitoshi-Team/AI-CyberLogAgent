@@ -1,0 +1,59 @@
+title: SQL Injection Attempt Detection
+id: apache-sqli-001
+status: experimental
+description: Detects SQL injection attempts in web application and database logs.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1190/
+    - https://owasp.org/www-community/attacks/SQL_Injection
+tags:
+    - attack.initial_access
+    - attack.t1190
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_union:
+        query|contains:
+            - 'UNION SELECT'
+            - 'UNION ALL SELECT'
+        message|contains:
+            - 'UNION SELECT'
+            - 'UNION ALL SELECT'
+    selection_tautology:
+        query|contains:
+            - 'OR 1=1'
+            - "OR '1'='1"
+            - 'OR 1=1'
+        message|contains:
+            - 'OR 1=1'
+            - "' OR '1'='1"
+    selection_destructive:
+        query|contains:
+            - 'DROP TABLE'
+            - 'DELETE FROM'
+            - 'DROP DATABASE'
+        message|contains:
+            - 'DROP TABLE'
+            - 'DELETE FROM'
+    selection_stacked:
+        query|contains:
+            - "'; --"
+            - "'; EXEC"
+            - '; xp_cmdshell'
+        message|contains:
+            - "'; --"
+            - "'; EXEC"
+    selection_time_based:
+        query|contains:
+            - 'WAITFOR DELAY'
+            - 'BENCHMARK'
+            - 'SLEEP'
+        message|contains:
+            - 'WAITFOR'
+            - 'BENCHMARK'
+    condition: selection_union or selection_tautology or selection_destructive or selection_stacked or selection_time_based
+falsepositives:
+    - SQL queries in legitimate application URLs (rare)
+level: high

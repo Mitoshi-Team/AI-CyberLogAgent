@@ -2,33 +2,52 @@
 
 from typing import TypedDict
 
+from .parsers.apache_parser import ParsedLog
+
+
+class SuspiciousEvent(TypedDict, total=False):
+    """A suspicious event extracted from logs by Agent 1.
+
+    This is sent to Agent 2 for RAG/MITRE lookup.
+    """
+
+    description: str
+    timestamp: str | None
+    log_line: str
+
+
+class MITRETechnique(TypedDict, total=False):
+    """MITRE ATT&CK technique found by RAG search.
+
+    Includes context from the original event.
+    """
+
+    technique_id: str
+    name: str
+    timestamp: str | None
+    event: str
+    log_line: str
+
 
 class AnalysisState(TypedDict, total=False):
     """State type for LangGraph analysis pipeline.
 
     This TypedDict defines the state that flows through the analysis pipeline.
-    The pipeline has 4 parallel branches that converge in Agent 3:
-    - AI Pipeline: Agent 1 → RAG (MITRE) → Agent 2
-    - YARA Scan: Rule-based malware detection
-    - Sigma Scan: Rule-based SIEM detection
-    - Agent 3: Final summarization
+    The pipeline has parallel branches that converge in Agent 3:
 
     State flow:
     ┌─────────────────────────────────────┐
     │         log_content (input)         │
-    └────┬────────────┬─────────┬─────────┘
+    └────┬────────────┬─────────┬───────┘
          │            │         │
-    ┌────▼────┐  ┌───▼────┐ ┌─▼────────┐
-    │ Agent 1 │  │  YARA  │ │  Sigma   │
-    └────┬────┘  └───┬────┘ └─┬────────┘
+    ┌────▼────┐ ┌────▼────┐ ┌─▼──────┐
+    │ Agent 1 │ │  YARA   │ │ Sigma  │
+    └────┬────┘ └───┬────┘ └──┬──────┘
          │            │         │
     ┌────▼────┐       │         │
-    │  RAG    │       │         │
+    │Agent 2  │       │         │
+    │(RAG it) │       │         │
     └────┬────┘       │         │
-         │            │         │
-    ┌────▼────┐  ┌───▼────┐ ┌─▼────────┐
-    │ Agent 2 │  │  YARA  │ │  Sigma   │
-    └────┬────┘  └───┬────┘ └─┬────────┘
          │            │         │
          └────────────┼─────────┘
                       │
@@ -44,22 +63,23 @@ class AnalysisState(TypedDict, total=False):
 
     # ===== INPUT =====
     log_content: str
+    parsed_logs: list[ParsedLog]
 
     # ===== AGENT 1 OUTPUT =====
     primary_analysis: str
+    mini_report: str
     events_found: int
+    suspicious_events: list[SuspiciousEvent]
 
-    # ===== RAG (MITRE) OUTPUT =====
+    # ===== RAG + AGENT 2 OUTPUT =====
     mitre_context: str
     mitre_techniques: list[dict]
     technique_ids: list[str]
     search_query: str
+    mitre_techniques_final: list[MITRETechnique]
 
     # ===== AGENT 2 OUTPUT =====
     agent2_report: str
-    severity_level_id: int
-    threat_type_id: int
-    mitre_techniques_final: list[str]
 
     # ===== YARA SCAN OUTPUT =====
     yara_matches: list[dict]
@@ -74,6 +94,8 @@ class AnalysisState(TypedDict, total=False):
     # ===== AGENT 3 OUTPUT (FINAL) =====
     final_report: str
     recommendations: list[str]
+    severity_level_id: int
+    threat_type_id: int
 
     # ===== METADATA =====
     success: bool
@@ -90,18 +112,16 @@ class PipelineResult(TypedDict, total=False):
     log_size: int
     total_time_sec: float
 
-    # Stage results
     agent1_result: dict | None
     rag_result: dict | None
     agent2_result: dict | None
 
-    # Error information
     error: str | None
     error_stage: str | None
 
 
 class MITRATechnique(TypedDict):
-    """MITRE ATT&CK technique type."""
+    """MITRE ATT&CK technique type (original, for compatibility)."""
 
     technique_id: str
     technique_name: str

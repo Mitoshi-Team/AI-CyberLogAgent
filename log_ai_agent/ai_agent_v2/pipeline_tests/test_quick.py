@@ -26,20 +26,19 @@ async def main():
     print("  AI Agent v2 - Quick Test")
     print("=" * 60)
 
-    # Sample logs
+    # Sample logs (Apache syslog format)
     log_content = """
-2026-03-21 10:15:45 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:46 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:15:47 WARNING Failed login attempt for user admin from 192.168.1.100
-2026-03-21 10:16:00 ERROR SQL syntax error near 'SELECT * FROM users WHERE id=1 OR 1=1--'
-2026-03-21 10:16:30 ERROR Unauthorized API request from 10.0.0.55
+[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
+[Wed Dec 17 13:06:07 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
+[Wed Dec 17 13:06:08 2025] [error] [client 89.23.74.19] Multiple failed login attempts detected
+[Wed Dec 17 13:06:15 2025] [error] [client 45.17.158.24] SQL injection attempt: OR 1=1 DROP TABLE users
 """
 
     print("\n1. Creating pipeline...")
     pipeline = await create_pipeline(
         use_rag=False,  # Disable RAG for quick test
     )
-    print("✓ Pipeline created")
+    print("[OK] Pipeline created")
 
     print("\n2. Analyzing logs...")
     results = await pipeline.analyze(
@@ -55,30 +54,30 @@ async def main():
 
         if "agent1" in stages:
             print(
-                f"\n✓ Agent 1: Found {stages['agent1'].get('events_found', 0)} events"
+                f"\n[OK] Agent 1: Found {stages['agent1'].get('events_found', 0)} events"
             )
 
         if "agent2" in stages:
             agent2 = stages["agent2"]
             print(
-                f"✓ Agent 2: severity={agent2.get('severity_level_id')}, threat={agent2.get('threat_type_id')}"
+                f"[OK] Agent 2: severity={agent2.get('severity_level_id')}, threat={agent2.get('threat_type_id')}"
             )
 
         if "agent3" in stages:
             agent3 = stages["agent3"]
             print(
-                f"✓ Agent 3 (final): severity={agent3.get('severity_level_id')}, threat={agent3.get('threat_type_id')}"
+                f"[OK] Agent 3 (final): severity={agent3.get('severity_level_id')}, threat={agent3.get('threat_type_id')}"
             )
             print("\nReport preview:")
             print(agent3.get("final_report", "")[:300])
 
-        print(f"\n✓ Total time: {results.get('total_time_sec', 0):.1f}s")
+        print(f"\n[OK] Total time: {results.get('total_time_sec', 0):.1f}s")
         print("\n" + "=" * 60)
         print("  TEST PASSED")
         print("=" * 60)
 
     else:
-        print(f"✗ Analysis failed: {results.get('error', 'Unknown error')}")
+        print(f"[X] Analysis failed: {results.get('error', 'Unknown error')}")
         sys.exit(1)
 
 

@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Any
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.output_parsers import StrOutputParser
@@ -37,11 +38,11 @@ def create_agent3_chain(llm: BaseLanguageModel):
 
     chain = prompt | llm | StrOutputParser()
 
-    logger.info("✓ Agent 3 chain created")
+    logger.info("Agent 3 chain created")
     return chain
 
 
-def parse_agent3_metadata(report_text: str) -> dict:
+def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
     """Parse metadata from Agent 3 response.
 
     Args:
@@ -126,28 +127,34 @@ def parse_agent3_metadata(report_text: str) -> dict:
 async def generate_final_report(
     llm,
     primary_analysis: str,
+    mini_report: str,
     events_found: int,
     mitre_context: str,
     agent2_report: str,
     severity_level_id: int,
     threat_type_id: int,
-    mitre_techniques: list[str],
+    mitre_techniques: list[dict],
     yara_context: str,
     yara_count: int,
     sigma_context: str,
     sigma_count: int,
-) -> dict:
+) -> dict[str, Any]:
     """Generate final report using Agent 3 chain.
 
     Args:
         llm: Language model
         primary_analysis: Primary analysis from Agent 1
         events_found: Number of events found by Agent 1
-        mitre_context: MITRE ATT&CK context from RAG
+        mitre_context: MITRE ATT&CK context from RAG (formatted text)
         agent2_report: Detailed report from Agent 2
         severity_level_id: Severity level from Agent 2
         threat_type_id: Threat type from Agent 2
-        mitre_techniques: List of MITRE technique IDs
+        mitre_techniques: List of MITRE technique dicts with:
+            - technique_id: str
+            - name: str
+            - timestamp: str | None
+            - event: str
+            - log_line: str
         yara_context: Formatted YARA scan results
         yara_count: Number of YARA matches
         sigma_context: Formatted Sigma scan results
@@ -160,12 +167,20 @@ async def generate_final_report(
     chain = create_agent3_chain(llm)
 
     mitre_techniques_str = (
-        ", ".join(mitre_techniques) if mitre_techniques else "Не определены"
+        ", ".join(
+            [
+                f"{t.get('technique_id', '?')} ({t.get('name', '?')})"
+                for t in mitre_techniques
+            ]
+        )
+        if mitre_techniques
+        else "No MITRE techniques found"
     )
 
     result = await chain.ainvoke(
         {
             "primary_analysis": primary_analysis,
+            "mini_report": mini_report,
             "events_found": events_found,
             "mitre_context": mitre_context,
             "agent2_report": agent2_report,
@@ -182,7 +197,6 @@ async def generate_final_report(
     report_text = result
     metadata = parse_agent3_metadata(report_text)
 
-    # Remove metadata block from report
     if "---META---" in report_text:
         meta_start = report_text.index("---META---")
         report_text = report_text[:meta_start].strip()

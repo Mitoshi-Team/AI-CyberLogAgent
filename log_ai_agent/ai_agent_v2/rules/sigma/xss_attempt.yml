@@ -1,0 +1,50 @@
+title: XSS Attempt Detection
+id: apache-xss-001
+status: experimental
+description: Detects Cross-Site Scripting (XSS) attempts in web requests.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1183/
+tags:
+    - attack.initial_access
+    - attack.t1183
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_script:
+        query|contains:
+            - '<script'
+            - '</script>'
+        message|contains:
+            - '<script'
+            - '</script>'
+    selection_event:
+        query|contains:
+            - 'onerror='
+            - 'onload='
+            - 'onclick='
+            - 'onmouseover='
+        message|contains:
+            - 'onerror='
+            - 'onload='
+    selection_js:
+        query|contains:
+            - 'javascript:'
+            - 'javascript%3a'
+            - 'alert('
+            - 'String.fromCharCode'
+        message|contains:
+            - 'javascript:'
+            - 'alert('
+    selection_cookie:
+        query|contains:
+            - 'document.cookie'
+            - 'document.write'
+        message|contains:
+            - 'document.cookie'
+    condition: selection_script or selection_event or selection_js or selection_cookie
+falsepositives:
+    - Legitimate JavaScript in URLs (rare)
+level: medium

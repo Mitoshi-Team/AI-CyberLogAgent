@@ -52,7 +52,7 @@ class AgentConfig:
 
     # Ollama settings
     ollama_url: str = ""
-    ollama_model: str = "qwen2.5:7b"
+    ollama_model: str = ""
 
     # Common LLM settings
     temperature: float = 0.1
@@ -82,7 +82,7 @@ class AgentConfig:
         if not self.ollama_url:
             self.ollama_url = os.getenv("OLLAMA_URL", "")
         if not self.ollama_model:
-            self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+            self.ollama_model = os.getenv("OLLAMA_MODEL", "")
 
         if not self.chroma_path:
             self.chroma_path = str(Path(__file__).parent / "chroma_db")
@@ -102,7 +102,7 @@ class AgentConfig:
             gigachat_api_key=os.getenv("GIGACHAT_API_KEY", ""),
             gigachat_model=os.getenv("GIGACHAT_MODEL", "GigaChat-2-Max"),
             ollama_url=os.getenv("OLLAMA_URL", ""),
-            ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:7b"),
+            ollama_model=os.getenv("OLLAMA_MODEL", "TinyLlama:1.1b"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4000")),
             timeout=int(os.getenv("LLM_TIMEOUT", "90")),

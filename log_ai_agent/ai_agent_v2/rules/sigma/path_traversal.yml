@@ -1,0 +1,45 @@
+title: Path Traversal Attempt Detection
+id: apache-path-traversal-001
+status: experimental
+description: Detects path traversal (directory traversal) attempts to access unauthorized files.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1005/
+tags:
+    - attack.collection
+    - attack.t1005
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_traversal:
+        query|contains:
+            - '../'
+            - '..\\'
+            - '%2e%2e%2f'
+            - '%2e%2e/'
+            - '..%2f'
+        message|contains:
+            - '../'
+            - '..\\'
+            - 'script not found'
+            - 'unable to stat'
+    selection_sensitive:
+        query|contains:
+            - '/etc/passwd'
+            - '/etc/shadow'
+            - '/etc/hosts'
+            - 'c:\\windows'
+            - 'c:\\boot'
+            - '/var/log'
+            - '/proc/self'
+            - '/.ssh/'
+        message|contains:
+            - 'etc/passwd'
+            - 'etc/shadow'
+            - 'security violation'
+    condition: selection_traversal or selection_sensitive
+falsepositives:
+    - Legitimate access to version control files
+level: high

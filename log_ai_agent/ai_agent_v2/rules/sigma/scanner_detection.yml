@@ -1,0 +1,37 @@
+title: Known Scanner User-Agent Detection
+id: apache-scanner-ua-001
+status: experimental
+description: Detects known security scanner tools in user-agent headers.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1046/
+tags:
+    - attack.discovery
+    - attack.t1046
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_scanner:
+        user_agent|contains:
+            - 'sqlmap'
+            - 'nikto'
+            - 'nmap'
+            - 'masscan'
+            - 'dirbuster'
+            - 'gobuster'
+            - 'hydra'
+            - 'metasploit'
+            - 'burp'
+            - 'zap'
+            - 'wpscan'
+            - 'acunetix'
+            - 'netsparker'
+            - 'appscan'
+            - 'havij'
+    condition: selection_scanner
+falsepositives:
+    - Legitimate security testing
+    - Vulnerability scanning by authorized parties
+level: medium
