@@ -15,7 +15,7 @@ from langchain_core.prompts import (
 from langchain_core.runnables import RunnableSequence
 
 from ..models_types import SuspiciousEvent
-from ..parsers import ApacheLogParser, parse_log_content
+from ..parsers import parse_log_content
 from ..prompts import (
     PRIMARY_ANALYSIS_SYSTEM_PROMPT,
     PRIMARY_ANALYSIS_USER_PROMPT_V2,
@@ -57,6 +57,7 @@ def extract_timestamp_from_log_line(log_line: str) -> str | None:
 
     Returns:
         Timestamp string or None
+
     """
     syslog_pattern = re.compile(r"^\[([^\]]+)\]")
     clf_pattern = re.compile(r"\[(\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2})")
@@ -80,6 +81,7 @@ def build_log_line_mapping(log_content: str) -> dict[str, str]:
 
     Returns:
         Dictionary mapping log line prefixes to full lines with timestamps
+
     """
     parsed_logs = parse_log_content(log_content)
     mapping = {}
@@ -101,6 +103,7 @@ def parse_events_from_response(response: str) -> list[SuspiciousEvent]:
 
     Returns:
         List of SuspiciousEvent dictionaries
+
     """
     events = []
 
@@ -131,6 +134,7 @@ def extract_mini_report(response: str) -> str:
 
     Returns:
         Mini report text
+
     """
     mini_match = re.search(
         r"##\s*Краткий отчёт\s*\n\s*([\s\S]*?)(?=\n##|\n---EVENTS---|$)",

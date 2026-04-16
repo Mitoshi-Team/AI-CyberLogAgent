@@ -67,6 +67,7 @@ class YaraEngine:
 
         Returns:
             List of match dictionaries with rule info and matched content.
+
         """
         if self._rules is None:
             logger.warning("YARA rules not loaded, skipping scan")
@@ -118,6 +119,7 @@ class YaraEngine:
 
         Returns:
             List of match dictionaries.
+
         """
         if self._rules is None:
             return []

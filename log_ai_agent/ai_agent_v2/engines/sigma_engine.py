@@ -105,6 +105,7 @@ class SigmaEngine:
 
         Returns:
             List of (field, modifier, value) tuples.
+
         """
         parsed = []
 
@@ -130,6 +131,7 @@ class SigmaEngine:
 
         Returns:
             List of match dictionaries with rule info and matched fields.
+
         """
         results = []
 
@@ -164,6 +166,7 @@ class SigmaEngine:
 
         Returns:
             List of match dictionaries.
+
         """
         results = []
 

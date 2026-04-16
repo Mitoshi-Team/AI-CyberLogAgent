@@ -569,7 +569,7 @@ async def main():
         sigma_rules_path=sigma_path,
     )
     print("   Pipeline created")
-    print(f"   RAG: enabled")
+    print("   RAG: enabled")
     print(
         f"   YARA: {pipeline._nodes.yara_engine.rules_count if pipeline._nodes.yara_engine else 0} rules"
     )
@@ -643,7 +643,7 @@ async def main():
         print(f"       MITRE techniques: {agent3.get('mitre_techniques', [])}")
         print(f"       YARA rules: {agent3.get('yara_rules', [])}")
         print(f"       Sigma rules: {agent3.get('sigma_rules', [])}")
-        print(f"\n   Report preview:")
+        print("\n   Report preview:")
         print(f"   {agent3.get('final_report', '')}")
 
     print(f"\n   Total time: {results.get('total_time_sec', 0):.1f}s")

@@ -7,7 +7,6 @@ Each node takes AnalysisState as input and returns a partial state update.
 import asyncio
 import logging
 import time
-from typing import Any
 
 from langchain_core.language_models import BaseLanguageModel
 
@@ -17,8 +16,7 @@ from ..knowledge_base.manager import ChromaDBManager
 from ..models_types import AnalysisState, MITRETechnique, SuspiciousEvent
 from ..parsers.apache_parser import ApacheLogParser
 from .agent1 import analyze_logs_primary, create_agent1_chain
-from .agent2 import generate_final_report as generate_agent2_report
-from .rag_chain import rag_search_single_event, retrieve_mitre_context
+from .rag_chain import rag_search_single_event
 
 logger = logging.getLogger(__name__)
 

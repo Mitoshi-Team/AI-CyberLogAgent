@@ -101,7 +101,7 @@ async def test_yara_sigma_engines():
 
     print(f"\n1. Loading YARA rules from: {yara_path}")
     yara_engine = YaraEngine(yara_path)
-    print(f"   [OK] YARA engine initialized")
+    print("   [OK] YARA engine initialized")
 
     print(f"\n2. Loading Sigma rules from: {sigma_path}")
     sigma_engine = SigmaEngine(sigma_path)
