@@ -98,7 +98,7 @@
           messages.length ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >
-        <div v-if="messages.length === 0" class="mb-1 text-center select-none">
+        <div v-if="isHistoryLoaded && messages.length === 0" class="mb-1 text-center select-none">
           <img
             src="/wavescan_chat_logo.svg"
             alt="wavescan agent"
@@ -325,6 +325,7 @@ const lastMessageTime = ref(0)
 const isRateLimited = ref(false)
 const isEmptyFile = ref(false)
 const showNewChatModal = ref(false)
+const isHistoryLoaded = ref(false)
 const topAlignSpacerHeight = ref(0)
 const showCustomScrollbar = ref(false)
 const scrollbarThumbHeight = ref(0)
@@ -355,6 +356,7 @@ onMounted(async () => {
   
   // Загружаем историю чата из БД
   await loadChatHistory()
+  isHistoryLoaded.value = true
 })
 
 // Функция загрузки истории чата

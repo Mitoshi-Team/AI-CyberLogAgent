@@ -11,11 +11,11 @@
         <div class="flex gap-4 items-start">
           <div class="grid grid-cols-4 gap-4 flex-1">
             <div>
-              <label class="block text-sm font-medium text-[#949daf] mb-2">С даты</label>
+              <label class="block text-sm font-medium text-[#949daf] mb-2">Начало периода</label>
               <input v-model="dateFrom" type="date" class="w-full px-4 py-2 bg-[#252525] border border-[#2d313d] text-[#d6dceb] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent placeholder-[#6d7588]" @change="loadHistory" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-[#949daf] mb-2">По дату</label>
+              <label class="block text-sm font-medium text-[#949daf] mb-2">Конец периода</label>
               <input v-model="dateTo" type="date" class="w-full px-4 py-2 bg-[#252525] border border-[#2d313d] text-[#d6dceb] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent placeholder-[#6d7588]" @change="loadHistory" />
             </div>
             <div>
