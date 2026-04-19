@@ -1,6 +1,7 @@
 """Type definitions for LangGraph compatibility."""
 
-from typing import TypedDict
+from typing import Annotated, TypedDict, List
+import operator
 
 from .parsers.apache_parser import ParsedLog
 
@@ -83,12 +84,12 @@ class AnalysisState(TypedDict, total=False):
 
     # ===== YARA SCAN OUTPUT =====
     yara_matches: list[dict]
-    yara_rules_matched: list[str]
+    yara_rules_matched:
     yara_context: str
 
     # ===== SIGMA SCAN OUTPUT =====
     sigma_matches: list[dict]
-    sigma_rules_matched: list[str]
+    sigma_rules_matched: Annotated[List[str], operator.add]
     sigma_context: str
 
     # ===== AGENT 3 OUTPUT (FINAL) =====
