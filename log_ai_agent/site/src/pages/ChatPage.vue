@@ -61,7 +61,29 @@
                 class="markdown-content text-base leading-relaxed text-dark-200 text-left break-words"
                 v-html="renderMarkdown(msg.text)"
               ></div>
-              <p class="text-xs text-dark-500 mt-2 text-left">Wavescan assistant</p>
+              <div class="mt-2 inline-flex items-center gap-2 mb-7">
+                <p class="text-xs text-[#ABABBF] text-left">Wavescan assistant</p>
+                <button
+                  type="button"
+                  class="copy-message-btn"
+                  :title="copiedMessageIndex === index ? 'Скопировано' : 'Копировать сообщение'"
+                  :aria-label="copiedMessageIndex === index ? 'Сообщение скопировано' : 'Копировать сообщение ассистента'"
+                  @click="copyMessageText(msg.text, index)"
+                >
+                  <svg
+                    v-if="copiedMessageIndex === index"
+                    class="w-4 h-4"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 10.5l4 4 8-8" />
+                  </svg>
+                  <img v-else src="/copy_icon.svg" alt="copy" class="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -176,7 +198,7 @@
                 ]"
                 title="Загрузить .log файл"
               >
-                <img src="/attachment_icon.svg" alt="attach" class="w-3.5 h-4" />
+                <img src="/attachment_icon.svg" alt="attach" class="w-3.5 h-4 attachment-icon attachment-ico" />
               </button>
 
               <div class="flex items-center gap-2">
@@ -332,8 +354,10 @@ const scrollbarThumbHeight = ref(0)
 const scrollbarThumbTop = ref(0)
 const isDraggingScrollbar = ref(false)
 const scrollbarDragStartOffset = ref(0)
+const copiedMessageIndex = ref(null)
 let clearNotificationsTimer = null
 let logUploadAbortController = null
+let copyResetTimer = null
 
 // Константы ограничений
 const MAX_MESSAGE_LENGTH = 500
@@ -714,6 +738,40 @@ const handleMessageInput = () => {
   adjustTextareaHeight()
 }
 
+const copyMessageText = async (text, index) => {
+  if (!text) {
+    return
+  }
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', '')
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+
+    copiedMessageIndex.value = index
+    if (copyResetTimer) {
+      clearTimeout(copyResetTimer)
+    }
+    copyResetTimer = setTimeout(() => {
+      copiedMessageIndex.value = null
+      copyResetTimer = null
+    }, 1800)
+  } catch (error) {
+    console.error('Failed to copy message text:', error)
+    appStore.addNotification('Не удалось скопировать сообщение', 'error')
+  }
+}
+
 const handleShiftEnter = (event) => {
   const currentValue = inputMessage.value || ''
 
@@ -959,6 +1017,11 @@ onUnmounted(() => {
   if (isLogAnalysisInProgress.value && logUploadAbortController) {
     logUploadAbortController.abort()
   }
+
+  if (copyResetTimer) {
+    clearTimeout(copyResetTimer)
+    copyResetTimer = null
+  }
 })
 
 const confirmNewChat = async () => {
@@ -1094,6 +1157,39 @@ const confirmNewChat = async () => {
   border-color: #3c3c3c;
   color: #8f94a3;
   transform: none;
+}
+
+.attachment-icon,
+.attachment-ico {
+  filter: brightness(0.66);
+  transition: filter 0.2s ease;
+}
+
+button:hover .attachment-icon,
+button:hover .attachment-ico {
+  filter: brightness(0.80);
+}
+
+.copy-message-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  color: #b5bac7;
+  transition: all 0.2s ease;
+}
+
+.copy-message-btn:hover {
+  border-color: #6878ff;
+  color: #e6e9ff;
+  background: #2c3140;
+}
+
+.copy-message-btn:active {
+  transform: translateY(1px);
 }
 
 /* Стили для markdown контента */
