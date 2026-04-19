@@ -94,7 +94,7 @@
 
       <div
         :class="[
-          'mx-auto w-full max-w-3xl pb-6 shrink-0 transform mt-2',
+          'mx-auto w-full max-w-3xl pb-6 shrink-0 transform',
           messages.length ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >

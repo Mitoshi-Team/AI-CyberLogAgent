@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shutil
@@ -539,7 +540,27 @@ async def _serve_websocket(websocket: WebSocket):
     try:
         while True:
             # Keep connection alive; client messages are optional in current flow.
-            await websocket.receive_text()
+            message = await websocket.receive()
+
+            if message.get("type") == "websocket.disconnect":
+                break
+
+            text_payload = message.get("text")
+            if not text_payload:
+                continue
+
+            try:
+                payload = json.loads(text_payload)
+            except json.JSONDecodeError:
+                continue
+
+            if payload.get("type") == "ping":
+                await websocket.send_json(
+                    {
+                        "type": "pong",
+                        "ts": datetime.now(UTC).isoformat(),
+                    }
+                )
     except WebSocketDisconnect:
         realtime_hub.disconnect(websocket)
     except Exception as error:
