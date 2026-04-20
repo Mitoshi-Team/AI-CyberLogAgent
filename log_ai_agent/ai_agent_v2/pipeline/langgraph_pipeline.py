@@ -76,6 +76,7 @@ def build_analysis_graph(
 
     workflow = StateGraph(AnalysisState)
 
+    workflow.add_node("prefilter", nodes.prefilter_node)
     workflow.add_node("agent1", nodes.agent1_node)
     workflow.add_node("parse_logs", nodes.parse_logs_node)
     workflow.add_node("agent2", nodes.agent2_node)
@@ -83,10 +84,24 @@ def build_analysis_graph(
     workflow.add_node("sigma_scan", nodes.sigma_scan_node)
     workflow.add_node("agent3", nodes.agent3_node)
 
-    workflow.add_edge("agent1", "agent2")
+    workflow.add_edge("prefilter", "agent1")
+    workflow.add_edge("prefilter", "parse_logs")
 
     workflow.add_edge("parse_logs", "yara_scan")
     workflow.add_edge("parse_logs", "sigma_scan")
+
+    # Conditional edge: if no events found by agent1, skip agent2 (RAG) and go directly to agent3
+    def should_skip_agent2(state):
+        return state.get("events_found", 0) == 0
+
+    workflow.add_conditional_edges(
+        "agent1",
+        should_skip_agent2,
+        {
+            True: "agent3",  # Skip agent2
+            False: "agent2",
+        },
+    )
 
     workflow.add_edge("agent2", "agent3")
     workflow.add_edge("yara_scan", "agent3")
@@ -94,8 +109,7 @@ def build_analysis_graph(
 
     workflow.add_edge("agent3", END)
 
-    workflow.add_edge(START, "agent1")
-    workflow.add_edge(START, "parse_logs")
+    workflow.add_edge(START, "prefilter")
 
     graph = workflow.compile()
 
@@ -148,6 +162,7 @@ class LogAnalysisPipeline:
             sigma_engine=sigma_engine,
             use_rag=self.use_rag,
             rag_top_k=self.rag_top_k,
+            rag_parallelism=8,  # Increased from default 3 for better parallelism
         )
         self._graph = build_analysis_graph(self._nodes)
 
@@ -216,6 +231,11 @@ class LogAnalysisPipeline:
 
             elapsed = time.time() - start_time
 
+            results["stages"]["prefilter"] = {
+                "success": True,
+                "stats": final_state.get("prefilter_stats", {}),
+            }
+
             results["stages"]["agent1"] = {
                 "success": True,
                 "primary_analysis": final_state.get("primary_analysis", ""),
@@ -224,10 +244,19 @@ class LogAnalysisPipeline:
                 "events_found": final_state.get("events_found", 0),
             }
 
+            # Agent 2 stage (contains RAG processing results + agent2 report)
             results["stages"]["agent2"] = {
                 "success": True,
                 "mitre_context": final_state.get("mitre_context", ""),
                 "mitre_techniques": final_state.get("mitre_techniques_final", []),
+                "technique_ids": final_state.get("technique_ids", []),
+                "agent2_report": final_state.get("agent2_report", ""),
+            }
+
+            # Separate RAG stage for test compatibility
+            results["stages"]["rag"] = {
+                "success": True,
+                "techniques_count": len(final_state.get("mitre_techniques_final", [])),
                 "technique_ids": final_state.get("technique_ids", []),
             }
 

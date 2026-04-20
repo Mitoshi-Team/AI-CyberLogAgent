@@ -16,6 +16,7 @@ from ..knowledge_base.manager import ChromaDBManager
 from ..models_types import AnalysisState, MITRETechnique, SuspiciousEvent
 from ..parsers.apache_parser import ApacheLogParser
 from .agent1 import analyze_logs_primary, create_agent1_chain
+from .prefilter import prefilter_logs
 from .rag_chain import rag_search_single_event
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class PipelineNodes:
         sigma_engine: SigmaEngine | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
+        rag_parallelism: int = 5,
     ):
         self.llm = llm
         self.chroma_mgr = chroma_mgr
@@ -48,7 +50,40 @@ class PipelineNodes:
         self.rag_top_k = rag_top_k
 
         self._agent1_chain = create_agent1_chain(llm)
-        self._rag_semaphore = asyncio.Semaphore(3)
+        self._rag_semaphore = asyncio.Semaphore(rag_parallelism)
+
+    async def prefilter_node(self, state: AnalysisState) -> dict:
+        """Node: Pre-filter logs to reduce volume before expensive processing.
+
+        Reads: log_content
+        Writes: log_content (filtered), prefilter_stats
+        """
+        logger.info("[Node] Pre-filter: lightweight log filtering")
+        start = time.time()
+
+        try:
+            log_content = state["log_content"]
+
+            # Apply lightweight pre-filtering
+            filtered_content, stats = prefilter_logs(log_content)
+
+            logger.info(
+                f"[Node] Pre-filter complete: {stats['kept_lines']}/{stats['original_lines']} "
+                f"lines kept ({stats['filter_ratio']:.1%}) in {time.time() - start:.1f}s"
+            )
+
+            return {
+                "log_content": filtered_content,
+                "prefilter_stats": stats,
+            }
+
+        except Exception as e:
+            logger.exception(f"[Node] Pre-filter failed: {e}")
+            # Return original content on error to avoid breaking pipeline
+            return {
+                "log_content": state["log_content"],
+                "prefilter_stats": {"error": str(e)},
+            }
 
     async def agent1_node(self, state: AnalysisState) -> dict:
         """Node: Agent 1 — Primary log analysis.

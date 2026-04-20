@@ -1,6 +1,7 @@
 """Type definitions for LangGraph compatibility."""
 
-from typing import TypedDict
+import operator
+from typing import Annotated, List, TypedDict
 
 from .parsers.apache_parser import ParsedLog
 
@@ -82,13 +83,13 @@ class AnalysisState(TypedDict, total=False):
     agent2_report: str
 
     # ===== YARA SCAN OUTPUT =====
-    yara_matches: list[dict]
-    yara_rules_matched: list[str]
+    yara_matches: Annotated[list[str], operator.add]
+    yara_rules_matched: Annotated[list[str], operator.add]
     yara_context: str
 
     # ===== SIGMA SCAN OUTPUT =====
-    sigma_matches: list[dict]
-    sigma_rules_matched: list[str]
+    sigma_matches: Annotated[list[str], operator.add]
+    sigma_rules_matched: Annotated[list[str], operator.add]
     sigma_context: str
 
     # ===== AGENT 3 OUTPUT (FINAL) =====
@@ -103,6 +104,7 @@ class AnalysisState(TypedDict, total=False):
     total_time_sec: float
     log_size: int
     processing_time_ms: float
+    prefilter_stats: dict
 
 
 class PipelineResult(TypedDict, total=False):
