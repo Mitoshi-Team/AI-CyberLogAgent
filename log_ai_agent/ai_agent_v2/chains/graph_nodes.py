@@ -16,8 +16,8 @@ from ..knowledge_base.manager import ChromaDBManager
 from ..models_types import AnalysisState, MITRETechnique, SuspiciousEvent
 from ..parsers.apache_parser import ApacheLogParser
 from .agent1 import analyze_logs_primary, create_agent1_chain
-from .rag_chain import rag_search_single_event
 from .prefilter import prefilter_logs
+from .rag_chain import rag_search_single_event
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class PipelineNodes:
 
     async def prefilter_node(self, state: AnalysisState) -> dict:
         """Node: Pre-filter logs to reduce volume before expensive processing.
-        
+
         Reads: log_content
         Writes: log_content (filtered), prefilter_stats
         """
@@ -63,20 +63,20 @@ class PipelineNodes:
 
         try:
             log_content = state["log_content"]
-            
+
             # Apply lightweight pre-filtering
             filtered_content, stats = prefilter_logs(log_content)
-            
+
             logger.info(
                 f"[Node] Pre-filter complete: {stats['kept_lines']}/{stats['original_lines']} "
                 f"lines kept ({stats['filter_ratio']:.1%}) in {time.time() - start:.1f}s"
             )
-            
+
             return {
                 "log_content": filtered_content,
                 "prefilter_stats": stats,
             }
-            
+
         except Exception as e:
             logger.exception(f"[Node] Pre-filter failed: {e}")
             # Return original content on error to avoid breaking pipeline

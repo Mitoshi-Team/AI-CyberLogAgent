@@ -100,7 +100,7 @@ def build_analysis_graph(
         {
             True: "agent3",  # Skip agent2
             False: "agent2",
-        }
+        },
     )
 
     workflow.add_edge("agent2", "agent3")
