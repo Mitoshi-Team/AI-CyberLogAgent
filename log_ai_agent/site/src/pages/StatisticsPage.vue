@@ -27,7 +27,7 @@
         <div v-if="loadingActivity" class="text-center py-8 text-[#7f8799] text-sm sm:text-base">
           Загрузка данных активности...
         </div>
-        <div v-else class="h-48 sm:h-56 md:h-64 flex items-end justify-center gap-1 sm:gap-2 overflow-x-auto pt-2">
+        <div v-else class="h-64 sm:h-64 md:h-64 flex items-end justify-center gap-1 sm:gap-2 overflow-x-auto pt-2">
           <div v-for="(item, index) in activityData" :key="index" class="flex flex-col items-center gap-1 sm:gap-2 group flex-shrink-0 relative">
             <div
               class="bg-gradient-to-t from-[#646ff2] to-[#7c74f5] rounded-t-lg hover:from-[#6f79ff] hover:to-[#8f88ff] transition-all duration-300 shadow-lg shadow-[#6d74f0]/20 group-hover:shadow-[#6d74f0]/40 cursor-pointer relative overflow-visible"
