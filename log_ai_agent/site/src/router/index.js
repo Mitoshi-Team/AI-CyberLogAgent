@@ -44,7 +44,7 @@ const routes = [
     path: '/config',
     name: 'Config',
     component: () => import('@/pages/ConfigPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/:pathMatch(.*)*',
@@ -79,6 +79,8 @@ router.beforeEach(async (to, from, next) => {
 
   if (to.meta.requiresAuth && !appStore.isAuthenticated) {
     next('/login')
+  } else if (to.meta.requiresAdmin && !appStore.isAdmin) {
+    next('/chat')
   } else if (to.path === '/login' && appStore.isAuthenticated) {
     next('/')
   } else {

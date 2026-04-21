@@ -1919,6 +1919,8 @@ async def upload_log_file(
 # Словарь доступных команд
 AVAILABLE_COMMANDS = {
     "register": "Зарегистрировать нового пользователя",
+    "users": "Показать всех пользователей и признак администратора",
+    "set_admin": "Назначить/снять админа: set_admin <login> <on|off>",
     "agent_logs": "Просмотр логов агента (опционально: agent_logs <limit>)",
     "user_logs": "Просмотр логов пользователей (опционально: user_logs <limit>)",
     "pipeline_lines": "Показать текущее количество строк в external и processed",
@@ -2062,6 +2064,48 @@ def show_user_logs(limit: int = 50):
         conn.close()
     except Exception as e:
         print(f"❌ Ошибка получения логов пользователей: {e}")
+
+
+def show_users_with_admin_flags() -> None:
+    """Show all users with admin status for CLI."""
+    try:
+        users = commands.list_users_admin_status()
+        print("\n" + "=" * 60)
+        print("  Пользователи")
+        print("=" * 60)
+
+        if not users:
+            print("\nПользователи не найдены\n")
+            return
+
+        for user in users:
+            role = "admin" if user.get("is_admin") else "user"
+            print(f"{user.get('login')} | is_admin={str(bool(user.get('is_admin'))).lower()} | role={role}")
+        print("")
+    except Exception as e:
+        print(f"❌ Ошибка получения списка пользователей: {e}")
+
+
+def update_user_admin_role(parts: list[str]) -> None:
+    """Grant/revoke admin role for user from CLI command args."""
+    if len(parts) < 3:
+        print("❌ Использование: set_admin <login> <on|off>")
+        return
+
+    login = parts[1].strip()
+    mode = parts[2].strip().lower()
+    if mode not in {"on", "off"}:
+        print("❌ Третий аргумент должен быть on или off")
+        return
+
+    try:
+        success, message = commands.set_user_admin_status(login, mode == "on")
+        if success:
+            print(f"✅ {message}")
+        else:
+            print(f"❌ {message}")
+    except Exception as e:
+        print(f"❌ Ошибка обновления прав администратора: {e}")
 
 
 def _count_lines_in_file(path: Path) -> int:
@@ -2643,6 +2687,10 @@ def execute_command(command: str):
         show_help()
     elif cmd == "register":
         commands.register()
+    elif cmd == "users":
+        show_users_with_admin_flags()
+    elif cmd == "set_admin":
+        update_user_admin_role(parts)
     elif cmd == "agent_logs":
         limit = _parse_limit_arg(parts)
         show_agent_logs(limit)
@@ -2741,7 +2789,7 @@ def run_cli():
         show_help()
         sys.exit(1)
 
-    command = sys.argv[1]
+    command = " ".join(sys.argv[1:])
 
     # Обработка команды help
     if command in ["--help", "-h", "help"]:

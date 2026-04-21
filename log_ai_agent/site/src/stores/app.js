@@ -11,6 +11,7 @@ export const useAppStore = defineStore('app', () => {
   const isAuthenticated = ref(false)
   const currentUser = ref(null)
   const token = ref(localStorage.getItem('auth_token') || null)
+  const isAdmin = computed(() => Boolean(currentUser.value?.isAdmin))
   
   // Состояние Sidebar
   const sidebarCollapsed = ref(false)
@@ -30,8 +31,12 @@ export const useAppStore = defineStore('app', () => {
     
     if (savedToken && savedUser) {
       try {
+        const parsedUser = JSON.parse(savedUser)
         token.value = savedToken
-        currentUser.value = JSON.parse(savedUser)
+        currentUser.value = {
+          ...parsedUser,
+          isAdmin: Boolean(parsedUser?.isAdmin),
+        }
         isAuthenticated.value = true
       } catch (error) {
         console.error('Error restoring session:', error)
@@ -87,6 +92,7 @@ export const useAppStore = defineStore('app', () => {
           id: data.user.user_id,
           username: data.user.login,
           email: `${data.user.login}@cyberagent.com`,
+          isAdmin: Boolean(data.user.is_admin),
         }
         token.value = data.token
         
@@ -312,6 +318,7 @@ export const useAppStore = defineStore('app', () => {
     isAuthenticated,
     currentUser,
     token,
+    isAdmin,
     sidebarCollapsed,
     notifications,
     incidents,

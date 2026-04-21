@@ -289,11 +289,15 @@ ALTER TABLE public."UserLogs" ALTER COLUMN user_log_id ADD GENERATED ALWAYS AS I
 CREATE TABLE IF NOT EXISTS public."Users" (
     user_id integer NOT NULL,
     login text NOT NULL,
-    password_hash text NOT NULL
+    password_hash text NOT NULL,
+    is_admin boolean NOT NULL DEFAULT false
 );
 
 
 ALTER TABLE public."Users" OWNER TO postgres;
+
+ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
 
 --
 -- TOC entry 219 (class 1259 OID 16389)

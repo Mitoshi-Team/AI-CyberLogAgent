@@ -135,7 +135,7 @@ const logout = async () => {
   router.push('/login')
 }
 
-const menuItems = [
+const menuItems = computed(() => [
   {
     to: '/chat',
     label: 'Чат',
@@ -156,7 +156,7 @@ const menuItems = [
     label: 'Конфиг',
     icon: '/config_panel_icon.svg',
   },
-]
+].filter((item) => item.to !== '/config' || appStore.isAdmin))
 </script>
 
 <style scoped>

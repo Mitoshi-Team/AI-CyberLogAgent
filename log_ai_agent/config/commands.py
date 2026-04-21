@@ -118,7 +118,7 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
         # Получаем пользователя из БД
         cursor.execute(
-            'SELECT user_id, login, password_hash FROM public."Users" WHERE login = %s',
+            'SELECT user_id, login, password_hash, is_admin FROM public."Users" WHERE login = %s',
             (login,),
         )
         user = cursor.fetchone()
@@ -141,7 +141,11 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
         if bcrypt.checkpw(password_bytes, stored_hash_bytes):
             print(f"Успешная авторизация для {login}")
-            return True, {"user_id": user["user_id"], "login": user["login"]}
+            return True, {
+                "user_id": user["user_id"],
+                "login": user["login"],
+                "is_admin": bool(user.get("is_admin", False)),
+            }
 
         print(f"Неверный пароль для {login}")
         return False, None
@@ -241,8 +245,8 @@ def register():
 
         # Вставляем нового пользователя в БД
         cursor.execute(
-            'INSERT INTO public."Users" (login, password_hash) VALUES (%s, %s) RETURNING user_id',
-            (login, password_hash.decode("utf-8")),
+            'INSERT INTO public."Users" (login, password_hash, is_admin) VALUES (%s, %s, %s) RETURNING user_id',
+            (login, password_hash.decode("utf-8"), False),
         )
         user_id = cursor.fetchone()["user_id"]
 
@@ -259,3 +263,52 @@ def register():
         if "conn" in locals():
             conn.rollback()
             conn.close()
+
+
+def list_users_admin_status() -> list[dict]:
+    """Return all users with admin flag."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            """
+            SELECT user_id, login, is_admin
+            FROM public."Users"
+            ORDER BY login ASC
+            """
+        )
+        rows = cursor.fetchall() or []
+        return [dict(row) for row in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_user_admin_status(login: str, is_admin: bool) -> tuple[bool, str]:
+    """Grant or revoke admin flag for user by login."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            """
+            UPDATE public."Users"
+            SET is_admin = %s
+            WHERE login = %s
+            RETURNING user_id, login, is_admin
+            """,
+            (is_admin, login),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False, f"Пользователь '{login}' не найден"
+
+        conn.commit()
+        status_text = "администратор" if row["is_admin"] else "обычный пользователь"
+        return True, f"Пользователь '{row['login']}' обновлен: {status_text}"
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()

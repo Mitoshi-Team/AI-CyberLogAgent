@@ -205,6 +205,16 @@ docker exec -it {BACKEND_CONTAINER_NAME} python app.py interactive
 register
 ```
 
+3. Управление правами администратора и просмотр пользователей
+
+```bash
+users
+set_admin <login> on
+set_admin <login> off
+```
+
+> Раздел **«Конфиг»** в веб-интерфейсе доступен только пользователям с `is_admin = true`.
+
 ## Интерфейс
 
 ![Страница авторизации](./log_ai_agent/src/page1.png)
