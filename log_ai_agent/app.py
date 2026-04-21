@@ -7,6 +7,7 @@ import sys
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from fastapi import (
     File,
     HTTPException,
     UploadFile,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -162,6 +164,8 @@ runtime_analysis_state: dict[str, object] = {
     "last_events_found": None,
     "last_error": None,
 }
+log_upload_cancel_events: dict[int, asyncio.Event] = {}
+log_upload_cancel_lock = asyncio.Lock()
 
 
 def _mark_runtime_processing(
@@ -203,6 +207,30 @@ def _mark_runtime_idle(
         )
         marker_file = _resolve_analysis_marker_file(processed_dir)
         _write_analysis_marker(marker_file, completed_marker)
+
+
+async def _start_log_upload_cancellation_scope(user_id: int) -> asyncio.Event:
+    """Create/reset cancellation flag for an active log upload."""
+    async with log_upload_cancel_lock:
+        cancel_event = asyncio.Event()
+        log_upload_cancel_events[user_id] = cancel_event
+        return cancel_event
+
+
+async def _finish_log_upload_cancellation_scope(
+    user_id: int, cancel_event: asyncio.Event
+) -> None:
+    """Remove cancellation flag only for the same active upload scope."""
+    async with log_upload_cancel_lock:
+        current_event = log_upload_cancel_events.get(user_id)
+        if current_event is cancel_event:
+            del log_upload_cancel_events[user_id]
+
+
+def _raise_if_log_upload_canceled(cancel_event: asyncio.Event) -> None:
+    """Abort request flow if current upload has been cancelled by user."""
+    if cancel_event.is_set():
+        raise HTTPException(status_code=499, detail="Анализ лога отменен пользователем")
 
 
 def _map_severity_for_frontend(severity_level_id: int | None) -> str:
@@ -635,7 +663,7 @@ class LoginResponse(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     user_id: int
-    role: str  # 'user' или 'assistant'
+    role: str  # 'user', 'agent' или 'notice'
     content: str
 
 
@@ -1430,8 +1458,21 @@ async def send_chat_message(request: ChatSendRequest):
         )
 
 
+@app.post("/api/logs/upload/cancel")
+async def cancel_log_upload_analysis(user_id: int):
+    """Cancel active log analysis for a user."""
+    async with log_upload_cancel_lock:
+        cancel_event = log_upload_cancel_events.get(user_id)
+        if cancel_event is not None:
+            cancel_event.set()
+            return {"success": True, "message": "Запрошена отмена анализа лога"}
+
+    return {"success": False, "message": "Активный анализ для отмены не найден"}
+
+
 @app.post("/api/logs/upload")
 async def upload_log_file(
+    request: Request,
     user_id: int,
     file: UploadFile = File(...),
     use_v2: bool = True,
@@ -1452,6 +1493,8 @@ async def upload_log_file(
         use_v2: Deprecated. Анализ всегда выполняется через AI Agent v2.
 
     """
+    cancel_event = await _start_log_upload_cancellation_scope(user_id)
+
     try:
         # Проверяем расширение файла
         if not file.filename.endswith(".log"):
@@ -1499,6 +1542,10 @@ async def upload_log_file(
             f"размер: {len(content_str)} байт, строк: {non_empty_lines_count}"
         )
 
+        if await request.is_disconnected():
+            raise HTTPException(status_code=499, detail="Клиент прервал загрузку")
+        _raise_if_log_upload_canceled(cancel_event)
+
         conn = await asyncpg.connect(DATABASE_URL, timeout=10)
         try:
             await _try_insert_user_log(
@@ -1523,7 +1570,30 @@ async def upload_log_file(
                 AGENT_ACTION_ANALYZE_LOGS,
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
-            analysis_result = await analyze_log_v2(content_str)
+            analyze_task = asyncio.create_task(analyze_log_v2(content_str))
+            cancel_wait_task = asyncio.create_task(cancel_event.wait())
+            done, pending = await asyncio.wait(
+                {analyze_task, cancel_wait_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for pending_task in pending:
+                pending_task.cancel()
+
+            if cancel_wait_task in done and cancel_event.is_set():
+                analyze_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await analyze_task
+                raise HTTPException(
+                    status_code=499, detail="Анализ лога отменен пользователем"
+                )
+
+            analysis_result = await analyze_task
+
+            if await request.is_disconnected():
+                raise HTTPException(status_code=499, detail="Клиент прервал загрузку")
+            _raise_if_log_upload_canceled(cancel_event)
+
             analysis_error = str(analysis_result.get("error") or "")
             lowered_analysis_error = analysis_error.lower()
 
@@ -1558,6 +1628,7 @@ async def upload_log_file(
                 AGENT_ACTION_BUILD_REPORT,
                 "Формирование итогового отчета по результатам анализа",
             )
+            _raise_if_log_upload_canceled(cancel_event)
 
             # Сохраняем содержимое лога
             log_row = await conn.fetchrow(
@@ -1569,6 +1640,7 @@ async def upload_log_file(
                 content_str,
             )
             log_id = log_row["log_id"]
+            _raise_if_log_upload_canceled(cancel_event)
 
             # Создаем отчет на основе анализа GigaChat
             report_row = await conn.fetchrow(
@@ -1631,6 +1703,14 @@ async def upload_log_file(
                 "broadcast_incident_event",
             )
             _schedule_background_task(
+                _broadcast_chat_response_event(
+                    user_id=user_id,
+                    response_text=analysis_result["description"],
+                    mode="manual_upload_report",
+                ),
+                "broadcast_manual_upload_chat_response_event",
+            )
+            _schedule_background_task(
                 _broadcast_report_created_event(
                     report_id=report_id,
                     source="Manual Log Upload",
@@ -1651,6 +1731,8 @@ async def upload_log_file(
         raise HTTPException(
             status_code=500, detail=f"Ошибка при загрузке файла: {str(e)}"
         )
+    finally:
+        await _finish_log_upload_cancellation_scope(user_id, cancel_event)
 
 
 # --- CLI Commands ---

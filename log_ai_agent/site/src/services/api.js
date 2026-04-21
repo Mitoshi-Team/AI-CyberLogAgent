@@ -117,6 +117,8 @@ export const logs = {
       signal: options.signal,
     })
   },
+  cancelUpload: (userId) =>
+    apiClient.post('/logs/upload/cancel', null, { params: { user_id: userId } }),
 }
 
 export default apiClient

@@ -51,6 +51,7 @@ async def _generate_agent_response(
         SELECT role, content, created_at
         FROM public."Messages"
         WHERE user_id = $1
+          AND role IN ('user', 'agent')
         ORDER BY created_at DESC
         LIMIT 10
         """,

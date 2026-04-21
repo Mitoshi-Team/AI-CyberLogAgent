@@ -267,7 +267,11 @@ export const useAppStore = defineStore('app', () => {
       statistics.value.suspiciousCount++
     }
     statistics.value.totalIncidents++
-    addNotification(`Найден новый инцидент!`, 'warning')
+    if (incident.source === 'Manual Log Upload') {
+      addNotification('Отчет по запросу был сформирован', 'info')
+      return
+    }
+    addNotification('Найден новый инцидент!', 'warning')
   }
   
   /**

@@ -43,6 +43,18 @@
             </div>
 
             <div
+              v-else-if="msg.role === 'notice'"
+              :class="[
+                'px-1 py-1',
+                index === messages.length - 1 ? 'mb-12' : 'mb-4'
+              ]"
+            >
+              <p class="text-sm leading-relaxed break-words whitespace-pre-wrap text-[#7f8291]">
+                {{ msg.text }}
+              </p>
+            </div>
+
+            <div
               v-else
               :class="[
                 'p-4 rounded-xl transition-all duration-500',
@@ -409,7 +421,7 @@ const loadChatHistory = async () => {
     if (response.data && response.data.data && response.data.data.length > 0) {
       // Преобразуем сообщения из БД в формат компонента
       messages.value = response.data.data.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'ai',  // 'assistant' или 'agent' -> 'ai'
+        role: msg.role === 'user' ? 'user' : (msg.role === 'notice' ? 'notice' : 'ai'),
         text: msg.content,
         isNew: false,
       }))
@@ -750,6 +762,14 @@ const trimBoundaryEmptyLines = (value) => {
     .replace(/(?:\n[\t ]*)+$/, '')
 }
 
+const pushNoticeMessage = (text) => {
+  messages.value.push({
+    role: 'notice',
+    text,
+    isNew: false,
+  })
+}
+
 const handleMessageInput = () => {
   const normalized = normalizeMessageText(inputMessage.value)
   if (normalized !== inputMessage.value) {
@@ -901,18 +921,28 @@ const sendMessage = async () => {
   }
 }
 
-const cancelLogAnalysis = () => {
+const cancelLogAnalysis = async () => {
   if (!isLogAnalysisInProgress.value || !appStore.chatLogUploadAbortController) return
+
+  const userId = appStore.currentUser?.id
+  if (userId) {
+    try {
+      await logs.cancelUpload(userId)
+    } catch (error) {
+      console.warn('Cancel upload request failed:', error)
+    }
+  }
+
   appStore.chatLogUploadAbortController.abort()
 }
 
-const handleSendControlClick = () => {
+const handleSendControlClick = async () => {
   if (isLogAnalysisInProgress.value) {
-    cancelLogAnalysis()
+    await cancelLogAnalysis()
     return
   }
 
-  sendMessage()
+  await sendMessage()
 }
 
 const selectQuickQuestion = (question) => {
@@ -940,11 +970,8 @@ const handleFileUpload = async (event) => {
   // Проверяем расширение файла
   if (!file.name.endsWith('.log')) {
     const errorMsg = '❌ Ошибка: Можно загружать только файлы с расширением .log'
-    messages.value.push({
-      role: 'user',
-      text: errorMsg,
-    })
-    await saveChatMessage('user', errorMsg)
+    pushNoticeMessage(errorMsg)
+    await saveChatMessage('notice', errorMsg)
     scrollToBottom()
     event.target.value = '' // Сбрасываем input
     return
@@ -994,35 +1021,40 @@ const handleFileUpload = async (event) => {
     if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
       const canceledMsg = 'Анализ лога отменен пользователем.'
 
-      messages.value.push({
-        role: 'ai',
-        text: canceledMsg,
-        isNew: false,
-      })
+      pushNoticeMessage(canceledMsg)
 
       await reduceTopAlignSpacerByLastAssistantMessage()
+      await saveChatMessage('notice', canceledMsg)
 
-      await saveChatMessage('agent', canceledMsg)
+      appStore.addNotification('Анализ лога отменен', 'info')
+      return
+    }
+
+    const responseStatus = error?.response?.status
+    const responseDetail = String(error?.response?.data?.detail || '')
+    if (responseStatus === 499 || responseDetail.toLowerCase().includes('отменен')) {
+      const canceledMsg = 'Анализ лога отменен пользователем.'
+
+      pushNoticeMessage(canceledMsg)
+
+      await reduceTopAlignSpacerByLastAssistantMessage()
+      await saveChatMessage('notice', canceledMsg)
+
       appStore.addNotification('Анализ лога отменен', 'info')
       return
     }
 
     console.error('Error uploading log file:', error)
     
-    const errorMsg = `❌ **Ошибка при анализе файла**
+    const errorMsg = `❌ Ошибка при анализе файла
 
 ${error.response?.data?.detail || error.message || 'Неизвестная ошибка'}`
-    
-    messages.value.push({
-      role: 'ai',
-      text: errorMsg,
-      isNew: false,
-    })
+
+    pushNoticeMessage(errorMsg)
 
     await reduceTopAlignSpacerByLastAssistantMessage()
-    
-    await saveChatMessage('agent', errorMsg)
-    
+    await saveChatMessage('notice', errorMsg)
+
     appStore.addNotification('Ошибка при анализе файла логов', 'error')
   } finally {
     appStore.chatLogUploadAbortController = null
