@@ -6,8 +6,7 @@ import shutil
 import sys
 import urllib.error
 import urllib.request
-from contextlib import asynccontextmanager
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,8 +16,8 @@ from fastapi import (
     FastAPI,
     File,
     HTTPException,
-    UploadFile,
     Request,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
