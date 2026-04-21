@@ -151,6 +151,11 @@ const menuItems = [
     label: 'Статистика',
     icon: '/stats_panel_icon.svg',
   },
+  {
+    to: '/config',
+    label: 'Конфиг',
+    icon: '/config_panel_icon.svg',
+  },
 ]
 </script>
 

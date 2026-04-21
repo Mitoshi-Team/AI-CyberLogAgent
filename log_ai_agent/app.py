@@ -72,6 +72,11 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
 CLI_TZ_OFFSET_HOURS = int(os.getenv("CLI_TZ_OFFSET_HOURS", "5"))
 CLI_TZ = timezone(timedelta(hours=CLI_TZ_OFFSET_HOURS))
+APP_DIR = Path(__file__).parent.resolve()
+AI_AGENT_RULES_DIR = APP_DIR / "ai_agent_v2" / "rules"
+SIGMA_RULES_DIR = AI_AGENT_RULES_DIR / "sigma"
+YARA_RULES_DIR = AI_AGENT_RULES_DIR / "yara"
+YARA_RULE_FILE = YARA_RULES_DIR / "cyber_security_rules.yar"
 
 AGENT_ACTION_RECEIVE_LOGS = 1
 AGENT_ACTION_ANALYZE_LOGS = 2
@@ -674,6 +679,14 @@ class ChatMessageResponse(BaseModel):
     created_at: str
 
 
+class RuleContentUpdateRequest(BaseModel):
+    content: str
+
+
+class SigmaFileCreateRequest(BaseModel):
+    filename: str
+
+
 @app.get("/")
 async def root():
     """Главная страница API"""
@@ -825,6 +838,173 @@ async def get_system_status():
         "consumer_running": bool(getattr(kafka_log_consumer, "_running", False)),
         "analysis": runtime_analysis_state,
     }
+
+
+def _resolve_sigma_file_path(filename: str) -> Path:
+    """Validate sigma filename and return normalized file path."""
+    if not filename:
+        raise HTTPException(status_code=400, detail="Имя файла обязательно")
+
+    normalized_name = Path(filename).name
+    if normalized_name != filename:
+        raise HTTPException(status_code=400, detail="Некорректное имя файла")
+
+    suffix = Path(normalized_name).suffix.lower()
+    if suffix not in {".yml", ".yaml"}:
+        raise HTTPException(status_code=400, detail="Допустимы только .yml или .yaml")
+
+    if any(char in normalized_name for char in ('\\', '/', ':')):
+        raise HTTPException(status_code=400, detail="Некорректное имя файла")
+
+    return (SIGMA_RULES_DIR / normalized_name).resolve()
+
+
+async def _reload_detection_pipeline() -> None:
+    """Reload AI pipeline to pick up updated YARA/Sigma rules."""
+    await close_pipeline()
+    await warmup_pipeline()
+
+
+@app.get("/api/config/sigma/files")
+async def list_sigma_rule_files():
+    """Get list of Sigma rule files from rules directory."""
+    try:
+        SIGMA_RULES_DIR.mkdir(parents=True, exist_ok=True)
+        files = sorted(
+            file.name
+            for file in SIGMA_RULES_DIR.iterdir()
+            if file.is_file() and file.suffix.lower() in {".yml", ".yaml"}
+        )
+        return {"files": files}
+    except Exception as e:
+        logger.error(f"Error listing Sigma files: {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка чтения каталога Sigma правил"
+        )
+
+
+@app.post("/api/config/sigma/files")
+async def create_sigma_rule_file(request: SigmaFileCreateRequest):
+    """Create empty Sigma rule file."""
+    try:
+        SIGMA_RULES_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = _resolve_sigma_file_path(request.filename)
+
+        if file_path.exists():
+            raise HTTPException(status_code=409, detail="Файл уже существует")
+
+        initial_content = (
+            "title: New Sigma Rule\n"
+            "id: \n"
+            "status: experimental\n"
+            "description: \n"
+            "logsource:\n"
+            "  category: webserver\n"
+            "detection:\n"
+            "  selection:\n"
+            "    raw|contains: \"\"\n"
+            "  condition: selection\n"
+            "level: medium\n"
+        )
+        file_path.write_text(initial_content, encoding="utf-8")
+        await _reload_detection_pipeline()
+        return {"success": True, "filename": file_path.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating Sigma file: {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка создания файла Sigma правила"
+        )
+
+
+@app.get("/api/config/sigma/files/{filename}")
+async def get_sigma_rule_file_content(filename: str):
+    """Get Sigma rule file content."""
+    try:
+        file_path = _resolve_sigma_file_path(filename)
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Файл не найден")
+
+        return {"filename": file_path.name, "content": file_path.read_text(encoding="utf-8")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reading Sigma file '{filename}': {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка чтения файла Sigma правила"
+        )
+
+
+@app.put("/api/config/sigma/files/{filename}")
+async def update_sigma_rule_file_content(filename: str, request: RuleContentUpdateRequest):
+    """Update Sigma rule file content and reload detection pipeline."""
+    try:
+        file_path = _resolve_sigma_file_path(filename)
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Файл не найден")
+
+        file_path.write_text(request.content, encoding="utf-8")
+        await _reload_detection_pipeline()
+        return {"success": True, "filename": file_path.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating Sigma file '{filename}': {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка сохранения файла Sigma правила"
+        )
+
+
+@app.delete("/api/config/sigma/files/{filename}")
+async def delete_sigma_rule_file(filename: str):
+    """Delete Sigma rule file and reload detection pipeline."""
+    try:
+        file_path = _resolve_sigma_file_path(filename)
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Файл не найден")
+
+        file_path.unlink()
+        await _reload_detection_pipeline()
+        return {"success": True, "filename": file_path.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting Sigma file '{filename}': {e}")
+        raise HTTPException(
+            status_code=500, detail="Ошибка удаления файла Sigma правила"
+        )
+
+
+@app.get("/api/config/yara")
+async def get_yara_rule_file_content():
+    """Get single YARA rules file content."""
+    try:
+        if not YARA_RULE_FILE.exists() or not YARA_RULE_FILE.is_file():
+            raise HTTPException(status_code=404, detail="Yara файл не найден")
+
+        return {
+            "filename": YARA_RULE_FILE.name,
+            "content": YARA_RULE_FILE.read_text(encoding="utf-8"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reading Yara file: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка чтения Yara файла")
+
+
+@app.put("/api/config/yara")
+async def update_yara_rule_file_content(request: RuleContentUpdateRequest):
+    """Update YARA rules file content and reload detection pipeline."""
+    try:
+        YARA_RULES_DIR.mkdir(parents=True, exist_ok=True)
+        YARA_RULE_FILE.write_text(request.content, encoding="utf-8")
+        await _reload_detection_pipeline()
+        return {"success": True, "filename": YARA_RULE_FILE.name}
+    except Exception as e:
+        logger.error(f"Error updating Yara file: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сохранения Yara файла")
 
 
 @app.get("/api/statistics/severity")

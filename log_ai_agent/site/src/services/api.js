@@ -121,4 +121,19 @@ export const logs = {
     apiClient.post('/logs/upload/cancel', null, { params: { user_id: userId } }),
 }
 
+/**
+ * Работа с конфигурацией правил
+ */
+export const configRules = {
+  listSigmaFiles: () => apiClient.get('/config/sigma/files'),
+  createSigmaFile: (filename) => apiClient.post('/config/sigma/files', { filename }),
+  getSigmaFile: (filename) => apiClient.get(`/config/sigma/files/${encodeURIComponent(filename)}`),
+  saveSigmaFile: (filename, content) =>
+    apiClient.put(`/config/sigma/files/${encodeURIComponent(filename)}`, { content }),
+  deleteSigmaFile: (filename) =>
+    apiClient.delete(`/config/sigma/files/${encodeURIComponent(filename)}`),
+  getYaraFile: () => apiClient.get('/config/yara'),
+  saveYaraFile: (content) => apiClient.put('/config/yara', { content }),
+}
+
 export default apiClient
