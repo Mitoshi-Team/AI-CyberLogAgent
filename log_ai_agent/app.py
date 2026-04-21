@@ -853,7 +853,7 @@ def _resolve_sigma_file_path(filename: str) -> Path:
     if suffix not in {".yml", ".yaml"}:
         raise HTTPException(status_code=400, detail="Допустимы только .yml или .yaml")
 
-    if any(char in normalized_name for char in ('\\', '/', ':')):
+    if any(char in normalized_name for char in ("\\", "/", ":")):
         raise HTTPException(status_code=400, detail="Некорректное имя файла")
 
     return (SIGMA_RULES_DIR / normalized_name).resolve()
@@ -902,7 +902,7 @@ async def create_sigma_rule_file(request: SigmaFileCreateRequest):
             "  category: webserver\n"
             "detection:\n"
             "  selection:\n"
-            "    raw|contains: \"\"\n"
+            '    raw|contains: ""\n'
             "  condition: selection\n"
             "level: medium\n"
         )
@@ -926,18 +926,21 @@ async def get_sigma_rule_file_content(filename: str):
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="Файл не найден")
 
-        return {"filename": file_path.name, "content": file_path.read_text(encoding="utf-8")}
+        return {
+            "filename": file_path.name,
+            "content": file_path.read_text(encoding="utf-8"),
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error reading Sigma file '{filename}': {e}")
-        raise HTTPException(
-            status_code=500, detail="Ошибка чтения файла Sigma правила"
-        )
+        raise HTTPException(status_code=500, detail="Ошибка чтения файла Sigma правила")
 
 
 @app.put("/api/config/sigma/files/{filename}")
-async def update_sigma_rule_file_content(filename: str, request: RuleContentUpdateRequest):
+async def update_sigma_rule_file_content(
+    filename: str, request: RuleContentUpdateRequest
+):
     """Update Sigma rule file content and reload detection pipeline."""
     try:
         file_path = _resolve_sigma_file_path(filename)
