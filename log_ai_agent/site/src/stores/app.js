@@ -17,6 +17,9 @@ export const useAppStore = defineStore('app', () => {
   
   // Состояние непрочитанных сообщений в чате
   const unreadChatMessages = ref(0)
+  const chatIsLoading = ref(false)
+  const chatIsLogAnalysisInProgress = ref(false)
+  const chatLogUploadAbortController = ref(null)
   const originalPageTitle = ref(document.title)
   const reportsUpdateVersion = ref(0)
 
@@ -113,6 +116,9 @@ export const useAppStore = defineStore('app', () => {
       isAuthenticated.value = false
       currentUser.value = null
       token.value = null
+      chatIsLoading.value = false
+      chatIsLogAnalysisInProgress.value = false
+      chatLogUploadAbortController.value = null
       localStorage.removeItem('auth_token')
       localStorage.removeItem('current_user')
     }
@@ -308,6 +314,9 @@ export const useAppStore = defineStore('app', () => {
     isLoadingIncidents,
     statistics,
     unreadChatMessages,
+    chatIsLoading,
+    chatIsLogAnalysisInProgress,
+    chatLogUploadAbortController,
     reportsUpdateVersion,
     login,
     logout,

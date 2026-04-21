@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -278,6 +279,19 @@ async def _broadcast_report_created_event(
         )
     except Exception as error:
         logger.warning("Failed to broadcast report_created event: %s", error)
+
+
+def _schedule_background_task(coro, task_name: str) -> None:
+    """Run a coroutine in background and log failures without blocking request flow."""
+    task = asyncio.create_task(coro)
+
+    def _handle_task_result(done_task: asyncio.Task) -> None:
+        try:
+            done_task.result()
+        except Exception as error:
+            logger.warning("Background task %s failed: %s", task_name, error)
+
+    task.add_done_callback(_handle_task_result)
 
 
 async def _insert_agent_log(
@@ -1605,16 +1619,22 @@ async def upload_log_file(
                 f"Ответ на запрос загрузки логов: user_id={user_id}, report_id={report_id}",
             )
 
-            await _broadcast_incident_event(
-                title="Найден новый инцидент",
-                description=analysis_result["description"],
-                severity_level_id=analysis_result.get("severity_level_id"),
-                source="Manual Log Upload",
+            _schedule_background_task(
+                _broadcast_incident_event(
+                    title="Найден новый инцидент",
+                    description=analysis_result["description"],
+                    severity_level_id=analysis_result.get("severity_level_id"),
+                    source="Manual Log Upload",
+                ),
+                "broadcast_incident_event",
             )
-            await _broadcast_report_created_event(
-                report_id=report_id,
-                source="Manual Log Upload",
-                severity_level_id=analysis_result.get("severity_level_id"),
+            _schedule_background_task(
+                _broadcast_report_created_event(
+                    report_id=report_id,
+                    source="Manual Log Upload",
+                    severity_level_id=analysis_result.get("severity_level_id"),
+                ),
+                "broadcast_report_created_event",
             )
 
             return response

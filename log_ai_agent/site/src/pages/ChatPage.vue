@@ -341,8 +341,14 @@ const route = useRoute()
 const chatContainer = ref(null)
 const messageInput = ref(null)
 const inputMessage = ref('')
-const isLoading = ref(false)
-const isLogAnalysisInProgress = ref(false)
+const isLoading = computed({
+  get: () => appStore.chatIsLoading,
+  set: (value) => { appStore.chatIsLoading = value },
+})
+const isLogAnalysisInProgress = computed({
+  get: () => appStore.chatIsLogAnalysisInProgress,
+  set: (value) => { appStore.chatIsLogAnalysisInProgress = value },
+})
 const lastMessageTime = ref(0)
 const isRateLimited = ref(false)
 const isEmptyFile = ref(false)
@@ -356,7 +362,6 @@ const isDraggingScrollbar = ref(false)
 const scrollbarDragStartOffset = ref(0)
 const copiedMessageIndex = ref(null)
 let clearNotificationsTimer = null
-let logUploadAbortController = null
 let copyResetTimer = null
 
 // Константы ограничений
@@ -369,6 +374,7 @@ const MAX_SCROLLBAR_THUMB_HEIGHT = 160
 const SCROLLBAR_EDGE_GAP = 96
 
 const messages = ref([])
+const shouldSyncAfterBackgroundCompletion = ref(false)
 
 // Загрузка истории чата при монтировании
 onMounted(async () => {
@@ -377,6 +383,10 @@ onMounted(async () => {
   // Очищаем с задержкой при монтировании компонента
   clearNotifications(false)
   adjustTextareaHeight()
+
+  if (isLoading.value) {
+    shouldSyncAfterBackgroundCompletion.value = true
+  }
   
   // Загружаем историю чата из БД
   await loadChatHistory()
@@ -484,6 +494,16 @@ watch(() => route.path, (newPath) => {
 watch([messages, isLoading, topAlignSpacerHeight], () => {
   nextTick(() => updateCustomScrollbar())
 }, { deep: true })
+
+watch(
+  () => isLoading.value,
+  async (loadingNow, loadingPrev) => {
+    if (loadingPrev && !loadingNow && shouldSyncAfterBackgroundCompletion.value) {
+      await loadChatHistory()
+      shouldSyncAfterBackgroundCompletion.value = false
+    }
+  }
+)
 
 // Очистка при возвращении фокуса на вкладку
 const handleVisibilityChange = () => {
@@ -882,8 +902,8 @@ const sendMessage = async () => {
 }
 
 const cancelLogAnalysis = () => {
-  if (!isLogAnalysisInProgress.value || !logUploadAbortController) return
-  logUploadAbortController.abort()
+  if (!isLogAnalysisInProgress.value || !appStore.chatLogUploadAbortController) return
+  appStore.chatLogUploadAbortController.abort()
 }
 
 const handleSendControlClick = () => {
@@ -945,12 +965,12 @@ const handleFileUpload = async (event) => {
   // Устанавливаем состояние загрузки
   isLoading.value = true
   isLogAnalysisInProgress.value = true
-  logUploadAbortController = new AbortController()
+  appStore.chatLogUploadAbortController = new AbortController()
   
   try {
     // Отправляем файл на сервер для анализа
     const response = await logs.upload(userId, file, {
-      signal: logUploadAbortController.signal,
+      signal: appStore.chatLogUploadAbortController.signal,
     })
     
     if (response.data.success) {
@@ -1005,7 +1025,7 @@ ${error.response?.data?.detail || error.message || 'Неизвестная ош�
     
     appStore.addNotification('Ошибка при анализе файла логов', 'error')
   } finally {
-    logUploadAbortController = null
+    appStore.chatLogUploadAbortController = null
     isLogAnalysisInProgress.value = false
     isLoading.value = false
     event.target.value = '' // Сбрасываем input
@@ -1014,10 +1034,6 @@ ${error.response?.data?.detail || error.message || 'Неизвестная ош�
 }
 
 onUnmounted(() => {
-  if (isLogAnalysisInProgress.value && logUploadAbortController) {
-    logUploadAbortController.abort()
-  }
-
   if (copyResetTimer) {
     clearTimeout(copyResetTimer)
     copyResetTimer = null
