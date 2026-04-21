@@ -424,7 +424,9 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             analysis_completed = True
             return
 
+        report_datetime = datetime.now(CLI_TZ).strftime("%d.%m.%Y %H:%M")
         report_description = (
+            f"Дата и время: {report_datetime}\n"
             f"Размер батча: {batch.get('batch_size', len(messages))}\n"
             f"Событий найдено: {events_found}\n"
             f"\n{analysis_result['description']}"
