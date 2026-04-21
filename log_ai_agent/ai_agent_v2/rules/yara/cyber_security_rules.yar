@@ -1,134 +1,132 @@
 /*
- * YARA Rules for Cyber Log Analysis
- * 
- * These rules detect common attack patterns in Apache logs.
- * Uses simple, YARA-compatible regex patterns.
+ * YARA Rules for Cyber Log Analysis - Core Web Vulnerabilities
  */
 
-rule SQL_Injection_Pattern
+rule SQL_Injection_Advanced
 {
     meta:
-        description = "Detects SQL injection attempts"
+        description = "Detects advanced SQL injection attempts"
         author = "AI CyberLog Agent"
         severity = "high"
         category = "initial_access"
         mitre_ref = "T1190"
 
     strings:
-        $sqli1 = "UNION SELECT" nocase
-        $sqli2 = "OR 1=1" nocase
-        $sqli3 = "DROP TABLE" nocase
-        $sqli4 = "' OR '" nocase
-        $sqli5 = "xp_cmdshell" nocase
-        $sqli6 = "WAITFOR DELAY" nocase
+        // Basic keywords
+        $s1 = "UNION" nocase fullword
+        $s2 = "SELECT" nocase fullword
+        $s3 = "INSERT" nocase fullword
+        $s4 = "UPDATE" nocase fullword
+        $s5 = "DELETE" nocase fullword
+        $s6 = "DROP" nocase fullword
+        
+        // Logical markers
+        $l1 = "OR 1=1" nocase
+        $l2 = "' OR '" nocase
+        $l3 = "\" OR \"" nocase
+        $l4 = "benchmark(" nocase
+        $l5 = "sleep(" nocase
+        $l6 = "pg_sleep(" nocase
+        
+        // URL Encoded variants
+        $e1 = "UNION%20SELECT" nocase
+        $e2 = "UNION+SELECT" nocase
+        $e3 = "OR+1%3D1" nocase
+        $e4 = "%27+OR+%27" nocase
 
     condition:
-        1 of them
+        ($s1 and $s2) or any of ($l*) or any of ($e*) or 2 of ($s*)
 }
 
-
-rule XSS_Attempt
+rule XSS_Advanced
 {
     meta:
-        description = "Detects Cross-Site Scripting attempts"
+        description = "Detects cross-site scripting (XSS) attempts"
         author = "AI CyberLog Agent"
         severity = "medium"
         category = "initial_access"
-        mitre_ref = "T1183"
+        mitre_ref = "T1190"
 
     strings:
-        $xss1 = "<script" nocase
-        $xss2 = "javascript:" nocase
-        $xss3 = "onerror=" nocase
-        $xss4 = "onload=" nocase
-        $xss5 = "alert(" nocase
+        // Dangerous tags
+        $t1 = "<script" nocase
+        $t7 = "<iframe" nocase
+        
+        // Event handlers
+        $t2 = "javascript:" nocase
+        $t3 = "onload=" nocase
+        $t4 = "onerror=" nocase
+        $t5 = "onclick=" nocase
+        
+        // Dangerous functions
+        $t8 = "alert(" nocase
+        $t9 = "prompt(" nocase
+        $t10 = "confirm(" nocase
+
+        // Encoded
+        $e1 = "%3cscript" nocase
+        $e2 = "javascript%3a" nocase
+        $e3 = "onerror%3d" nocase
+        $e4 = "alert%28" nocase
 
     condition:
-        1 of them
+        any of ($t1, $t2, $t3, $t4, $t5, $t7, $t8, $t9, $t10, $e*)
 }
 
-
-rule Brute_Force_Indicators
+rule Path_Traversal_Advanced
 {
     meta:
-        description = "Detects brute force authentication attempts"
+        description = "Detects directory traversal and file inclusion"
         author = "AI CyberLog Agent"
         severity = "high"
-        category = "credential_access"
-        mitre_ref = "T1110"
+        category = "discovery"
+        mitre_ref = "T1083"
 
     strings:
-        $bf1 = "Authentication failed" nocase
-        $bf2 = "failed login" nocase
-        $bf3 = "account locked" nocase
-        $bf4 = "brute force" nocase
-        $bf5 = "maximum number of tries" nocase
-        $bf6 = "Multiple failed login" nocase
+        // Unix patterns
+        $p1 = "../../"
+        $p2 = "/etc/passwd" nocase
+        $p3 = "/etc/shadow" nocase
+        $p4 = "/etc/group" nocase
+        $p5 = "/etc/issue" nocase
+        
+        // Windows patterns
+        $w1 = "..\\..\\"
+        $w2 = "C:\\Windows\\System32" nocase
+        $w3 = "windows/win.ini" nocase
+        $w4 = "boot.ini" nocase
+        
+        // Encoded
+        $e1 = "%2e%2e%2f" nocase
+        $e2 = "..%2f" nocase
+        $e3 = "%2e%2e/" nocase
+        $e4 = "..%5c" nocase
 
     condition:
-        1 of them
+        any of them
 }
 
-
-rule Path_Traversal_Attempt
+rule Sensitive_File_Access
 {
     meta:
-        description = "Detects path traversal attempts"
-        author = "AI CyberLog Agent"
-        severity = "high"
-        category = "collection"
-        mitre_ref = "T1005"
-
-    strings:
-        $pt1 = "../" 
-        $pt2 = "..\\"
-        $pt3 = "script not found" nocase
-        $pt4 = "etc/passwd" nocase
-        $pt5 = "etc/shadow" nocase
-
-    condition:
-        1 of them
-}
-
-
-rule Security_Violation
-{
-    meta:
-        description = "Detects security violations"
-        author = "AI CyberLog Agent"
-        severity = "medium"
-        category = "defense_evasion"
-        mitre_ref = "T1070"
-
-    strings:
-        $sv1 = "security violation" nocase
-        $sv2 = "unauthorized access" nocase
-        $sv3 = "access forbidden" nocase
-        $sv4 = "permission denied" nocase
-
-    condition:
-        1 of them
-}
-
-
-rule Suspicious_Request
-{
-    meta:
-        description = "Detects suspicious URI patterns"
+        description = "Detects access to sensitive configuration files"
         author = "AI CyberLog Agent"
         severity = "medium"
         category = "discovery"
-        mitre_ref = "T1046"
+        mitre_ref = "T1595"
 
     strings:
-        $sr1 = "/admin/" 
-        $sr2 = "/wp-admin/" 
-        $sr3 = "/wp-login" 
-        $sr4 = "/phpmyadmin/" 
-        $sr5 = "/.env" 
-        $sr6 = "/config/" 
-        $sr7 = "/api/" 
+        $f1 = "/.env" nocase
+        $f2 = "/.git/" nocase
+        $f3 = "/.svn/" nocase
+        $f4 = "/.htaccess" nocase
+        $f5 = "/web.config" nocase
+        $f6 = "/config.php" nocase
+        $f7 = "/wp-config.php" nocase
+        $f8 = "/settings.py" nocase
+        $f9 = "/.bash_history" nocase
+        $f10 = "/.ssh/" nocase
 
     condition:
-        1 of them
+        any of them
 }
