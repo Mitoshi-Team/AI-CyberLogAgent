@@ -75,8 +75,8 @@ async def ingest_log_file(
     now_ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     source_label = (source or "external").strip() or "external"
     header = (
-        f"{now_ts} app {{\"level\":\"INFO\",\"msg\":\"ingest_upload\","
-        f"\"source\":\"{source_label}\",\"filename\":\"{file.filename}\"}}\n"
+        f'{now_ts} app {{"level":"INFO","msg":"ingest_upload",'
+        f'"source":"{source_label}","filename":"{file.filename}"}}\n'
     )
     bytes_written = _append_text_with_separator(target, header + decoded)
 
@@ -100,8 +100,8 @@ async def ingest_log_text(payload: LogTextIngestRequest):
 
     now_ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     header = (
-        f"{now_ts} app {{\"level\":\"INFO\",\"msg\":\"ingest_text\","
-        f"\"source\":\"{source}\",\"filename\":\"{base_name}\"}}\n"
+        f'{now_ts} app {{"level":"INFO","msg":"ingest_text",'
+        f'"source":"{source}","filename":"{base_name}"}}\n'
     )
     bytes_written = _append_text_with_separator(target, header + payload.content)
 

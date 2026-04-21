@@ -1606,7 +1606,7 @@ async def upload_log_file(
             )
 
             await _broadcast_incident_event(
-                title=f"Найден новый инцидент",
+                title="Найден новый инцидент",
                 description=analysis_result["description"],
                 severity_level_id=analysis_result.get("severity_level_id"),
                 source="Manual Log Upload",
@@ -1886,7 +1886,9 @@ def _extract_marker_from_payload(payload: object) -> int | None:
     if not isinstance(payload, dict):
         return None
 
-    log_payload = payload.get("log") if isinstance(payload.get("log"), dict) else payload
+    log_payload = (
+        payload.get("log") if isinstance(payload.get("log"), dict) else payload
+    )
 
     end_record_sequence = log_payload.get("end_record_sequence")
     if isinstance(end_record_sequence, int) and end_record_sequence >= 0:
@@ -1930,7 +1932,9 @@ def _read_chunk_marker_line_from_processed(processed_dir: Path) -> int | None:
                         continue
 
                     marker = _extract_marker_from_payload(payload)
-                    if marker is not None and (max_marker is None or marker > max_marker):
+                    if marker is not None and (
+                        max_marker is None or marker > max_marker
+                    ):
                         max_marker = marker
         except Exception:
             continue
@@ -2002,9 +2006,7 @@ def show_pipeline_lines() -> None:
 
     for label, target in targets.items():
         excluded_names = (
-            external_excluded_names
-            if label == "external"
-            else processed_excluded_names
+            external_excluded_names if label == "external" else processed_excluded_names
         )
         files_count, lines_count = _collect_directory_stats(
             target,
@@ -2012,9 +2014,7 @@ def show_pipeline_lines() -> None:
         )
         if label == "external":
             external_lines = lines_count
-        print(
-            f"{label:10} lines={lines_count:<10} path={target}"
-        )
+        print(f"{label:10} lines={lines_count:<10} path={target}")
 
     marker_line: int | None = None
     pending_lines: int | None = None
@@ -2187,10 +2187,7 @@ def clear_pipeline_logs() -> None:
     if marker_reset_written:
         print(f"✓ Маркер анализа сброшен: {analysis_marker_file}")
     else:
-        print(
-            "⚠ Не удалось сбросить маркер анализа: "
-            f"{analysis_marker_file}"
-        )
+        print(f"⚠ Не удалось сбросить маркер анализа: {analysis_marker_file}")
 
     runtime_analysis_state["last_completed_end_record_seq"] = 0
     runtime_analysis_state["current_batch_end_record_seq"] = None
