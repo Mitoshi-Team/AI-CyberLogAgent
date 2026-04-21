@@ -2083,7 +2083,9 @@ def show_users_with_admin_flags() -> None:
 
         for user in users:
             role = "admin" if user.get("is_admin") else "user"
-            print(f"{user.get('login')} | is_admin={str(bool(user.get('is_admin'))).lower()} | role={role}")
+            print(
+                f"{user.get('login')} | is_admin={str(bool(user.get('is_admin'))).lower()} | role={role}"
+            )
         print("")
     except Exception as e:
         print(f"❌ Ошибка получения списка пользователей: {e}")
