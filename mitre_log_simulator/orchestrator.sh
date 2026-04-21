@@ -437,7 +437,9 @@ main_loop() {
 bootstrap() {
   RANDOM="${RANDOM_SEED}"
   mkdir -p /var/log/golden
-  : > "${STREAM_LOG_FILE}"
+
+  # Keep append-only stream across restarts to preserve external log continuity.
+  touch "${STREAM_LOG_FILE}"
   : > "${SIM_SYSLOG_FILE}"
   epoch_now > "${LAST_STDOUT_TS_FILE}"
   rm -f "${UNHEALTHY_FLAG_FILE}"
@@ -446,7 +448,7 @@ bootstrap() {
   echo "$$" > "${ORCHESTRATOR_PID_FILE}"
   validate_env
 
-  emit_stdout "$(iso_now) app {\"level\":\"INFO\",\"msg\":\"Orchestrator started\",\"mode\":\"${ATTACK_MODE}\",\"log_rate\":${LOG_RATE},\"seed\":${RANDOM_SEED},\"host\":\"${HOSTNAME_OVERRIDE}\"}"
+  emit_stdout "$(iso_now) app {\"level\":\"INFO\",\"msg\":\"Orchestrator started\",\"mode\":\"${ATTACK_MODE}\",\"log_rate\":${LOG_RATE},\"seed\":${RANDOM_SEED},\"host\":\"${HOSTNAME_OVERRIDE}\",\"stream_file\":\"${STREAM_LOG_FILE}\"}"
   start_flog_noise
 
   main_loop &

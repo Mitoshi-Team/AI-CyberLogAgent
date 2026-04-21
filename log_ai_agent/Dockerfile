@@ -11,9 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv
 
-# Install huggingface_hub CLI for model download
-RUN uv pip install --system huggingface_hub
-
 WORKDIR /app
 
 COPY pyproject.toml ./
@@ -39,12 +36,8 @@ WORKDIR /app
 COPY --from=builder /usr/local /usr/local
 COPY log_ai_agent/ ./log_ai_agent/
 
-# Copy entrypoint script
-RUN chmod +x /app/log_ai_agent/docker-entrypoint.sh
-
 WORKDIR /app/log_ai_agent
 
 EXPOSE 8000
 
-# Download model at startup, then start app
-ENTRYPOINT ["/app/log_ai_agent/docker-entrypoint.sh"]
+CMD ["python", "app.py"]

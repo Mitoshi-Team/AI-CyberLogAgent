@@ -39,6 +39,11 @@ const handleWebsocketMessage = (data) => {
     return
   }
 
+  if (data.type === 'report_created') {
+    appStore.notifyReportsUpdated(data)
+    return
+  }
+
   if (data.type === 'chat_response' && data.user_id === appStore.currentUser?.id) {
     const isOnChatPage = route.path === '/chat'
     const isTabVisible = document.visibilityState === 'visible'

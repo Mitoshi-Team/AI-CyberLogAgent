@@ -197,13 +197,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { reports } from '../services/api'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { useAppStore } from '@/stores/app'
 
 const router = useRouter()
+const appStore = useAppStore()
 
 const dateFrom = ref('')
 const dateTo = ref('')
@@ -364,4 +366,11 @@ onMounted(async () => {
   await loadFilters()
   await loadHistory()
 })
+
+watch(
+  () => appStore.reportsUpdateVersion,
+  async () => {
+    await loadHistory()
+  }
+)
 </script>

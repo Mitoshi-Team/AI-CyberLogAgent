@@ -18,6 +18,7 @@ export const useAppStore = defineStore('app', () => {
   // Состояние непрочитанных сообщений в чате
   const unreadChatMessages = ref(0)
   const originalPageTitle = ref(document.title)
+  const reportsUpdateVersion = ref(0)
 
   // Инициализация: восстанавливаем сессию из localStorage
   const initializeAuth = () => {
@@ -260,7 +261,7 @@ export const useAppStore = defineStore('app', () => {
       statistics.value.suspiciousCount++
     }
     statistics.value.totalIncidents++
-    addNotification(`Новый инцидент: ${incident.title}`, 'warning')
+    addNotification(`Найден новый инцидент!`, 'warning')
   }
   
   /**
@@ -290,6 +291,13 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  /**
+   * Сигнализирует страницам отчетов о появлении нового отчета в реальном времени.
+   */
+  const notifyReportsUpdated = (_payload = null) => {
+    reportsUpdateVersion.value += 1
+  }
+
   return {
     isAuthenticated,
     currentUser,
@@ -300,6 +308,7 @@ export const useAppStore = defineStore('app', () => {
     isLoadingIncidents,
     statistics,
     unreadChatMessages,
+    reportsUpdateVersion,
     login,
     logout,
     addNotification,
@@ -308,5 +317,6 @@ export const useAppStore = defineStore('app', () => {
     addUnreadChatMessage,
     clearUnreadChatMessages,
     addIncident,
+    notifyReportsUpdated,
   }
 })

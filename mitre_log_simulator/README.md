@@ -12,6 +12,7 @@
 - Периодически инжектит безопасные симуляции техник MITRE ATT&CK (10 техник).
 - После каждой атаки выполняет cleanup и пишет статус в stdout.
 - Ведет golden-журнал на volume хоста в файле /var/log/golden/attack_timeline.log.
+- Ведет единый append-only файл потока логов: /var/log/golden/simulator_stream.log.
 - Поддерживает детерминизм через RANDOM_SEED.
 
 ## Структура
@@ -156,6 +157,12 @@ docker run --rm -e RANDOM_SEED=123 -v ./golden_logs:/var/log/golden my_image
 ## Golden log
 
 Файл: /var/log/golden/attack_timeline.log
+
+Потоковый лог:
+
+```text
+/var/log/golden/simulator_stream.log
+```
 
 Формат строки:
 

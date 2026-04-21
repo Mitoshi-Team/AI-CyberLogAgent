@@ -33,6 +33,9 @@ KAFKA_DLQ_TOPIC = os.getenv("KAFKA_DLQ_TOPIC", "processed-logs-batches-dlq")
 PIPELINE_EXTERNAL_LOGS_DIR = os.getenv(
     "PIPELINE_EXTERNAL_LOGS_DIR", "/app/shared/external"
 )
+PIPELINE_EXTERNAL_APPEND_FILE = os.getenv(
+    "PIPELINE_EXTERNAL_APPEND_FILE", "/app/shared/external/external_stream.log"
+)
 PIPELINE_PROCESSED_LOGS_DIR = os.getenv(
     "PIPELINE_PROCESSED_LOGS_DIR", "/app/shared/processed"
 )
