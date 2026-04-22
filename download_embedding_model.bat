@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ============================================================
-echo   Downloading Embedding Model for AI-CyberLogAgent
+echo   Downloading Embedding Model for Wavescan
 echo ============================================================
 echo.
 

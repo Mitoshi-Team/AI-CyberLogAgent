@@ -82,5 +82,5 @@ else
     download_model || true
 fi
 
-echo "=== Starting AI-CyberLogAgent ==="
+echo "=== Starting Wavescan ==="
 exec python app.py

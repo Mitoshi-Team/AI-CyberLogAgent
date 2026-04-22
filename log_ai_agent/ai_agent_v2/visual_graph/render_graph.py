@@ -24,7 +24,7 @@ from log_ai_agent.ai_agent_v2.pipeline.langgraph_pipeline import build_analysis_
 
 async def main():
     print("=" * 60)
-    print("  AI-CyberLogAgent — Pipeline Graph Visualization")
+    print("  Wavescan — Pipeline Graph Visualization")
     print("=" * 60)
 
     # Build nodes (no real LLM needed for graph structure)
