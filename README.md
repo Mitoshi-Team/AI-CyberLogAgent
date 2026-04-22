@@ -262,7 +262,9 @@ set_admin <login> off
 
 ![Страница авторизации](./log_ai_agent/src/page1.png)
 
-![Чат с ассистентом](./log_ai_agent/src/page2.png)
+![Чат с ассистентом](./log_ai_agent/src/page2_1.png)
+
+![Чат с ассистентом](./log_ai_agent/src/page2_2.png)
 
 ![История отчетов](./log_ai_agent/src/page3.png)
 
