@@ -51,6 +51,13 @@ services:
       PIPELINE_PROCESSED_LOGS_DIR: ${PIPELINE_PROCESSED_LOGS_DIR:-/app/shared/processed}
       PIPELINE_COLLECTED_LOGS_FILE: ${PIPELINE_COLLECTED_LOGS_FILE:-/app/shared/processed/collected_logs.txt}
       CHUNK_STATE_FILE: ${CHUNK_STATE_FILE_BACKEND:-/app/shared/external/chunk_logs_state.tsv}
+      OLLAMA_URL: ${OLLAMA_URL}
+      OLLAMA_MODEL: ${OLLAMA_MODEL}
+      GIGACHAT_API_KEY: ${GIGACHAT_API_KEY}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS}
+      LLM_TIMEOUT: ${LLM_TIMEOUT}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
@@ -65,11 +72,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ../log_ai_agent:/app/log_ai_agent
       - app_logs:/app/logs
       - external_logs:/app/shared/external
       - processed_logs:/app/shared/processed
-      - embedding_models:/app/log_ai_agent/ai_agent_v2/embedding/models
       - chroma_data:/app/log_ai_agent/ai_agent_v2/chroma_db
     networks:
       - cyberlog-network
@@ -161,9 +166,6 @@ volumes:
   processed_logs:
     driver: local
     name: ${PIPELINE_PROCESSED_LOGS_VOLUME_NAME:-cyberlog_processed_logs}
-  embedding_models:
-    driver: local
-    name: cyberlog_embedding_models
   chroma_data:
     driver: local
     name: cyberlog_chroma_data

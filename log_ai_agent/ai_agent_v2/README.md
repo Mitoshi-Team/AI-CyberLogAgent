@@ -107,9 +107,7 @@ ai_agent_v2/
 │   └── langgraph_pipeline.py # LangGraph StateGraph
 ├── knowledge_base/            # База знаний MITRE ATT&CK
 │   ├── manager.py            # ChromaDB менеджер
-│   ├── mitre_loader.py      # Инициализация базы знаний
-│   ├── local_loader.py       # Загрузка из локального JSON
-│   └── github_loader.py      # Скачивание с GitHub
+│   └── mitre_loader.py      # Инициализация + загрузка MITRE
 ├── embedding/                 # Эмбеддинги
 │   └── manager.py            # Менеджер эмбеддингов
 ├── models/
@@ -359,10 +357,8 @@ uv run python -m pytest log_ai_agent/ai_agent_v2/pipeline_tests/ -vv -s -rA
 
 ```bash
 # Загрузка MITRE в ChromaDB
-uv run python log_ai_agent/ai_agent_v2/load_mitre_full.py
-
-# Скачивание JSON с GitHub
-uv run python log_ai_agent/ai_agent_v2/download_mitre.py
+rm -rf log_ai_agent/ai_agent_v2/chroma_db
+# Запустить пайплайн (автоматически скачает и загрузит MITRE)
 
 # Проверка количества техник
 uv run python -c "
@@ -470,7 +466,7 @@ GIGACHAT_API_KEY=your_key
 **Решение**:
 ```bash
 rm -rf log_ai_agent/ai_agent_v2/chroma_db
-uv run python log_ai_agent/ai_agent_v2/load_mitre_full.py
+# MITRE загрузится автоматически при запуске приложения
 ```
 
 ---
