@@ -18,15 +18,7 @@ download_model() {
 
         mkdir -p "$MODEL_DIR"
 
-        python3 << 'PYEOF' || {
-            exit_code=$?
-            if [ $exit_code -eq 104 ]; then
-                echo "  HTTP 429 - Rate limited, waiting ${wait_times[$((attempt-1))]}s..."
-                exit 104
-            fi
-            echo "  Download failed with exit code: $exit_code"
-            exit $exit_code
-        }
+        python3 << PYEOF
 import sys
 import os
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
@@ -35,6 +27,7 @@ from huggingface_hub import snapshot_download
 try:
     print("  Starting download (~1.1 GB)...")
     snapshot_download(
+        repo_id="$MODEL_NAME",
         local_dir="$MODEL_DIR",
         local_dir_use_symlinks=False,
     )
@@ -49,6 +42,11 @@ except Exception as e:
 PYEOF
 
         exit_code=$?
+        if [ $exit_code -eq 104 ]; then
+            echo "  HTTP 429 - Rate limited, waiting ${wait_times[$((attempt-1))]}s..."
+        elif [ $exit_code -ne 0 ]; then
+            echo "  Download failed with exit code: $exit_code"
+        fi
 
         if [ $exit_code -eq 0 ]; then
             echo "  Success!"

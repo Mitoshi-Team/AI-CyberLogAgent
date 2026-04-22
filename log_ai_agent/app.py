@@ -93,6 +93,8 @@ USER_ACTION_SEND_MESSAGE = 10
 MIN_LOG_LINES = 50
 MAX_LOG_LINES = 500
 
+AUTH_TOKENS: dict[str, int] = {}
+
 
 def _resolve_analysis_marker_file(processed_dir: Path) -> Path:
     """Resolve path to persisted analysis marker shared between CLI and backend."""
@@ -102,6 +104,19 @@ def _resolve_analysis_marker_file(processed_dir: Path) -> Path:
             str(processed_dir / ".analysis_progress.marker"),
         )
     )
+
+
+def _extract_bearer_token(request: Request) -> str | None:
+    """Extract Bearer token from Authorization header."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+
+    return parts[1]
 
 
 def _read_analysis_marker(marker_file: Path) -> int | None:
@@ -750,6 +765,7 @@ async def login(request: LoginRequest):
             import secrets
 
             token = secrets.token_urlsafe(32)
+            AUTH_TOKENS[token] = user_data["user_id"]
 
             if DATABASE_URL and user_data and user_data.get("user_id"):
                 conn = await asyncpg.connect(DATABASE_URL, timeout=10)
@@ -781,10 +797,32 @@ async def login(request: LoginRequest):
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
 
 
+@app.get("/api/auth/me")
+async def get_current_user(request: Request):
+    """Get current authenticated user from token."""
+    token = _extract_bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+
+    user_id = AUTH_TOKENS.get(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Недействительный токен")
+
+    user_data = commands.get_user_by_id(user_id)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    return {"success": True, "user": user_data}
+
+
 @app.post("/api/auth/logout")
-async def logout(user_id: int):
+async def logout(user_id: int, request: Request):
     """Выход пользователя из системы (логирование пользовательского действия)."""
     try:
+        token = _extract_bearer_token(request)
+        if token:
+            AUTH_TOKENS.pop(token, None)
+
         if DATABASE_URL:
             conn = await asyncpg.connect(DATABASE_URL, timeout=10)
             try:

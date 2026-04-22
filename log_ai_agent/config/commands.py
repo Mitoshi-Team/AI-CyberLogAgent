@@ -27,10 +27,35 @@ def get_db_connection():
             user=os.getenv("POSTGRES_USER", "cyberlog_user"),
             password=os.getenv("POSTGRES_PASSWORD", "cyberlog_password"),
         )
+        _ensure_admin_column(conn)
         return conn
     except Exception as e:
         print(f"❌ Ошибка подключения к базе данных: {e}")
         raise
+
+
+def _ensure_admin_column(conn) -> None:
+    """Ensure Users table has is_admin column for admin features."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'Users'
+              AND column_name = 'is_admin'
+            """
+        )
+        exists = cursor.fetchone()
+        if exists is None:
+            cursor.execute(
+                'ALTER TABLE public."Users" '
+                "ADD COLUMN is_admin boolean NOT NULL DEFAULT false"
+            )
+            conn.commit()
+    finally:
+        cursor.close()
 
 
 def validate_login(login: str) -> tuple[bool, str]:
@@ -156,6 +181,28 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
         traceback.print_exc()
         return False, None
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    """Fetch user by ID for session refresh."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            'SELECT user_id, login, is_admin FROM public."Users" WHERE user_id = %s',
+            (user_id,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            return None
+        return {
+            "user_id": user["user_id"],
+            "login": user["login"],
+            "is_admin": bool(user.get("is_admin", False)),
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def register():

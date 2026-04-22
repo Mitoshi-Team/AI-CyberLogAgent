@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv
 
-# Install huggingface_hub CLI for model download
-RUN uv pip install --system huggingface_hub
+# Install huggingface_hub + hf_transfer for model download
+RUN uv pip install --system huggingface_hub hf_transfer
 WORKDIR /app
 
 COPY pyproject.toml ./
@@ -34,17 +34,24 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Runtime needs bash for the entrypoint script.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
 # Копируем только готовый Python runtime из builder.
 COPY --from=builder /usr/local /usr/local
 COPY log_ai_agent/ ./log_ai_agent/
 
-# Copy entrypoint script
-RUN chmod +x /app/log_ai_agent/docker-entrypoint.sh
+# Copy entrypoint script to a non-mounted location (prevents CRLF from host bind mount)
+RUN cp /app/log_ai_agent/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh \
+    && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 WORKDIR /app/log_ai_agent
 
 EXPOSE 8000
 
 # Download model at startup, then start app
-ENTRYPOINT ["/app/log_ai_agent/docker-entrypoint.sh"]
+ENTRYPOINT ["bash", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "app.py"]

@@ -64,6 +64,10 @@ router.beforeEach(async (to, from, next) => {
   const appStore = useAppStore()
   const backendReady = await checkBackendReady()
 
+  if (appStore.isAuthenticated) {
+    await appStore.refreshCurrentUser()
+  }
+
   if (!backendReady && to.name !== 'AssistantLoading') {
     next({
       name: 'AssistantLoading',
