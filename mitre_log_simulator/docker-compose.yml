@@ -17,4 +17,9 @@ services:
       RANDOM_SEED: ${RANDOM_SEED:-42}
       HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-target-node-01}
     volumes:
-      - ./golden_logs:/var/log/golden
+      - shared_external_logs:/var/log/golden
+
+volumes:
+  shared_external_logs:
+    external: true
+    name: ${SHARED_EXTERNAL_LOGS_VOLUME_NAME:-cyberlog_external_logs}

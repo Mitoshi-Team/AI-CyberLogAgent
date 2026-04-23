@@ -257,6 +257,7 @@ ALTER TABLE public."ThreatTypes" ALTER COLUMN threat_type_id ADD GENERATED ALWAY
 
 CREATE TABLE IF NOT EXISTS public."UserLogs" (
     user_log_id integer NOT NULL,
+    user_id integer NOT NULL,
     action_type_id integer NOT NULL,
     description text NOT NULL,
     date timestamp with time zone NOT NULL
@@ -620,6 +621,14 @@ ALTER TABLE ONLY public."Reports"
 
 ALTER TABLE ONLY public."UserLogs"
     ADD CONSTRAINT "FK_UserLog_ActionType" FOREIGN KEY (action_type_id) REFERENCES public."ActionTypes"(action_type_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: UserLogs FK_UserLog_User; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public."UserLogs"
+    ADD CONSTRAINT "FK_UserLog_User" FOREIGN KEY (user_id) REFERENCES public."Users"(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 -- Completed on 2026-03-21 11:14:00

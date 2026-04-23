@@ -10,7 +10,7 @@ from langchain_core.runnables import RunnableConfig
 
 from ..chains.agent1 import create_agent1_chain
 from ..chains.agent2 import generate_final_report
-from ..chains.llm import create_gigachat_llm
+from ..chains.llm import create_llm
 from ..chains.rag_chain import retrieve_mitre_context
 from ..knowledge_base.manager import ChromaDBManager
 from ..knowledge_base.mitre_loader import initialize_mitre_knowledge_base
@@ -52,7 +52,7 @@ class LogAnalysisPipeline:
         self.rag_top_k = rag_top_k
 
         # Create or use provided LLM
-        self.llm = llm or create_gigachat_llm()
+        self.llm = llm or create_llm()
 
         # Create Agent 1 chain
         self.agent1_chain = create_agent1_chain(self.llm)
@@ -193,7 +193,7 @@ async def create_pipeline(
 
     # Create LLM
     llm_kwargs = llm_config or {}
-    llm = create_gigachat_llm(**llm_kwargs)
+    llm = create_llm(**llm_kwargs)
 
     # Create pipeline
     pipeline = LogAnalysisPipeline(

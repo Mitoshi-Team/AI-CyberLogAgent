@@ -136,8 +136,8 @@ const expandSidebar = () => {
   isCollapsed.value = false
 }
 
-const logout = () => {
-  appStore.logout()
+const logout = async () => {
+  await appStore.logout()
   router.push('/login')
 }
 

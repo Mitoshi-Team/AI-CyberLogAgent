@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import asyncpg
@@ -48,6 +48,91 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
+CLI_TZ_OFFSET_HOURS = int(os.getenv("CLI_TZ_OFFSET_HOURS", "5"))
+CLI_TZ = timezone(timedelta(hours=CLI_TZ_OFFSET_HOURS))
+
+AGENT_ACTION_RECEIVE_LOGS = 1
+AGENT_ACTION_ANALYZE_LOGS = 2
+AGENT_ACTION_MATCH_THREATS = 3
+AGENT_ACTION_BUILD_REPORT = 4
+AGENT_ACTION_SAVE_REPORT = 5
+AGENT_ACTION_RESPOND = 6
+
+USER_ACTION_LOGIN = 7
+USER_ACTION_LOGOUT = 8
+USER_ACTION_SEND_LOGS = 9
+USER_ACTION_SEND_MESSAGE = 10
+
+MIN_LOG_LINES = 50
+MAX_LOG_LINES = 500
+
+
+async def _insert_agent_log(
+    conn: asyncpg.Connection,
+    action_type_id: int,
+    description: str,
+) -> None:
+    """Persist a short agent action log into AgentLogs table."""
+    await conn.execute(
+        """
+        INSERT INTO public."AgentLogs" (action_type_id, description, date)
+        VALUES ($1, $2, NOW())
+        """,
+        action_type_id,
+        description,
+    )
+
+
+async def _try_insert_agent_log(
+    conn: asyncpg.Connection,
+    action_type_id: int,
+    description: str,
+) -> None:
+    """Best-effort wrapper for AgentLogs writes to avoid breaking main flow."""
+    try:
+        await _insert_agent_log(conn, action_type_id, description)
+    except Exception as error:
+        logger.warning(
+            "Failed to write AgentLogs entry (action_type_id=%s): %s",
+            action_type_id,
+            error,
+        )
+
+
+async def _insert_user_log(
+    conn: asyncpg.Connection,
+    user_id: int,
+    action_type_id: int,
+    description: str,
+) -> None:
+    """Persist a short user action log into UserLogs table."""
+    await conn.execute(
+        """
+        INSERT INTO public."UserLogs" (user_id, action_type_id, description, date)
+        VALUES ($1, $2, $3, NOW())
+        """,
+        user_id,
+        action_type_id,
+        description,
+    )
+
+
+async def _try_insert_user_log(
+    conn: asyncpg.Connection,
+    user_id: int,
+    action_type_id: int,
+    description: str,
+) -> None:
+    """Best-effort wrapper for UserLogs writes to avoid breaking main flow."""
+    try:
+        await _insert_user_log(conn, user_id, action_type_id, description)
+    except Exception as error:
+        logger.warning(
+            "Failed to write UserLogs entry (user_id=%s, action_type_id=%s): %s",
+            user_id,
+            action_type_id,
+            error,
+        )
 
 
 async def _process_kafka_log_batch(payload: dict) -> None:
@@ -73,6 +158,17 @@ async def _process_kafka_log_batch(payload: dict) -> None:
 
     log_content = "\n".join(messages)
     analysis_result = await analyze_log_v2(log_content)
+    analysis_error = str(analysis_result.get("error") or "")
+    lowered_analysis_error = analysis_error.lower()
+
+    if analysis_error and (
+        "payment required" in lowered_analysis_error or "402" in lowered_analysis_error
+    ):
+        logger.warning(
+            "Kafka batch analysis skipped due to external AI payment error: %s",
+            analysis_error,
+        )
+        return
 
     source_file = batch.get("source_file", "unknown")
     source_files = batch.get("source_files")
@@ -82,6 +178,14 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         else source_file
     )
     events_found = analysis_result.get("events_found", 0)
+    if events_found <= 0:
+        logger.info(
+            "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
+            source_label,
+            len(messages),
+        )
+        return
+
     report_description = (
         "AI pipeline: Agent1 -> RAG -> Agent2\n"
         f"Источник: {source_label}\n"
@@ -92,6 +196,27 @@ async def _process_kafka_log_batch(payload: dict) -> None:
 
     conn = await asyncpg.connect(DATABASE_URL, timeout=10)
     try:
+        await _try_insert_agent_log(
+            conn,
+            AGENT_ACTION_RECEIVE_LOGS,
+            f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
+        )
+        await _try_insert_agent_log(
+            conn,
+            AGENT_ACTION_ANALYZE_LOGS,
+            "Анализ логов через AI Agent v2 (Kafka batch)",
+        )
+        await _try_insert_agent_log(
+            conn,
+            AGENT_ACTION_MATCH_THREATS,
+            "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
+        )
+        await _try_insert_agent_log(
+            conn,
+            AGENT_ACTION_BUILD_REPORT,
+            "Формирование итогового отчета по Kafka batch",
+        )
+
         log_row = await conn.fetchrow(
             """
             INSERT INTO public."Logs" (file_content, date)
@@ -119,6 +244,12 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             report_description,
         )
 
+        await _try_insert_agent_log(
+            conn,
+            AGENT_ACTION_SAVE_REPORT,
+            f"Сохранение отчета по Kafka batch: log_id={log_id}",
+        )
+
         chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
         inserted_messages = await conn.execute(
             """
@@ -127,6 +258,12 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             FROM public."Users"
             """,
             chat_message,
+        )
+
+        await _try_insert_agent_log(
+            conn,
+            AGENT_ACTION_RESPOND,
+            "Ответ на запрос: автоответ опубликован в чат пользователя",
         )
 
         logger.info(
@@ -155,7 +292,7 @@ kafka_log_consumer = KafkaLogBatchConsumer(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle events для приложения"""
-    logger.info("🚀 Starting AI CyberLog Agent Backend...")
+    logger.info("🚀 Starting Wavescan Backend...")
     logger.info(f"📊 Database URL: {DATABASE_URL}")
     logger.info(f"📦 Pipeline collected logs file: {PIPELINE_COLLECTED_LOGS_FILE}")
 
@@ -176,14 +313,14 @@ async def lifespan(app: FastAPI):
     if KAFKA_ENABLED:
         await kafka_log_consumer.stop()
 
-    logger.info("🛑 Shutting down AI CyberLog Agent Backend...")
+    logger.info("🛑 Shutting down Wavescan Backend...")
     # Close AI Agent v2 resources
     await close_pipeline()
 
 
 # Создание FastAPI приложения
 app = FastAPI(
-    title="AI CyberLog Agent API",
+    title="Wavescan API",
     description="Backend API for AI-powered log analysis and incident monitoring",
     version="1.0.0",
     lifespan=lifespan,
@@ -233,7 +370,7 @@ class ChatMessageResponse(BaseModel):
 @app.get("/")
 async def root():
     """Главная страница API"""
-    return {"message": "AI CyberLog Agent API", "status": "running", "version": "1.0.0"}
+    return {"message": "Wavescan API", "status": "running", "version": "1.0.0"}
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)
@@ -250,6 +387,18 @@ async def login(request: LoginRequest):
 
             token = secrets.token_urlsafe(32)
 
+            if DATABASE_URL and user_data and user_data.get("user_id"):
+                conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+                try:
+                    await _try_insert_user_log(
+                        conn,
+                        user_data["user_id"],
+                        USER_ACTION_LOGIN,
+                        f"Вход в систему: login={user_data.get('login', request.username)}",
+                    )
+                finally:
+                    await conn.close()
+
             return LoginResponse(
                 success=True,
                 message="Успешная авторизация",
@@ -265,6 +414,31 @@ async def login(request: LoginRequest):
             )
     except Exception as e:
         logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+
+
+@app.post("/api/auth/logout")
+async def logout(user_id: int):
+    """Выход пользователя из системы (логирование пользовательского действия)."""
+    try:
+        if DATABASE_URL:
+            conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+            try:
+                await _try_insert_user_log(
+                    conn,
+                    user_id,
+                    USER_ACTION_LOGOUT,
+                    "Выход из системы",
+                )
+            finally:
+                await conn.close()
+
+        return {
+            "success": True,
+            "message": "Выход выполнен",
+        }
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
 
 
@@ -839,6 +1013,18 @@ async def send_chat_message(request: ChatSendRequest):
                 status_code=400, detail="Сообщение не может быть пустым"
             )
 
+        if DATABASE_URL:
+            conn = await asyncpg.connect(DATABASE_URL, timeout=10)
+            try:
+                await _try_insert_user_log(
+                    conn,
+                    request.user_id,
+                    USER_ACTION_SEND_MESSAGE,
+                    "Отправка сообщения в чат AI-агента",
+                )
+            finally:
+                await conn.close()
+
         # Обрабатываем сообщение через GigaChat
         result = await process_chat_message(
             user_id=request.user_id,
@@ -949,19 +1135,84 @@ async def upload_log_file(
                 status_code=400, detail="Файл пустой. Загрузите файл с содержимым."
             )
 
+        # Проверяем допустимый диапазон строк в логе
+        non_empty_lines_count = sum(
+            1 for line in content_str.splitlines() if line.strip()
+        )
+        if not (MIN_LOG_LINES <= non_empty_lines_count <= MAX_LOG_LINES):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Файл должен содержать от {MIN_LOG_LINES} до {MAX_LOG_LINES} непустых строк. "
+                    f"Этот файл содержит: {non_empty_lines_count}."
+                ),
+            )
+
         logger.info(
             f"Получен файл {file.filename} от пользователя {user_id}, "
-            f"размер: {len(content_str)} байт"
+            f"размер: {len(content_str)} байт, строк: {non_empty_lines_count}"
         )
 
-        if not use_v2:
-            logger.info("Параметр use_v2=false устарел, используется AI Agent v2")
-        logger.info("Используем AI Agent v2 для анализа")
-        analysis_result = await analyze_log_v2(content_str)
-
-        # Сохраняем лог в БД
         conn = await asyncpg.connect(DATABASE_URL, timeout=10)
         try:
+            await _try_insert_user_log(
+                conn,
+                user_id,
+                USER_ACTION_SEND_LOGS,
+                f"Отправка логов: файл={file.filename}, размер={len(content_str)} байт",
+            )
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_RECEIVE_LOGS,
+                f"Получение логов: файл={file.filename}, user_id={user_id}, размер={len(content_str)} байт",
+            )
+
+            if not use_v2:
+                logger.info("Параметр use_v2=false устарел, используется AI Agent v2")
+            logger.info("Используем AI Agent v2 для анализа")
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_ANALYZE_LOGS,
+                f"Анализ логов через AI Agent v2: файл={file.filename}",
+            )
+            analysis_result = await analyze_log_v2(content_str)
+            analysis_error = str(analysis_result.get("error") or "")
+            lowered_analysis_error = analysis_error.lower()
+
+            if analysis_error and (
+                "payment required" in lowered_analysis_error
+                or "402" in lowered_analysis_error
+            ):
+                await _try_insert_agent_log(
+                    conn,
+                    AGENT_ACTION_RESPOND,
+                    "Ответ на запрос: отчет не создан из-за ошибки внешнего AI сервиса (402 Payment Required)",
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=analysis_result.get(
+                        "description",
+                        "⚠️ Ошибка анализа: внешний AI сервис вернул 402 Payment Required.",
+                    ),
+                )
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_MATCH_THREATS,
+                (
+                    "Сопоставление с базой угроз/MITRE: "
+                    f"threat_type_id={analysis_result.get('threat_type_id', 'n/a')}"
+                ),
+            )
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_BUILD_REPORT,
+                "Формирование итогового отчета по результатам анализа",
+            )
+
             # Сохраняем содержимое лога
             log_row = await conn.fetchrow(
                 """
@@ -993,6 +1244,12 @@ async def upload_log_file(
             )
             report_id = report_row["report_id"]
 
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_SAVE_REPORT,
+                f"Сохранение отчета в БД: log_id={log_id}, report_id={report_id}",
+            )
+
             logger.info(
                 f"Файл {file.filename} успешно обработан. "
                 f"Log ID: {log_id}, Report ID: {report_id}"
@@ -1011,6 +1268,12 @@ async def upload_log_file(
                 response["mitre_techniques"] = analysis_result["mitre_techniques"]
             if "processing_time_ms" in analysis_result:
                 response["processing_time_ms"] = analysis_result["processing_time_ms"]
+
+            await _try_insert_agent_log(
+                conn,
+                AGENT_ACTION_RESPOND,
+                f"Ответ на запрос загрузки логов: user_id={user_id}, report_id={report_id}",
+            )
 
             return response
 
@@ -1031,10 +1294,121 @@ async def upload_log_file(
 # Словарь доступных команд
 AVAILABLE_COMMANDS = {
     "register": "Зарегистрировать нового пользователя",
+    "agent_logs": "Просмотр логов агента (опционально: agent_logs <limit>)",
+    "user_logs": "Просмотр логов пользователей (опционально: user_logs <limit>)",
     "help": "Показать справку",
     "interactive": "Запустить консоль",
     "exit": "Выйти из консоли",
 }
+
+
+def _parse_limit_arg(parts: list[str], default: int = 50) -> int:
+    """Parse optional numeric limit argument from CLI command."""
+    if len(parts) < 2:
+        return default
+
+    try:
+        value = int(parts[1])
+        return value if value > 0 else default
+    except ValueError:
+        print(f"⚠ Некорректный лимит '{parts[1]}', используется {default}")
+        return default
+
+
+def _format_cli_datetime(value: datetime) -> str:
+    """Format timestamp for CLI output in configured timezone without offset suffix."""
+    if not isinstance(value, datetime):
+        return str(value)
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+
+    return value.astimezone(CLI_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def show_agent_logs(limit: int = 50):
+    """Show latest agent action logs for admin console."""
+    try:
+        conn = commands.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                al.agent_log_id,
+                al.action_type_id,
+                at.name,
+                al.description,
+                al.date
+            FROM public."AgentLogs" al
+            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
+            ORDER BY al.date DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cursor.fetchall()
+
+        print("\n" + "=" * 90)
+        print(f"  Логи агента (последние {limit}")
+        print("=" * 90)
+
+        if not rows:
+            print("\nЗаписей нет\n")
+        else:
+            for row in reversed(rows):
+                date_str = _format_cli_datetime(row[4])
+                print(f"[{date_str}] id={row[0]} type={row[1]} ({row[2]}) | {row[3]}")
+            print()
+
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"❌ Ошибка получения логов агента: {e}")
+
+
+def show_user_logs(limit: int = 50):
+    """Show latest user action logs for admin console."""
+    try:
+        conn = commands.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                ul.user_log_id,
+                ul.user_id,
+                u.login,
+                ul.action_type_id,
+                at.name,
+                ul.description,
+                ul.date
+            FROM public."UserLogs" ul
+            LEFT JOIN public."Users" u ON u.user_id = ul.user_id
+            LEFT JOIN public."ActionTypes" at ON at.action_type_id = ul.action_type_id
+            ORDER BY ul.date DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cursor.fetchall()
+
+        print("\n" + "=" * 110)
+        print(f"  Логи пользователей (последние {limit})")
+        print("=" * 110)
+
+        if not rows:
+            print("\nЗаписей нет\n")
+        else:
+            for row in reversed(rows):
+                date_str = _format_cli_datetime(row[6])
+                print(
+                    f"[{date_str}] id={row[0]} user_id={row[1]} ({row[2]}) type={row[3]} ({row[4]}) | {row[5]}"
+                )
+            print()
+
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"❌ Ошибка получения логов пользователей: {e}")
 
 
 def show_help():
@@ -1053,17 +1427,25 @@ def show_help():
 def execute_command(command: str):
     """Выполнить одну CLI команду"""
     command = command.strip()
+    parts = command.split()
+    cmd = parts[0] if parts else ""
 
     if not command:
         return True
 
-    if command in ["exit", "quit", "q"]:
+    if cmd in ["exit", "quit", "q"]:
         return False
 
-    if command in ["help", "?"]:
+    if cmd in ["help", "?"]:
         show_help()
-    elif command == "register":
+    elif cmd == "register":
         commands.register()
+    elif cmd == "agent_logs":
+        limit = _parse_limit_arg(parts)
+        show_agent_logs(limit)
+    elif cmd == "user_logs":
+        limit = _parse_limit_arg(parts)
+        show_user_logs(limit)
     else:
         print(f"❌ Ошибка: неизвестная команда '{command}'")
         print("Введите 'help' чтобы увидеть доступные команды")

@@ -13,11 +13,15 @@
     <div class="relative z-10 flex-1 min-h-0 flex flex-col px-4 sm:px-8">
       <div
         v-if="messages.length > 0 || isLoading"
-        ref="chatContainer"
-        class="flex-1 min-h-0 overflow-y-auto pt-8 scrollbar-chat"
-        :style="{ paddingBottom: `${topAlignSpacerHeight}px` }"
+        class="relative flex-1 min-h-0 flex"
       >
-        <div class="mx-auto w-full max-w-3xl space-y-7">
+        <div
+          ref="chatContainer"
+          class="chat-scroll-container h-full w-full min-h-0 overflow-y-auto pt-8 pr-3"
+          :style="{ paddingBottom: `${topAlignSpacerHeight}px` }"
+          @scroll="handleChatScroll"
+        >
+          <div class="mx-auto w-full max-w-3xl space-y-7">
           <div
             v-for="(msg, index) in messages"
             :key="index"
@@ -54,7 +58,7 @@
                 class="markdown-content text-base leading-relaxed text-dark-200 text-left break-words"
                 v-html="renderMarkdown(msg.text)"
               ></div>
-              <p class="text-xs text-dark-500 mt-2 text-left">wavescan assistant</p>
+              <p class="text-xs text-dark-500 mt-2 text-left">Wavescan assistant</p>
             </div>
           </div>
 
@@ -65,6 +69,21 @@
               <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 300ms"/>
             </div>
           </div>
+        </div>
+        </div>
+
+        <div
+          v-if="showCustomScrollbar"
+          class="chat-scrollbar-track"
+          @mousedown="handleScrollbarTrackMouseDown"
+        >
+          <button
+            type="button"
+            class="chat-scrollbar-thumb"
+            :style="{ height: `${scrollbarThumbHeight}px`, transform: `translateY(${scrollbarThumbTop}px)` }"
+            aria-label="Прокрутка чата"
+            @mousedown.stop.prevent="startScrollbarDrag"
+          ></button>
         </div>
       </div>
 
@@ -304,6 +323,11 @@ const isRateLimited = ref(false)
 const isEmptyFile = ref(false)
 const showNewChatModal = ref(false)
 const topAlignSpacerHeight = ref(0)
+const showCustomScrollbar = ref(false)
+const scrollbarThumbHeight = ref(0)
+const scrollbarThumbTop = ref(0)
+const isDraggingScrollbar = ref(false)
+const scrollbarDragStartOffset = ref(0)
 let clearNotificationsTimer = null
 let logUploadAbortController = null
 
@@ -312,12 +336,16 @@ const MAX_MESSAGE_LENGTH = 500
 const RATE_LIMIT_DELAY = 2000 // 2 секунды
 const NOTIFICATION_CLEAR_DELAY = 5000 // 5 секунд до снятия выделения
 const USER_MESSAGE_TOP_OFFSET = 16 // Отступ от верхней границы контейнера при автопрокрутке
+const MIN_SCROLLBAR_THUMB_HEIGHT = 32
+const MAX_SCROLLBAR_THUMB_HEIGHT = 160
+const SCROLLBAR_EDGE_GAP = 96
 
 const messages = ref([])
 
 // Загрузка истории чата при монтировании
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('resize', updateCustomScrollbar)
   // Очищаем с задержкой при монтировании компонента
   clearNotifications(false)
   adjustTextareaHeight()
@@ -420,8 +448,13 @@ watch(() => route.path, (newPath) => {
   if (newPath === '/chat') {
     // Очищаем с задержкой, чтобы пользователь увидел выделенные сообщения
     clearNotifications(false)
+    nextTick(updateCustomScrollbar)
   }
 }, { immediate: true })
+
+watch([messages, isLoading, topAlignSpacerHeight], () => {
+  nextTick(updateCustomScrollbar)
+}, { deep: true })
 
 // Очистка при возвращении фокуса на вкладку
 const handleVisibilityChange = () => {
@@ -432,6 +465,8 @@ const handleVisibilityChange = () => {
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('resize', updateCustomScrollbar)
+  stopScrollbarDrag()
   // Очищаем таймер при размонтировании
   if (clearNotificationsTimer) {
     clearTimeout(clearNotificationsTimer)
@@ -481,8 +516,106 @@ const scrollToBottom = () => {
   nextTick(() => {
     if (chatContainer.value) {
       chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+      updateCustomScrollbar()
     }
   })
+}
+
+const updateCustomScrollbar = () => {
+  const container = chatContainer.value
+  if (!container) return
+
+  const { clientHeight, scrollHeight, scrollTop } = container
+  const hasOverflow = scrollHeight > clientHeight + 1
+
+  showCustomScrollbar.value = hasOverflow
+  if (!hasOverflow) {
+    scrollbarThumbHeight.value = 0
+    scrollbarThumbTop.value = 0
+    return
+  }
+
+  const rawThumbHeight = Math.floor((clientHeight / scrollHeight) * clientHeight)
+  const thumbHeight = Math.min(
+    MAX_SCROLLBAR_THUMB_HEIGHT,
+    Math.max(rawThumbHeight, MIN_SCROLLBAR_THUMB_HEIGHT)
+  )
+  const cappedThumbHeight = Math.min(thumbHeight, clientHeight)
+  const maxThumbTravel = Math.max(clientHeight - (SCROLLBAR_EDGE_GAP * 2) - cappedThumbHeight, 0)
+  const maxScrollTop = Math.max(scrollHeight - clientHeight, 0)
+  const thumbTop = maxScrollTop > 0
+    ? SCROLLBAR_EDGE_GAP + (scrollTop / maxScrollTop) * maxThumbTravel
+    : SCROLLBAR_EDGE_GAP
+
+  scrollbarThumbHeight.value = cappedThumbHeight
+  scrollbarThumbTop.value = thumbTop
+}
+
+const handleChatScroll = () => {
+  updateCustomScrollbar()
+}
+
+const startScrollbarDrag = (event) => {
+  if (!showCustomScrollbar.value) return
+
+  isDraggingScrollbar.value = true
+  scrollbarDragStartOffset.value = event.clientY - scrollbarThumbTop.value
+
+  window.addEventListener('mousemove', onScrollbarDrag)
+  window.addEventListener('mouseup', stopScrollbarDrag)
+}
+
+const onScrollbarDrag = (event) => {
+  if (!isDraggingScrollbar.value || !chatContainer.value) return
+
+  const container = chatContainer.value
+  const maxThumbTravel = Math.max(
+    container.clientHeight - (SCROLLBAR_EDGE_GAP * 2) - scrollbarThumbHeight.value,
+    0
+  )
+  const minThumbTop = SCROLLBAR_EDGE_GAP
+  const maxThumbTop = SCROLLBAR_EDGE_GAP + maxThumbTravel
+  const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0)
+
+  if (maxThumbTravel <= 0 || maxScrollTop <= 0) return
+
+  const nextThumbTop = Math.min(
+    Math.max(event.clientY - scrollbarDragStartOffset.value, minThumbTop),
+    maxThumbTop
+  )
+
+  container.scrollTop = ((nextThumbTop - SCROLLBAR_EDGE_GAP) / maxThumbTravel) * maxScrollTop
+}
+
+const stopScrollbarDrag = () => {
+  if (!isDraggingScrollbar.value) return
+
+  isDraggingScrollbar.value = false
+  window.removeEventListener('mousemove', onScrollbarDrag)
+  window.removeEventListener('mouseup', stopScrollbarDrag)
+}
+
+const handleScrollbarTrackMouseDown = (event) => {
+  if (!chatContainer.value || !showCustomScrollbar.value) return
+
+  const trackRect = event.currentTarget.getBoundingClientRect()
+  const relativeY = event.clientY - trackRect.top
+  const maxThumbTravel = Math.max(
+    chatContainer.value.clientHeight - (SCROLLBAR_EDGE_GAP * 2) - scrollbarThumbHeight.value,
+    0
+  )
+  const minThumbTop = SCROLLBAR_EDGE_GAP
+  const maxThumbTop = SCROLLBAR_EDGE_GAP + maxThumbTravel
+  const maxScrollTop = Math.max(chatContainer.value.scrollHeight - chatContainer.value.clientHeight, 0)
+
+  if (maxThumbTravel <= 0 || maxScrollTop <= 0) return
+
+  const targetThumbTop = Math.min(
+    Math.max(relativeY - scrollbarThumbHeight.value / 2, minThumbTop),
+    maxThumbTop
+  )
+
+  chatContainer.value.scrollTop = ((targetThumbTop - SCROLLBAR_EDGE_GAP) / maxThumbTravel) * maxScrollTop
 }
 
 const scrollMessageToTop = async (messageIndex) => {
@@ -509,6 +642,7 @@ const scrollMessageToTop = async (messageIndex) => {
   }
 
   container.scrollTop = desiredScrollTop
+  updateCustomScrollbar()
 }
 
 const reduceTopAlignSpacerByLastAssistantMessage = async () => {
@@ -690,6 +824,7 @@ const sendMessage = async () => {
     appStore.addNotification('Ошибка при отправке сообщения AI агенту', 'error')
   } finally {
     isLoading.value = false
+    nextTick(updateCustomScrollbar)
   }
 }
 
@@ -826,6 +961,7 @@ ${error.response?.data?.detail || error.message || 'Неизвестная ош�
     isLogAnalysisInProgress.value = false
     isLoading.value = false
     event.target.value = '' // Сбрасываем input
+    nextTick(updateCustomScrollbar)
   }
 }
 
@@ -866,10 +1002,52 @@ const confirmNewChat = async () => {
     appStore.addNotification('Ошибка при создании нового чата', 'error')
   } finally {
     isLoading.value = false
+    nextTick(updateCustomScrollbar)
   }
 }
 </script>
 <style scoped>
+.chat-scroll-container {
+  height: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-scroll-container::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.chat-scrollbar-track {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 5px;
+  border-radius: 9999px;
+  background: transparent;
+  z-index: 10;
+}
+
+.chat-scrollbar-thumb {
+  width: 100%;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(149, 149, 149, 0.7);
+  cursor: grab;
+  transition: background-color 0.15s ease;
+}
+
+.chat-scrollbar-thumb:hover,
+.chat-scrollbar-thumb:active {
+  background: rgba(149, 149, 149, 0.7);
+}
+
+.chat-scrollbar-thumb:active {
+  cursor: grabbing;
+}
+
 .wave-glow {
   text-shadow: 0 0 24px rgba(103, 124, 255, 0.95), 0 0 58px rgba(93, 118, 255, 0.65);
 }
@@ -878,6 +1056,10 @@ const confirmNewChat = async () => {
   background: #252525;
   border: 1px solid #3C3C3C;
   box-shadow: none;
+}
+
+.chat-composer:focus-within {
+  border-color: #515151;
 }
 
 .quick-pill {

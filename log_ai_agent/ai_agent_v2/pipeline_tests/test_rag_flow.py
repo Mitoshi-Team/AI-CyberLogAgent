@@ -9,8 +9,15 @@ import sys
 from pathlib import Path
 
 # Add project root
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load .env file
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 
 from log_ai_agent.ai_agent_v2 import create_pipeline
 from log_ai_agent.ai_agent_v2.callbacks import get_callback_config
@@ -79,28 +86,42 @@ async def main():
             print(f"{rag['mitre_context'][:400]}...")
 
         # Agent 2 output
-        print("\n\n[3] Agent 2: Final Report")
+        print("\n\n[3] Agent 2: Детальный AI отчёт")
         print("-" * 60)
 
         if "agent2" in stages:
             agent2 = stages["agent2"]
             print("Input: Agent 1 output + MITRE context")
-            print("\n✓ Final Report:")
+            print("\n✓ Agent 2 Report:")
             print(f"  Severity: {agent2['severity_level_id']}/4")
             print(f"  Threat Type: {agent2['threat_type_id']}/11")
             print(f"  MITRE Techniques: {agent2['mitre_techniques']}")
 
+        # Agent 3 output
+        print("\n\n[4] Agent 3: Финальная суммаризация")
+        print("-" * 60)
+
+        if "agent3" in stages:
+            agent3 = stages["agent3"]
+            print("Input: Agent 2 + MITRE + YARA + Sigma")
+            print("\n✓ Agent 3 Final Report:")
+            print(f"  Severity: {agent3['severity_level_id']}/4")
+            print(f"  Threat Type: {agent3['threat_type_id']}/11")
+            print(f"  MITRE Techniques: {agent3['mitre_techniques']}")
+            print(f"  YARA Rules: {agent3.get('yara_rules', [])}")
+            print(f"  Sigma Rules: {agent3.get('sigma_rules', [])}")
+
             print("\nReport preview:")
-            print(f"{agent2['final_report'][:400]}...")
+            print(f"{agent3['final_report'][:400]}...")
 
         print("\n" + "=" * 60)
         print(f"✓ Total time: {result['total_time_sec']:.1f}s")
         print("=" * 60)
 
         print("\n📊 RAG FLOW SUMMARY:")
-        print(
-            "  Agent 1 → Query Enhancement → ChromaDB Search → MITRE Context → Agent 2"
-        )
+        print("  Agent 1 → RAG (MITRE) → Agent 2 →┐")
+        print("  YARA Scan ────────────────────────┤→ Agent 3 → Final Report")
+        print("  Sigma Scan ───────────────────────┘")
         print("\n✅ RAG comparison is working!")
 
     else:

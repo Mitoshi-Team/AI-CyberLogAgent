@@ -17,17 +17,24 @@ dependencies = [
     "langchain-core==0.3.80",
     "langchain-gigachat==0.3.12",
     "langchain-huggingface==0.3.1",
+    "langchain-ollama==0.3.0",
+    "langgraph==0.4.0",
     "mitreattack-python==5.3.0",
     "pandas==2.3.3",
     "psycopg2-binary==2.9.11",
     "python-dotenv==1.2.1",
     "python-multipart==0.0.20",
-    "ruff==0.14.9",
+    "ruff>=0.14.9",
     "scikit-learn==1.6.1",
     "sentence-transformers==5.2.0",
     "taxii2-client>=2.3.0",
     "tenacity==9.0.0",
     "uvicorn==0.38.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.14.9",
 ]
 
 [tool.setuptools]

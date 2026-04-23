@@ -6,7 +6,7 @@ import os
 
 from .callbacks import get_callback_config
 from .config import AgentConfig
-from .pipeline.full_pipeline import LogAnalysisPipeline, create_pipeline
+from .pipeline import LogAnalysisPipeline, create_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +48,20 @@ async def get_pipeline() -> LogAnalysisPipeline:
 
     if _pipeline is None:
         _agent_config = AgentConfig.from_env()
+        provider = _agent_config.detected_provider
         logger.info("Creating AI Agent v2 pipeline...")
         _pipeline = await create_pipeline(
             chroma_path=_agent_config.chroma_path,
             use_rag=_agent_config.use_rag,
             llm_config={
-                "api_key": _agent_config.gigachat_api_key,
-                "model": _agent_config.gigachat_model,
                 "temperature": _agent_config.temperature,
                 "max_tokens": _agent_config.max_tokens,
                 "timeout": _agent_config.timeout,
             },
         )
         logger.info(
-            "AI Agent v2 backend config: model=%s timeout=%ss temp=%s max_tokens=%s use_rag=%s rag_top_k=%s",
-            _agent_config.gigachat_model,
+            "AI Agent v2 backend config: provider=%s timeout=%ss temp=%s max_tokens=%s use_rag=%s rag_top_k=%s",
+            provider.value,
             _agent_config.timeout,
             _agent_config.temperature,
             _agent_config.max_tokens,
@@ -124,15 +123,15 @@ async def analyze_log_v2(log_content: str) -> dict:
                 backoff_seconds[attempt + 1] if attempt + 1 < max_attempts else 0,
             )
 
-    if results.get("success") and "agent2" in results.get("stages", {}):
+    if results.get("success") and "agent3" in results.get("stages", {}):
         agent1 = results["stages"].get("agent1", {})
-        agent2 = results["stages"]["agent2"]
+        agent3 = results["stages"]["agent3"]
 
         return {
-            "description": agent2.get("final_report", ""),
-            "severity_level_id": agent2.get("severity_level_id", 3),
-            "threat_type_id": agent2.get("threat_type_id", 11),
-            "mitre_techniques": agent2.get("mitre_techniques", []),
+            "description": agent3.get("final_report", ""),
+            "severity_level_id": agent3.get("severity_level_id", 3),
+            "threat_type_id": agent3.get("threat_type_id", 11),
+            "mitre_techniques": agent3.get("mitre_techniques", []),
             "events_found": agent1.get("events_found", 0),
             "processing_time_ms": results.get("total_time_sec", 0) * 1000,
         }
@@ -144,7 +143,7 @@ async def analyze_log_v2(log_content: str) -> dict:
         if _is_rate_limited(error_msg):
             return {
                 "description": (
-                    "⚠️ Временный лимит запросов к GigaChat (429 Too Many Requests). "
+                    "⚠️ Временный лимит запросов к LLM (429 Too Many Requests). "
                     "Повторите анализ через 15-60 секунд."
                 ),
                 "severity_level_id": 3,

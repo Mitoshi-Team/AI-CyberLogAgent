@@ -103,12 +103,18 @@ export const useAppStore = defineStore('app', () => {
   /**
    * Выход пользователя
    */
-  const logout = () => {
-    isAuthenticated.value = false
-    currentUser.value = null
-    token.value = null
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('current_user')
+  const logout = async () => {
+    try {
+      await auth.logout(currentUser.value?.id)
+    } catch (error) {
+      console.error('Logout API error:', error)
+    } finally {
+      isAuthenticated.value = false
+      currentUser.value = null
+      token.value = null
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('current_user')
+    }
   }
 
   const normalizeNotificationType = (type = 'info') => {
