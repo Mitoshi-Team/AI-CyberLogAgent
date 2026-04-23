@@ -27,10 +27,35 @@ def get_db_connection():
             user=os.getenv("POSTGRES_USER", "cyberlog_user"),
             password=os.getenv("POSTGRES_PASSWORD", "cyberlog_password"),
         )
+        _ensure_admin_column(conn)
         return conn
     except Exception as e:
         print(f"❌ Ошибка подключения к базе данных: {e}")
         raise
+
+
+def _ensure_admin_column(conn) -> None:
+    """Ensure Users table has is_admin column for admin features."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'Users'
+              AND column_name = 'is_admin'
+            """
+        )
+        exists = cursor.fetchone()
+        if exists is None:
+            cursor.execute(
+                'ALTER TABLE public."Users" '
+                "ADD COLUMN is_admin boolean NOT NULL DEFAULT false"
+            )
+            conn.commit()
+    finally:
+        cursor.close()
 
 
 def validate_login(login: str) -> tuple[bool, str]:
@@ -118,7 +143,7 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
         # Получаем пользователя из БД
         cursor.execute(
-            'SELECT user_id, login, password_hash FROM public."Users" WHERE login = %s',
+            'SELECT user_id, login, password_hash, is_admin FROM public."Users" WHERE login = %s',
             (login,),
         )
         user = cursor.fetchone()
@@ -141,7 +166,11 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
         if bcrypt.checkpw(password_bytes, stored_hash_bytes):
             print(f"Успешная авторизация для {login}")
-            return True, {"user_id": user["user_id"], "login": user["login"]}
+            return True, {
+                "user_id": user["user_id"],
+                "login": user["login"],
+                "is_admin": bool(user.get("is_admin", False)),
+            }
 
         print(f"Неверный пароль для {login}")
         return False, None
@@ -154,24 +183,26 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
         return False, None
 
 
-def collect_logs():
-    """Collect analyse_logs from the specified directory."""
-    print("Logs collected\n")  # ЗАГЛУШКА >>>
-
-
-def hide_logs():
-    """Hide the analyse_logs from view."""
-    print("Logs hidden\n")
-
-
-def show_logs():
-    """Display the analyse_logs."""
-    print("Logs shown\n")  # ЗАГЛУШКА >>>
-
-
-def get_history():
-    """Retrieve the incident history."""
-    print("Incidents history shown\n")  # ЗАГЛУШКА >>>
+def get_user_by_id(user_id: int) -> dict | None:
+    """Fetch user by ID for session refresh."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            'SELECT user_id, login, is_admin FROM public."Users" WHERE user_id = %s',
+            (user_id,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            return None
+        return {
+            "user_id": user["user_id"],
+            "login": user["login"],
+            "is_admin": bool(user.get("is_admin", False)),
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def register():
@@ -187,7 +218,7 @@ def register():
         Requires a valid database connection and PASSWORD_SALT environment variable.
 
     """
-    print("\n🔐 Регистрация нового пользователя")
+    print("\nРегистрация нового пользователя")
     print("(Для отмены нажмите Enter без ввода)\n")
 
     # Валидация логина и проверка существования пользователя
@@ -201,7 +232,7 @@ def register():
         if not is_valid:
             print(f"❌ {error_message}")
             print(
-                "💡 Требования: 6-16 символов, только английские буквы и цифры, не начинается с цифры\n"
+                "Требования: 6-16 символов, только английские буквы и цифры, не начинается с цифры\n"
             )
             continue
 
@@ -236,7 +267,7 @@ def register():
         if not is_valid:
             print(f"❌ {error_message}")
             print(
-                "💡 Требования: 8-32 символа, минимум 1 буква, 1 цифра и 1 специальный символ\n"
+                "Требования: 8-32 символа, минимум 1 буква, 1 цифра и 1 специальный символ\n"
             )
             continue
         break
@@ -245,7 +276,7 @@ def register():
     password_salt = os.getenv("PASSWORD_SALT")
     if not password_salt:
         print("❌ Ошибка: PASSWORD_SALT не задана в переменных окружения")
-        print("💡 Добавьте PASSWORD_SALT в файл .env")
+        print("Добавьте PASSWORD_SALT в файл .env")
         return
 
     try:
@@ -261,8 +292,8 @@ def register():
 
         # Вставляем нового пользователя в БД
         cursor.execute(
-            'INSERT INTO public."Users" (login, password_hash) VALUES (%s, %s) RETURNING user_id',
-            (login, password_hash.decode("utf-8")),
+            'INSERT INTO public."Users" (login, password_hash, is_admin) VALUES (%s, %s, %s) RETURNING user_id',
+            (login, password_hash.decode("utf-8"), False),
         )
         user_id = cursor.fetchone()["user_id"]
 
@@ -279,3 +310,52 @@ def register():
         if "conn" in locals():
             conn.rollback()
             conn.close()
+
+
+def list_users_admin_status() -> list[dict]:
+    """Return all users with admin flag."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            """
+            SELECT user_id, login, is_admin
+            FROM public."Users"
+            ORDER BY login ASC
+            """
+        )
+        rows = cursor.fetchall() or []
+        return [dict(row) for row in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_user_admin_status(login: str, is_admin: bool) -> tuple[bool, str]:
+    """Grant or revoke admin flag for user by login."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            """
+            UPDATE public."Users"
+            SET is_admin = %s
+            WHERE login = %s
+            RETURNING user_id, login, is_admin
+            """,
+            (is_admin, login),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False, f"Пользователь '{login}' не найден"
+
+        conn.commit()
+        status_text = "администратор" if row["is_admin"] else "обычный пользователь"
+        return True, f"Пользователь '{row['login']}' обновлен: {status_text}"
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()

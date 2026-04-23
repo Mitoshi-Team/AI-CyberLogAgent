@@ -48,8 +48,8 @@ const handleSearch = (e) => {
   }
 }
 
-const logout = () => {
-  appStore.logout()
+const logout = async () => {
+  await appStore.logout()
   router.push('/login')
 }
 </script>

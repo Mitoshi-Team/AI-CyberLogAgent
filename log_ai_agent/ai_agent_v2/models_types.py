@@ -1,39 +1,110 @@
 """Type definitions for LangGraph compatibility."""
 
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
+
+from .parsers.apache_parser import ParsedLog
+
+
+class SuspiciousEvent(TypedDict, total=False):
+    """A suspicious event extracted from logs by Agent 1.
+
+    This is sent to Agent 2 for RAG/MITRE lookup.
+    """
+
+    description: str
+    timestamp: str | None
+    log_line: str
+
+
+class MITRETechnique(TypedDict, total=False):
+    """MITRE ATT&CK technique found by RAG search.
+
+    Includes context from the original event.
+    """
+
+    technique_id: str
+    name: str
+    timestamp: str | None
+    event: str
+    log_line: str
 
 
 class AnalysisState(TypedDict, total=False):
-    """State type for LangGraph (future compatibility).
+    """State type for LangGraph analysis pipeline.
 
     This TypedDict defines the state that flows through the analysis pipeline.
-    Currently used for type hints, will be used with LangGraph StateGraph.
+    The pipeline has parallel branches that converge in Agent 3:
+
+    State flow:
+    ┌─────────────────────────────────────┐
+    │         log_content (input)         │
+    └────┬────────────┬─────────┬───────┘
+         │            │         │
+    ┌────▼────┐ ┌────▼────┐ ┌─▼──────┐
+    │ Agent 1 │ │  YARA   │ │ Sigma  │
+    └────┬────┘ └───┬────┘ └──┬──────┘
+         │            │         │
+    ┌────▼────┐       │         │
+    │Agent 2  │       │         │
+    │(RAG it) │       │         │
+    └────┬────┘       │         │
+         │            │         │
+         └────────────┼─────────┘
+                      │
+               ┌──────▼──────┐
+               │   Agent 3   │
+               │ (summarize) │
+               └──────┬──────┘
+                      │
+               ┌──────▼──────┐
+               │  END (report)│
+               └─────────────┘
     """
 
-    # Input
+    # ===== INPUT =====
     log_content: str
+    parsed_logs: list[ParsedLog]
 
-    # Agent 1 output
+    # ===== AGENT 1 OUTPUT =====
     primary_analysis: str
+    mini_report: str
     events_found: int
+    suspicious_events: list[SuspiciousEvent]
 
-    # RAG output
+    # ===== RAG + AGENT 2 OUTPUT =====
     mitre_context: str
     mitre_techniques: list[dict]
     technique_ids: list[str]
     search_query: str
+    mitre_techniques_final: list[MITRETechnique]
 
-    # Agent 2 output
+    # ===== AGENT 2 OUTPUT =====
+    agent2_report: str
+
+    # ===== YARA SCAN OUTPUT =====
+    yara_matches: Annotated[list[str], operator.add]
+    yara_rules_matched: Annotated[list[str], operator.add]
+    yara_context: str
+
+    # ===== SIGMA SCAN OUTPUT =====
+    sigma_matches: Annotated[list[str], operator.add]
+    sigma_rules_matched: Annotated[list[str], operator.add]
+    sigma_context: str
+
+    # ===== AGENT 3 OUTPUT (FINAL) =====
     final_report: str
+    recommendations: list[str]
     severity_level_id: int
     threat_type_id: int
-    mitre_techniques_final: list[str]
 
-    # Metadata
+    # ===== METADATA =====
     success: bool
     error: str | None
     total_time_sec: float
     log_size: int
+    processing_time_ms: float
+    prefilter_stats: dict
 
 
 class PipelineResult(TypedDict, total=False):
@@ -43,18 +114,16 @@ class PipelineResult(TypedDict, total=False):
     log_size: int
     total_time_sec: float
 
-    # Stage results
     agent1_result: dict | None
     rag_result: dict | None
     agent2_result: dict | None
 
-    # Error information
     error: str | None
     error_stage: str | None
 
 
 class MITRATechnique(TypedDict):
-    """MITRE ATT&CK technique type."""
+    """MITRE ATT&CK technique type (original, for compatibility)."""
 
     technique_id: str
     technique_name: str

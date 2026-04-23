@@ -3,12 +3,12 @@ import logging
 import asyncpg
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from .chains.llm import create_gigachat_llm
+from .chains.llm import create_llm
 
 logger = logging.getLogger(__name__)
 
 
-CHAT_SYSTEM_PROMPT = """Ты - AI-ассистент по кибербезопасности в системе AI CyberLog Agent.
+CHAT_SYSTEM_PROMPT = """Ты - AI-ассистент по кибербезопасности в системе Wavescan.
 Отвечай на русском языке, по существу и с практическими рекомендациями.
 
 Правила ответа:
@@ -51,6 +51,7 @@ async def _generate_agent_response(
         SELECT role, content, created_at
         FROM public."Messages"
         WHERE user_id = $1
+          AND role IN ('user', 'agent')
         ORDER BY created_at DESC
         LIMIT 10
         """,
@@ -84,7 +85,7 @@ async def _generate_agent_response(
     else:
         report_context = "Отчеты пока отсутствуют"
 
-    llm = create_gigachat_llm()
+    llm = create_llm()
     llm_result = await llm.ainvoke(
         [
             SystemMessage(content=CHAT_SYSTEM_PROMPT),

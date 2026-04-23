@@ -1,0 +1,29 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	prefilter(prefilter)
+	agent1(agent1)
+	parse_logs(parse_logs)
+	agent2(agent2)
+	yara_scan(yara_scan)
+	sigma_scan(sigma_scan)
+	agent3(agent3)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> prefilter;
+	agent1 -. &nbsp;False&nbsp; .-> agent2;
+	agent1 -. &nbsp;True&nbsp; .-> agent3;
+	agent2 --> agent3;
+	parse_logs --> sigma_scan;
+	parse_logs --> yara_scan;
+	prefilter --> agent1;
+	prefilter --> parse_logs;
+	sigma_scan --> agent3;
+	yara_scan --> agent3;
+	agent3 --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

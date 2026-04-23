@@ -257,6 +257,7 @@ ALTER TABLE public."ThreatTypes" ALTER COLUMN threat_type_id ADD GENERATED ALWAY
 
 CREATE TABLE IF NOT EXISTS public."UserLogs" (
     user_log_id integer NOT NULL,
+    user_id integer NOT NULL,
     action_type_id integer NOT NULL,
     description text NOT NULL,
     date timestamp with time zone NOT NULL
@@ -288,11 +289,15 @@ ALTER TABLE public."UserLogs" ALTER COLUMN user_log_id ADD GENERATED ALWAYS AS I
 CREATE TABLE IF NOT EXISTS public."Users" (
     user_id integer NOT NULL,
     login text NOT NULL,
-    password_hash text NOT NULL
+    password_hash text NOT NULL,
+    is_admin boolean NOT NULL DEFAULT false
 );
 
 
 ALTER TABLE public."Users" OWNER TO postgres;
+
+ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
 
 --
 -- TOC entry 219 (class 1259 OID 16389)
@@ -620,6 +625,14 @@ ALTER TABLE ONLY public."Reports"
 
 ALTER TABLE ONLY public."UserLogs"
     ADD CONSTRAINT "FK_UserLog_ActionType" FOREIGN KEY (action_type_id) REFERENCES public."ActionTypes"(action_type_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: UserLogs FK_UserLog_User; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public."UserLogs"
+    ADD CONSTRAINT "FK_UserLog_User" FOREIGN KEY (user_id) REFERENCES public."Users"(user_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 -- Completed on 2026-03-21 11:14:00

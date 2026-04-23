@@ -23,12 +23,48 @@
 
 <script setup>
 import { useAppStore } from '@/stores/app'
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import NotificationStack from '@/components/NotificationStack.vue'
 import websocketService from '@/services/websocket'
 
 const appStore = useAppStore()
+const route = useRoute()
+const websocketEnabled = import.meta.env.VITE_ENABLE_WEBSOCKET !== 'false'
+
+const handleWebsocketMessage = (data) => {
+  if (data.type === 'incident') {
+    appStore.addIncident(data.incident)
+    return
+  }
+
+  if (data.type === 'report_created') {
+    appStore.notifyReportsUpdated(data)
+    return
+  }
+
+  if (data.type === 'chat_response' && data.user_id === appStore.currentUser?.id) {
+    const isOnChatPage = route.path === '/chat'
+    const isTabVisible = document.visibilityState === 'visible'
+
+    if (!isOnChatPage || !isTabVisible) {
+      appStore.addUnreadChatMessage()
+      appStore.addNotification('Новое сообщение от ассистента в чате', 'info', 5000, true)
+    }
+  }
+}
+
+const connectWebsocket = () => {
+  if (!websocketEnabled || !appStore.isAuthenticated) {
+    return
+  }
+
+  websocketService.connect().catch((error) => {
+    console.warn('WebSocket connection failed:', error)
+    // Не показываем уведомление, т.к. WebSocket не критичен для работы
+  })
+}
 
 onMounted(() => {
   // Попытка восстановления сессии
@@ -36,22 +72,29 @@ onMounted(() => {
     appStore.isAuthenticated = true
   }
 
-  // Подключение к WebSocket для получения уведомлений
-  if (appStore.isAuthenticated) {
-    // Пытаемся подключиться, но не показываем ошибки
-    websocketService.connect().catch((error) => {
-      console.warn('WebSocket connection failed:', error)
-      // Не показываем уведомление, т.к. WebSocket не критичен для работы
-    })
+  websocketService.on('message', handleWebsocketMessage)
+  connectWebsocket()
+})
 
-    websocketService.on('message', (data) => {
-      if (data.type === 'incident') {
-        appStore.addIncident(data.incident)
-      }
-    })
+watch(
+  () => appStore.isAuthenticated,
+  (isAuthenticated) => {
+    if (!websocketEnabled) {
+      return
+    }
 
-    // Убираем обработчик ошибок, чтобы не спамить уведомлениями
+    if (isAuthenticated) {
+      connectWebsocket()
+      return
+    }
+
+    websocketService.disconnect()
   }
+)
+
+onUnmounted(() => {
+  websocketService.off('message', handleWebsocketMessage)
+  websocketService.disconnect()
 })
 </script>
 

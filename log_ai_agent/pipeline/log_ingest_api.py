@@ -1,13 +1,15 @@
-"""API endpoints for ingesting external logs into the shared volume directory."""
+"""API endpoints for ingesting external logs into a shared append-only file."""
 
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from log_ai_agent.config.cfg import PIPELINE_EXTERNAL_LOGS_DIR
+from log_ai_agent.config.cfg import (
+    PIPELINE_EXTERNAL_APPEND_FILE,
+    PIPELINE_EXTERNAL_LOGS_DIR,
+)
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline-ingest"])
 
@@ -20,32 +22,37 @@ class LogTextIngestRequest(BaseModel):
     source: str | None = "external"
 
 
-def _sanitize_filename(name: str) -> str:
-    """Return a safe filename without path traversal parts."""
-    base_name = Path(name).name.strip()
-    if not base_name:
-        return "log.log"
+def _append_target_path() -> Path:
+    """Return append target path for all external log uploads."""
+    default_external_dir = Path(PIPELINE_EXTERNAL_LOGS_DIR)
+    default_external_dir.mkdir(parents=True, exist_ok=True)
 
-    cleaned = "".join(
-        ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in base_name
-    )
-    if not cleaned:
-        return "log.log"
-    return cleaned
+    append_path = Path(PIPELINE_EXTERNAL_APPEND_FILE)
+    append_path.parent.mkdir(parents=True, exist_ok=True)
+    return append_path
 
 
-def _target_path(source: str, original_name: str) -> Path:
-    """Build the resulting log file path inside shared volume."""
-    external_dir = Path(PIPELINE_EXTERNAL_LOGS_DIR)
-    external_dir.mkdir(parents=True, exist_ok=True)
+def _decode_uploaded_bytes(content: bytes) -> str:
+    """Decode uploaded bytes into text, preserving most common encodings."""
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            return content.decode("windows-1251")
+        except UnicodeDecodeError:
+            return content.decode("utf-8", errors="replace")
 
-    safe_source = "".join(
-        ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in source
-    )
-    safe_name = _sanitize_filename(original_name)
-    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
-    return external_dir / f"{safe_source}_{ts}_{uuid4().hex[:8]}_{safe_name}"
+def _append_text_with_separator(path: Path, text: str) -> int:
+    """Append text to target path and ensure each payload ends with newline."""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    if normalized and not normalized.endswith("\n"):
+        normalized += "\n"
+
+    with path.open("a", encoding="utf-8") as output:
+        output.write(normalized)
+
+    return len(normalized.encode("utf-8"))
 
 
 @router.post("/logs/upload")
@@ -53,43 +60,54 @@ async def ingest_log_file(
     file: UploadFile = File(...),
     source: str = Form("external"),
 ):
-    """Accept uploaded log file and write it into shared volume."""
+    """Accept uploaded log file and append lines into shared stream file."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="Имя файла отсутствует")
 
-    target = _target_path(source=source, original_name=file.filename)
+    target = _append_target_path()
 
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Загружен пустой файл")
 
-    with open(target, "wb") as output:
-        output.write(content)
+    decoded = _decode_uploaded_bytes(content)
+
+    now_ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    source_label = (source or "external").strip() or "external"
+    header = (
+        f'{now_ts} app {{"level":"INFO","msg":"ingest_upload",'
+        f'"source":"{source_label}","filename":"{file.filename}"}}\n'
+    )
+    bytes_written = _append_text_with_separator(target, header + decoded)
 
     return {
         "success": True,
-        "message": "Лог сохранен в общий том",
+        "message": "Лог добавлен в общий поток внешних логов",
         "path": str(target),
-        "size_bytes": len(content),
+        "size_bytes": bytes_written,
     }
 
 
 @router.post("/logs/text")
 async def ingest_log_text(payload: LogTextIngestRequest):
-    """Accept raw text log payload and write it into shared volume."""
+    """Accept raw text log payload and append lines into shared stream file."""
     if not payload.content.strip():
         raise HTTPException(status_code=400, detail="Текст логов пустой")
 
     source = payload.source or "external"
     base_name = payload.filename or "payload.log"
-    target = _target_path(source=source, original_name=base_name)
+    target = _append_target_path()
 
-    with open(target, "w", encoding="utf-8") as output:
-        output.write(payload.content)
+    now_ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    header = (
+        f'{now_ts} app {{"level":"INFO","msg":"ingest_text",'
+        f'"source":"{source}","filename":"{base_name}"}}\n'
+    )
+    bytes_written = _append_text_with_separator(target, header + payload.content)
 
     return {
         "success": True,
-        "message": "Текстовые логи сохранены в общий том",
+        "message": "Текстовые логи добавлены в общий поток внешних логов",
         "path": str(target),
-        "size_bytes": len(payload.content.encode("utf-8")),
+        "size_bytes": bytes_written,
     }

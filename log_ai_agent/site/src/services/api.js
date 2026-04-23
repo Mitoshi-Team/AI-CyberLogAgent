@@ -42,9 +42,12 @@ apiClient.interceptors.response.use(
 export const auth = {
   login: (username, password) =>
     apiClient.post('/auth/login', { username, password }),
-  logout: () => {
+  logout: (userId) => {
     localStorage.removeItem('auth_token')
-    return Promise.resolve()
+    if (!userId) {
+      return Promise.resolve()
+    }
+    return apiClient.post('/auth/logout', null, { params: { user_id: userId } })
   },
   me: () => apiClient.get('/auth/me'),
 }
@@ -103,7 +106,7 @@ export const reports = {
  * Работа с логами
  */
 export const logs = {
-  upload: (userId, file) => {
+  upload: (userId, file, options = {}) => {
     const formData = new FormData()
     formData.append('file', file)
     
@@ -111,8 +114,26 @@ export const logs = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      signal: options.signal,
     })
   },
+  cancelUpload: (userId) =>
+    apiClient.post('/logs/upload/cancel', null, { params: { user_id: userId } }),
+}
+
+/**
+ * Работа с конфигурацией правил
+ */
+export const configRules = {
+  listSigmaFiles: () => apiClient.get('/config/sigma/files'),
+  createSigmaFile: (filename) => apiClient.post('/config/sigma/files', { filename }),
+  getSigmaFile: (filename) => apiClient.get(`/config/sigma/files/${encodeURIComponent(filename)}`),
+  saveSigmaFile: (filename, content) =>
+    apiClient.put(`/config/sigma/files/${encodeURIComponent(filename)}`, { content }),
+  deleteSigmaFile: (filename) =>
+    apiClient.delete(`/config/sigma/files/${encodeURIComponent(filename)}`),
+  getYaraFile: () => apiClient.get('/config/yara'),
+  saveYaraFile: (content) => apiClient.put('/config/yara', { content }),
 }
 
 export default apiClient

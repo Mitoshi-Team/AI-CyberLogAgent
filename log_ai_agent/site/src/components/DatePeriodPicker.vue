@@ -5,7 +5,7 @@
       <select 
         v-model="localPeriodType" 
         @change="onPeriodTypeChange"
-        class="bg-dark-800 border border-dark-700 text-white rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-primary-500 hover:border-dark-600 transition-colors cursor-pointer w-full sm:w-auto"
+        class="bg-[#252525] border border-[#3C3C3C] text-white rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[#7971F0] hover:border-dark-600 transition-colors cursor-pointer w-full sm:w-auto"
       >
         <option value="week">Неделя</option>
         <option value="month">Месяц</option>
@@ -14,7 +14,7 @@
       <!-- Кнопка открытия календаря -->
       <button
         @click="toggleCalendar"
-        class="bg-dark-800 border border-dark-700 text-white rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-primary-500 hover:border-dark-600 transition-colors cursor-pointer flex items-center justify-center gap-2 w-full sm:w-auto"
+        class="bg-[#252525] border border-[#3C3C3C] text-white rounded-lg px-3 sm:px-4 py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-[#7971F0] hover:border-dark-600 transition-colors cursor-pointer flex items-center justify-center gap-2 w-full sm:w-auto"
       >
         <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
@@ -26,7 +26,7 @@
     <!-- Календарь или выбор месяца/года -->
     <div 
       v-if="showCalendar" 
-      class="absolute z-50 mt-2 bg-dark-800 border border-dark-700 rounded-lg shadow-xl p-3 sm:p-4 right-0 sm:min-w-[320px] max-w-sm sm:max-w-md"
+      class="absolute z-50 mt-2 bg-[#252525] border border-[#3C3C3C] rounded-lg shadow-xl p-3 sm:p-4 right-0 sm:min-w-[320px] max-w-sm sm:max-w-md"
       @click.stop
     >
       <!-- Выбор только месяца и года (для типа "месяц") -->
@@ -37,7 +37,7 @@
         <div class="flex items-center justify-between mb-4">
           <button 
             @click="currentYear--"
-            class="p-1.5 sm:p-2 hover:bg-dark-700 rounded-lg transition-colors"
+            class="p-1.5 sm:p-2 hover:bg-[#3C3C3C] rounded-lg transition-colors"
           >
             <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -50,7 +50,7 @@
           
           <button 
             @click="currentYear++"
-            class="p-1.5 sm:p-2 hover:bg-dark-700 rounded-lg transition-colors"
+            class="p-1.5 sm:p-2 hover:bg-[#3C3C3C] rounded-lg transition-colors"
           >
             <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
@@ -64,7 +64,7 @@
             v-for="(month, index) in monthNames"
             :key="index"
             @click="selectMonth(index)"
-            :class="currentMonth === index ? 'bg-primary-600 text-white' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'"
+            :class="currentMonth === index ? 'bg-[#7971F0] text-white' : 'bg-[#252525] text-[#8c91a1] hover:bg-[#3C3C3C]'"
             class="py-2 px-2 sm:px-3 rounded-lg transition-colors text-xs sm:text-sm font-medium"
           >
             {{ month }}
@@ -75,7 +75,7 @@
         <div class="mt-4 flex justify-end">
           <button
             @click="closeCalendar"
-            class="px-3 sm:px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg transition-colors text-sm sm:text-base"
+            class="px-3 sm:px-4 py-2 bg-[#7971F0] hover:bg-[#6a64d9] text-white rounded-lg transition-colors text-sm sm:text-base"
           >
             Закрыть
           </button>
@@ -88,7 +88,7 @@
         <div class="flex items-center justify-between mb-4">
           <button 
             @click="previousMonth"
-            class="p-1.5 sm:p-2 hover:bg-dark-700 rounded-lg transition-colors"
+            class="p-1.5 sm:p-2 hover:bg-[#3C3C3C] rounded-lg transition-colors"
           >
             <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -101,7 +101,7 @@
           
           <button 
             @click="nextMonth"
-            class="p-1.5 sm:p-2 hover:bg-dark-700 rounded-lg transition-colors"
+            class="p-1.5 sm:p-2 hover:bg-[#3C3C3C] rounded-lg transition-colors"
           >
             <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
@@ -111,7 +111,7 @@
 
         <!-- Дни недели -->
         <div class="grid grid-cols-7 gap-0.5 sm:gap-1 mb-2">
-          <div v-for="day in dayNames" :key="day" class="text-center text-xs text-dark-400 font-semibold py-1">
+          <div v-for="day in dayNames" :key="day" class="text-center text-xs text-[#8c91a1] font-semibold py-1">
             {{ day }}
           </div>
         </div>
@@ -135,7 +135,7 @@
         <div class="mt-4 flex justify-end">
           <button
             @click="closeCalendar"
-            class="px-3 sm:px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg transition-colors text-sm sm:text-base"
+            class="px-3 sm:px-4 py-2 bg-[#7971F0] hover:bg-[#6a64d9] text-white rounded-lg transition-colors text-sm sm:text-base"
           >
             Закрыть
           </button>
@@ -232,16 +232,16 @@ const getDayClass = (day) => {
   
   // Проверка на выбранный период
   if (isInSelectedPeriod(day)) {
-    classes.push('bg-primary-600 text-white font-semibold')
+    classes.push('bg-[#7971F0] text-white font-semibold')
   } else if (isInHoveredWeek(day)) {
-    classes.push('bg-primary-600/30 text-white')
+    classes.push('bg-[#7971F0]/30 text-white')
   } else {
-    classes.push('text-dark-300 hover:bg-dark-700')
+    classes.push('text-[#8c91a1] hover:bg-[#3C3C3C]')
   }
   
   // Текущий день
   if (isToday(day)) {
-    classes.push('ring-2 ring-primary-400')
+    classes.push('ring-2 ring-[#7971F0]')
   }
   
   return classes.join(' ')

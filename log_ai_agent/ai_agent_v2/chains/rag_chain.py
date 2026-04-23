@@ -16,17 +16,13 @@ from ..knowledge_base.manager import ChromaDBManager
 
 logger = logging.getLogger(__name__)
 
-# Prompt for query enhancement
-QUERY_ENHANCEMENT_PROMPT = """Ты - эксперт по поиску информации в базе знаний MITRE ATT&CK.
-Твоя задача - извлечь ключевые слова и тактики из описания подозрительной активности.
+QUERY_ENHANCEMENT_PROMPT = """Ты - эксперт по поиску в базе знаний MITRE ATT&CK.
+Извлеки ключевые слова для поиска техник.
 
 ОПИСАНИЕ АКТИВНОСТИ:
-{primary_analysis}
+{description}
 
-Извлеки ключевые слова, тактики и техники MITRE для поиска в базе знаний.
-Верни только поисковый запрос (2-5 ключевых слов или фраз), без пояснений.
-
-Поисковый запрос:"""
+Поисковый запрос (2-5 ключевых слов):"""
 
 
 def create_query_enhancement_chain(llm: BaseLanguageModel) -> RunnableSequence:
@@ -49,9 +45,7 @@ def create_query_enhancement_chain(llm: BaseLanguageModel) -> RunnableSequence:
         ]
     )
 
-    # Use new RunnableSequence API (no deprecation)
     chain: RunnableSequence = prompt | llm | StrOutputParser()
-
     return chain
 
 
@@ -75,11 +69,79 @@ def search_mitre_techniques(
         logger.warning("ChromaDB not initialized, returning empty results")
         return []
 
-    # Vector search using embeddings
     results = chroma_mgr.search(query=query, k=k)
-
     logger.info(f"RAG search found {len(results)} techniques")
     return results
+
+
+async def rag_search_single_event(
+    llm: BaseLanguageModel,
+    chroma_mgr: ChromaDBManager,
+    description: str,
+    k: int = 3,
+) -> dict[str, Any]:
+    """Search for MITRE technique for a single suspicious event.
+
+    This function:
+    1. Enhances the query using LLM (without timestamp)
+    2. Searches ChromaDB
+    3. Returns the best match or None
+
+    Args:
+        llm: Language model for query enhancement
+        chroma_mgr: ChromaDB manager for vector search
+        description: Description of the suspicious event (WITHOUT timestamp)
+        k: Number of techniques to retrieve
+
+    Returns:
+        Dictionary with:
+        - has_match: bool
+        - technique_id: str or None
+        - name: str or None
+        - details: dict or None (full technique info)
+        - search_query: str (the query used)
+        - confidence: float (similarity score)
+
+    """
+    logger.info(f"RAG search for event: {description[:100]}...")
+
+    search_query = description[:500]
+
+    try:
+        enhancement_chain = create_query_enhancement_chain(llm)
+        enhancement_result = await enhancement_chain.ainvoke(
+            {"description": description[:1000]}
+        )
+        search_query = enhancement_result.strip()
+        logger.debug(f"Enhanced query: '{search_query}'")
+    except Exception as e:
+        logger.warning(f"Query enhancement failed: {e}, using original")
+        search_query = description[:200]
+
+    results = search_mitre_techniques(chroma_mgr, search_query, k=k)
+
+    if results:
+        best_match = results[0]
+        metadata = best_match.get("metadata", {})
+        confidence = best_match.get("distance", 0)
+
+        return {
+            "has_match": True,
+            "technique_id": metadata.get("technique_id", ""),
+            "name": metadata.get("technique_name", ""),
+            "details": best_match,
+            "search_query": search_query,
+            "confidence": confidence,
+        }
+
+    return {
+        "has_match": False,
+        "technique_id": None,
+        "name": None,
+        "details": None,
+        "search_query": search_query,
+        "confidence": 0.0,
+    }
 
 
 async def retrieve_mitre_context(
@@ -89,7 +151,7 @@ async def retrieve_mitre_context(
     k: int = 5,
     use_query_enhancement: bool = True,
 ) -> dict[str, Any]:
-    """Retrieve MITRE context using RAG.
+    """Retrieve MITRE context using RAG (legacy function for compatibility).
 
     Flow:
     1. Extract keywords from primary_analysis using LLM
@@ -109,23 +171,20 @@ async def retrieve_mitre_context(
     """
     logger.info("Retrieving MITRE ATT&CK context")
 
-    # Default query (use primary analysis directly)
-    search_query = primary_analysis[:500]  # Limit query length
+    search_query = primary_analysis[:500]
 
-    # Optionally enhance query with LLM
     if use_query_enhancement:
         try:
             logger.debug("Enhancing search query with LLM...")
             enhancement_chain = create_query_enhancement_chain(llm)
             enhancement_result = await enhancement_chain.ainvoke(
-                {"primary_analysis": primary_analysis[:1000]}
+                {"description": primary_analysis[:1000]}
             )
             search_query = enhancement_result.strip()
-            logger.info(f"✓ Enhanced query: '{search_query}'")
+            logger.info(f"Enhanced query: '{search_query}'")
         except Exception as e:
             logger.warning(f"Query enhancement failed: {e}, using original query")
 
-    # Search ChromaDB (vector similarity search)
     logger.info(f"Searching ChromaDB for: '{search_query[:100]}...'")
     results = search_mitre_techniques(chroma_mgr, search_query, k=k)
 
@@ -135,16 +194,15 @@ async def retrieve_mitre_context(
             for r in results
             if r.get("metadata", {}).get("technique_id")
         ]
-        logger.info(f"✓ Found techniques: {', '.join(technique_ids)}")
+        logger.info(f"Found techniques: {', '.join(technique_ids)}")
     else:
         logger.warning("No MITRE techniques found")
         technique_ids = []
 
-    # Format context for Agent 2
     context_text = (
         chroma_mgr.format_context(results)
         if results
-        else "Нет релевантных техник MITRE ATT&CK."
+        else "No relevant MITRE ATT&CK techniques found."
     )
 
     return {

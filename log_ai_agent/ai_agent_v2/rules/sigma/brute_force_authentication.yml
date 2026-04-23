@@ -1,0 +1,38 @@
+title: Apache Brute Force Authentication Attempt
+id: apache-brute-force-001
+status: experimental
+description: Detects multiple failed authentication attempts indicating brute force attack against user accounts.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1110/
+tags:
+    - attack.credential_access
+    - attack.t1110
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_auth_fail:
+        message|contains:
+            - 'authentication fail'
+            - 'Authentication failed'
+            - 'invalid password'
+            - 'failed login'
+            - 'login attempt failed'
+    selection_lockout:
+        message|contains:
+            - 'account locked'
+            - 'account lockout'
+            - 'locked out'
+    selection_brute:
+        message|contains:
+            - 'brute force'
+            - 'maximum number of tries'
+            - 'repeated login failure'
+            - 'Multiple failed login'
+    condition: 2 of selection_*
+falsepositives:
+    - Users forgetting passwords
+    - Automated systems with expired credentials
+level: high

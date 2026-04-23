@@ -20,7 +20,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from log_ai_agent.ai_agent_v2.callbacks import get_callback_config
-from log_ai_agent.ai_agent_v2.pipeline.full_pipeline import create_pipeline
+from log_ai_agent.ai_agent_v2.pipeline import create_pipeline
 
 
 async def main():
@@ -71,15 +71,25 @@ async def main():
         # Agent 2
         if "agent2" in stages:
             agent2 = stages["agent2"]
-            print("\nAgent 2:")
+            print("\nAgent 2 (детальный AI):")
             print(f"  Severity: {agent2.get('severity_level_id')}/4")
             print(f"  Threat: {agent2.get('threat_type_id')}/11")
             print(f"  MITRE: {agent2.get('mitre_techniques', [])}")
 
+        # Agent 3 (final)
+        if "agent3" in stages:
+            agent3 = stages["agent3"]
+            print("\nAgent 3 (финальная суммаризация):")
+            print(f"  Severity: {agent3.get('severity_level_id')}/4")
+            print(f"  Threat: {agent3.get('threat_type_id')}/11")
+            print(f"  MITRE: {agent3.get('mitre_techniques', [])}")
+            print(f"  YARA: {agent3.get('yara_rules', [])}")
+            print(f"  Sigma: {agent3.get('sigma_rules', [])}")
+
             print("\n" + "-" * 60)
-            print("Final Report:")
+            print("Final Report (Agent 3):")
             print("-" * 60)
-            print(agent2.get("final_report", "")[:500])  # First 500 chars
+            print(agent3.get("final_report", "")[:500])  # First 500 chars
 
         print("\n" + "=" * 60)
         print(f"Total time: {results.get('total_time_sec', 0):.1f}s")

@@ -1,4 +1,4 @@
-"""Send local log files to AI-CyberLogAgent ingest API.
+"""Send local log files to Wavescan ingest API.
 
 Usage:
     python send_logs_to_ingest_api.py --api http://localhost:8000 --source ext-agent --dir ./sample-logs

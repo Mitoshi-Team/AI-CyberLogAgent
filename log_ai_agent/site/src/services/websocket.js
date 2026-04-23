@@ -7,22 +7,50 @@ class WebSocketService {
     this.socket = null
     this.listeners = new Map()
     this.reconnectAttempts = 0
-    this.maxReconnectAttempts = 5
-    this.reconnectDelay = 3000
+    this.maxReconnectAttempts = 20
+    this.reconnectDelay = 2000
+    this.maxReconnectDelay = 30000
+    this.heartbeatInterval = 25000
+    this.connectPromise = null
+    this.reconnectTimer = null
+    this.heartbeatTimer = null
+    this.currentUrl = null
+    this.manuallyClosed = false
   }
 
   /**
    * Подключение к WebSocket серверу
    */
-  connect(url = 'ws://localhost:8000/ws') {
-    return new Promise((resolve, reject) => {
+  connect(url = null) {
+    const websocketUrl = url || this.getDefaultUrl()
+
+    this.currentUrl = websocketUrl
+    this.manuallyClosed = false
+
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      return Promise.resolve()
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise
+    }
+
+    const pendingConnection = new Promise((resolve, reject) => {
+      let isSettled = false
+
       try {
-        this.socket = new WebSocket(url)
+        this.socket = new WebSocket(websocketUrl)
 
         this.socket.onopen = () => {
           console.log('WebSocket connected')
           this.reconnectAttempts = 0
-          resolve()
+          this.clearReconnectTimer()
+          this.startHeartbeat()
+          this.notifyListeners('connect')
+          if (!isSettled) {
+            isSettled = true
+            resolve()
+          }
         }
 
         this.socket.onmessage = (event) => {
@@ -37,18 +65,42 @@ class WebSocketService {
         this.socket.onerror = (error) => {
           console.error('WebSocket error:', error)
           this.notifyListeners('error', error)
-          reject(error)
+          if (!isSettled) {
+            isSettled = true
+            reject(error)
+          }
         }
 
         this.socket.onclose = () => {
           console.log('WebSocket disconnected')
+          this.stopHeartbeat()
           this.notifyListeners('disconnect')
-          this.attemptReconnect(url)
+          this.socket = null
+          this.attemptReconnect(websocketUrl)
         }
       } catch (error) {
-        reject(error)
+        if (!isSettled) {
+          isSettled = true
+          reject(error)
+        }
       }
     })
+
+    this.connectPromise = pendingConnection.finally(() => {
+      this.connectPromise = null
+    })
+
+    return this.connectPromise
+  }
+
+  getDefaultUrl() {
+    const explicitUrl = import.meta.env.VITE_WEBSOCKET_URL
+    if (explicitUrl) {
+      return explicitUrl
+    }
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProtocol}//${window.location.host}/ws/`
   }
 
   /**
@@ -98,15 +150,74 @@ class WebSocketService {
    * Попытка переподключения
    */
   attemptReconnect(url) {
-    // Отключаем автоматический реконнект, чтобы избежать спама ошибок
-    // WebSocket не критичен для работы приложения
-    console.log('WebSocket disconnected. Auto-reconnect disabled.')
+    if (this.manuallyClosed) {
+      return
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.warn('WebSocket reconnection limit reached')
+      this.notifyListeners('reconnect_failed')
+      return
+    }
+
+    this.clearReconnectTimer()
+    this.reconnectAttempts += 1
+
+    const delay = Math.min(
+      this.reconnectDelay * 2 ** (this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    )
+
+    console.log(
+      `WebSocket reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`
+    )
+
+    this.notifyListeners('reconnect_attempt', {
+      attempt: this.reconnectAttempts,
+      maxAttempts: this.maxReconnectAttempts,
+      delay,
+    })
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect(url).catch((error) => {
+        console.warn('WebSocket reconnect failed:', error)
+      })
+    }, delay)
+  }
+
+  startHeartbeat() {
+    this.stopHeartbeat()
+
+    this.heartbeatTimer = setInterval(() => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ type: 'ping', ts: Date.now() }))
+      }
+    }, this.heartbeatInterval)
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+  }
+
+  clearReconnectTimer() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
   }
 
   /**
    * Закрытие соединения
    */
   disconnect() {
+    this.manuallyClosed = true
+    this.clearReconnectTimer()
+    this.stopHeartbeat()
+
     if (this.socket) {
       this.socket.close()
       this.socket = null

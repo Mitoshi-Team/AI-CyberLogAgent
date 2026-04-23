@@ -11,13 +11,19 @@ export const useAppStore = defineStore('app', () => {
   const isAuthenticated = ref(false)
   const currentUser = ref(null)
   const token = ref(localStorage.getItem('auth_token') || null)
+  const isAdmin = computed(() => Boolean(currentUser.value?.isAdmin))
+  const authSynced = ref(false)
   
   // Состояние Sidebar
   const sidebarCollapsed = ref(false)
   
   // Состояние непрочитанных сообщений в чате
   const unreadChatMessages = ref(0)
+  const chatIsLoading = ref(false)
+  const chatIsLogAnalysisInProgress = ref(false)
+  const chatLogUploadAbortController = ref(null)
   const originalPageTitle = ref(document.title)
+  const reportsUpdateVersion = ref(0)
 
   // Инициализация: восстанавливаем сессию из localStorage
   const initializeAuth = () => {
@@ -26,9 +32,14 @@ export const useAppStore = defineStore('app', () => {
     
     if (savedToken && savedUser) {
       try {
+        const parsedUser = JSON.parse(savedUser)
         token.value = savedToken
-        currentUser.value = JSON.parse(savedUser)
+        currentUser.value = {
+          ...parsedUser,
+          isAdmin: Boolean(parsedUser?.isAdmin),
+        }
         isAuthenticated.value = true
+        authSynced.value = false
       } catch (error) {
         console.error('Error restoring session:', error)
         logout()
@@ -83,12 +94,14 @@ export const useAppStore = defineStore('app', () => {
           id: data.user.user_id,
           username: data.user.login,
           email: `${data.user.login}@cyberagent.com`,
+          isAdmin: Boolean(data.user.is_admin),
         }
         token.value = data.token
         
         // Сохраняем токен и пользователя в localStorage для сессии
         localStorage.setItem('auth_token', data.token)
         localStorage.setItem('current_user', JSON.stringify(currentUser.value))
+        authSynced.value = true
         
         return { success: true }
       } else {
@@ -100,15 +113,65 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const refreshCurrentUser = async () => {
+    if (!token.value) {
+      return false
+    }
+    if (authSynced.value) {
+      return true
+    }
+
+    try {
+      const { data } = await auth.me()
+      if (data?.success && data.user) {
+        currentUser.value = {
+          id: data.user.user_id,
+          username: data.user.login,
+          email: `${data.user.login}@cyberagent.com`,
+          isAdmin: Boolean(data.user.is_admin),
+        }
+        localStorage.setItem('current_user', JSON.stringify(currentUser.value))
+        isAuthenticated.value = true
+        authSynced.value = true
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Error refreshing current user:', error)
+      if (error?.response?.status === 401) {
+        await logout()
+      }
+      return false
+    }
+  }
+
   /**
    * Выход пользователя
    */
-  const logout = () => {
-    isAuthenticated.value = false
-    currentUser.value = null
-    token.value = null
-    localStorage.removeItem('auth_token')
-    localStorage.removeItem('current_user')
+  const logout = async () => {
+    try {
+      await auth.logout(currentUser.value?.id)
+    } catch (error) {
+      console.error('Logout API error:', error)
+    } finally {
+      isAuthenticated.value = false
+      currentUser.value = null
+      token.value = null
+      authSynced.value = false
+      chatIsLoading.value = false
+      chatIsLogAnalysisInProgress.value = false
+      chatLogUploadAbortController.value = null
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('current_user')
+    }
+  }
+
+  const normalizeNotificationType = (type = 'info') => {
+    const aliasMap = {
+      error: 'danger',
+      warn: 'warning',
+    }
+    return aliasMap[type] || type
   }
 
   /**
@@ -116,7 +179,8 @@ export const useAppStore = defineStore('app', () => {
    */
   const showNotificationNow = (message, type = 'info', duration = 5000, playSound = false) => {
     const id = Math.random()
-    const notification = { id, message, type }
+    const normalizedType = normalizeNotificationType(type)
+    const notification = { id, message, type: normalizedType, duration }
     
     // Ограничение на 5 уведомлений - удаляем старые
     if (notifications.value.length >= 5) {
@@ -245,7 +309,11 @@ export const useAppStore = defineStore('app', () => {
       statistics.value.suspiciousCount++
     }
     statistics.value.totalIncidents++
-    addNotification(`Новый инцидент: ${incident.title}`, 'warning')
+    if (incident.source === 'Manual Log Upload') {
+      addNotification('Отчет по запросу был сформирован', 'info')
+      return
+    }
+    addNotification('Найден новый инцидент!', 'warning')
   }
   
   /**
@@ -275,17 +343,31 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  /**
+   * Сигнализирует страницам отчетов о появлении нового отчета в реальном времени.
+   */
+  const notifyReportsUpdated = (_payload = null) => {
+    reportsUpdateVersion.value += 1
+  }
+
   return {
     isAuthenticated,
     currentUser,
     token,
+    isAdmin,
+    authSynced,
     sidebarCollapsed,
     notifications,
     incidents,
     isLoadingIncidents,
     statistics,
     unreadChatMessages,
+    chatIsLoading,
+    chatIsLogAnalysisInProgress,
+    chatLogUploadAbortController,
+    reportsUpdateVersion,
     login,
+    refreshCurrentUser,
     logout,
     addNotification,
     removeNotification,
@@ -293,5 +375,6 @@ export const useAppStore = defineStore('app', () => {
     addUnreadChatMessage,
     clearUnreadChatMessages,
     addIncident,
+    notifyReportsUpdated,
   }
 })

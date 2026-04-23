@@ -19,7 +19,7 @@ sys.path.insert(0, str(project_root))
 
 from log_ai_agent.ai_agent_v2.callbacks import get_callback_config
 from log_ai_agent.ai_agent_v2.config import AgentConfig
-from log_ai_agent.ai_agent_v2.pipeline.full_pipeline import create_pipeline
+from log_ai_agent.ai_agent_v2.pipeline import create_pipeline
 
 # =============================================================================
 # Colors for terminal output
@@ -145,7 +145,7 @@ def print_results(results: dict):
         return
 
     # Agent 1 results
-    print_stage(2, 4, "Первичный анализ (Агент 1)")
+    print_stage(2, 5, "Первичный анализ (Агент 1)")
     print_separator()
     if "agent1" in results.get("stages", {}):
         agent1 = results["stages"]["agent1"]
@@ -155,7 +155,7 @@ def print_results(results: dict):
         print_warning("Нет результатов от Агента 1")
 
     # RAG results
-    print_stage(3, 4, "Поиск MITRE (RAG)")
+    print_stage(3, 5, "Поиск MITRE (RAG)")
     print_separator()
     if "rag" in results.get("stages", {}):
         rag = results["stages"]["rag"]
@@ -168,10 +168,23 @@ def print_results(results: dict):
         print_warning("RAG отключен")
 
     # Agent 2 results
-    print_stage(4, 4, "Финальный отчёт (Агент 2)")
+    print_stage(4, 5, "Детальный отчёт AI (Агент 2)")
     print_separator()
     if "agent2" in results.get("stages", {}):
         agent2 = results["stages"]["agent2"]
+        if agent2.get("success"):
+            print_success("AI отчёт сгенерирован")
+            print(f"\n{Colors.CYAN}{agent2.get('final_report', '')}{Colors.RESET}")
+        else:
+            print_warning("Ошибка генерации отчёта Agent 2")
+    else:
+        print_warning("Нет результатов от Агента 2")
+
+    # Agent 3 results (final)
+    print_stage(5, 5, "Финальная суммаризация (Агент 3)")
+    print_separator()
+    if "agent3" in results.get("stages", {}):
+        agent3 = results["stages"]["agent3"]
 
         severity_names = {1: "Критический", 2: "Высокий", 3: "Средний", 4: "Низкий"}
         threat_names = {
@@ -188,8 +201,8 @@ def print_results(results: dict):
             11: "Другое",
         }
 
-        severity = agent2.get("severity_level_id", 3)
-        threat = agent2.get("threat_type_id", 11)
+        severity = agent3.get("severity_level_id", 3)
+        threat = agent3.get("threat_type_id", 11)
 
         severity_color = (
             Colors.RED
@@ -204,15 +217,25 @@ def print_results(results: dict):
             f"Тип угрозы: {Colors.YELLOW}{threat}/11 ({threat_names.get(threat, 'N/A')}){Colors.RESET}"
         )
 
-        if agent2.get("mitre_techniques"):
+        if agent3.get("mitre_techniques"):
             print(
-                f"MITRE техники: {Colors.CYAN}{', '.join(agent2['mitre_techniques'])}{Colors.RESET}"
+                f"MITRE техники: {Colors.CYAN}{', '.join(agent3['mitre_techniques'])}{Colors.RESET}"
+            )
+
+        if agent3.get("yara_rules"):
+            print(
+                f"YARA правила: {Colors.YELLOW}{', '.join(agent3['yara_rules'])}{Colors.RESET}"
+            )
+
+        if agent3.get("sigma_rules"):
+            print(
+                f"Sigma правила: {Colors.YELLOW}{', '.join(agent3['sigma_rules'])}{Colors.RESET}"
             )
 
         print_separator()
-        print(f"{Colors.CYAN}{agent2.get('final_report', '')}{Colors.RESET}")
+        print(f"{Colors.CYAN}{agent3.get('final_report', '')}{Colors.RESET}")
     else:
-        print_warning("Нет результатов от Агента 2")
+        print_warning("Нет результатов от Агента 3")
 
     # Summary
     print_header("Итоги")

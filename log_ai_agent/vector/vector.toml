@@ -1,6 +1,7 @@
 [sources.external_log_files]
 type = "file"
 include = ["/data/external/**/*.log", "/data/external/**/*.txt"]
+exclude = ["/data/external/attack_timeline.log"]
 ignore_older_secs = 0
 read_from = "beginning"
 fingerprint.strategy = "device_and_inode"
@@ -26,20 +27,50 @@ source = "require('chunk_logs')"
 type = "internal_metrics"
 scrape_interval_secs = 5
 
+[transforms.only_chunk_batches]
+type = "remap"
+inputs = ["chunk_logs"]
+source = '''
+# Lua batch events arrive as top-level fields.
+# Keep only events that actually contain records, and normalize optional fields.
+if .records == null {
+	if .log != null {
+		. = .log
+	}
+}
+
+if .records == null {
+	abort
+}
+
+if .batch_sequence == null {
+	.batch_sequence = 0
+}
+
+if .collected_at_compact == null {
+	.collected_at_compact = format_timestamp!(now(), "%Y%m%dT%H%M%SZ", "UTC")
+}
+'''
+
 [sinks.kafka_batches]
 type = "kafka"
-inputs = ["chunk_logs"]
+inputs = ["only_chunk_batches"]
 bootstrap_servers = "${KAFKA_BOOTSTRAP_SERVERS}"
 topic = "${KAFKA_TOPIC}"
 encoding.codec = "json"
 batch.max_events = 250
 batch.timeout_secs = 10
 
+[sinks.kafka_batches.buffer]
+type = "disk"
+max_size = 268435488
+when_full = "block"
+
 [sinks.kafka_batches.librdkafka_options]
 "message.timeout.ms" = "310000"
 
 [sinks.collected_logs_file]
 type = "file"
-inputs = ["chunk_logs"]
-path = "/data/processed/collected_logs.txt"
+inputs = ["only_chunk_batches"]
+path = "/data/processed/collected_logs/collected_{{ collected_at_compact }}_{{ batch_sequence }}.json"
 encoding.codec = "json"

@@ -1,0 +1,31 @@
+title: Suspicious PowerShell Encoded Command Execution
+id: apache-powershell-001
+status: experimental
+description: Detects execution of PowerShell with encoded commands, commonly used in fileless malware and lateral movement.
+author: AI CyberLog Agent
+date: 2026/04/15
+references:
+    - https://attack.mitre.org/techniques/T1059/001/
+tags:
+    - attack.execution
+    - attack.t1059.001
+logsource:
+    category: webserver
+    product: apache
+detection:
+    selection_powershell:
+        message|contains:
+            - 'powershell -enc'
+            - 'powershell -EncodedCommand'
+            - 'powershell.exe -e'
+            - 'FromBase64String'
+            - 'System.Convert'
+    selection_download:
+        message|contains:
+            - 'DownloadString'
+            - 'IEX'
+            - 'Net.WebClient'
+    condition: selection_powershell or selection_download
+falsepositives:
+    - Legitimate administrative scripts
+level: high
