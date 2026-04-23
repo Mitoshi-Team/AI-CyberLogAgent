@@ -91,35 +91,79 @@
 ai_agent_v2/
 ├── chains/                     # LLM-цепочки для агентов
 │   ├── agent1.py              # Первичный анализ логов (V2)
-│   ├── agent2.py             # Финальный отчёт (не используется напрямую)
-│   ├── agent3.py             # Суммаризация
-│   ├── graph_nodes.py        # LangGraph узлы (agent1, agent2, agent3, yara, sigma, parse_logs)
-│   └── rag_chain.py          # RAG-поиск (rag_search_single_event)
+│   ├── agent2.py             # Детальный AI-отчёт
+│   ├── agent3.py             # Финальная суммаризация
+│   ├── graph_nodes.py        # LangGraph узлы
+│   ├── rag_chain.py          # RAG-поиск MITRE
+│   ├── llm.py              # LLM провайдер
+│   ├── prefilter.py         # Предобработка логов
+│   ├── __init__.py
+│   └── providers/           # LLM провайдеры
+│       ├── base.py          # Базовый класс
+│       ├── ollama.py       # Ollama провайдер
+│       ├── gigachat.py      # GigaChat провайдер
+│       └── __init__.py
 ├── engines/                    # Сигнатурные движки
 │   ├── yara_engine.py        # YARA на yara-python
-│   └── sigma_engine.py       # Sigma на pysigma
-├── parsers/
-│   └── apache_parser.py      # Универсальный парсер Apache логов
-├── rules/
-│   ├── yara/cyber_security_rules.yar
-│   └── sigma/*.yml           # Правила Sigma для Apache
-├── pipeline/
-│   └── langgraph_pipeline.py # LangGraph StateGraph
+│   ├── sigma_engine.py       # Sigma на pysigma
+│   └── __init__.py
+├── models/                    # Типы данных
+│   ├── models_types.py       # Pydantic схемы
+│   └── __init__.py
+├── parsers/                   # Парсеры логов
+│   └── apache_parser.py      # Apache парсер
+├── rules/                    # Правила обнаружения
+│   ├── yara/
+│   │   ├── cyber_security_rules.yar
+│   │   ├── web_scanner_rules.yar
+│   │   └── web_rce_rules.yar
+│   └── sigma/
+│       ├── brute_force_authentication.yml
+│       ├── mimikatz_detection.yml
+│       ├── powershell_encoded_command.yml
+│       ├── remote_file_inclusion.yml
+│       ├── reverse_shell_detection.yml
+│       ├── scanner_detection.yml
+│       ├── sql_injection_attempt.yml
+│       └── xss_attempt.yml
+├── pipeline/                   # LangGraph pipeline
+│   ├── langgraph_pipeline.py  # LangGraph StateGraph
+│   └── __init__.py
 ├── knowledge_base/            # База знаний MITRE ATT&CK
-│   ├── manager.py            # ChromaDB менеджер
-│   └── mitre_loader.py      # Инициализация + загрузка MITRE
-├── embedding/                 # Эмбеддинги
-│   └── manager.py            # Менеджер эмбеддингов
-├── models/
-│   └── models_types.py       # Типы: AnalysisState, SuspiciousEvent, MITRETechnique
-├── prompts/                   # Промты для агентов
+│   ├── manager.py          # ChromaDB менеджер
+│   ├── mitre_loader.py   # Загрузчик MITRE
+│   └── __init__.py
+├── embedding/                # Эмбеддинги
+│   ├── manager.py         # Менеджер эмбеддингов
+│   ├── models/          # Скачанная модель (не в Git)
+│   └── __init__.py
+├── prompts/                 # Промты для агентов
 │   ├── system.py
-│   └── log_analysis.py       # PRIMARY_ANALYSIS_USER_PROMPT_V2
-├── pipeline_tests/            # Тесты
-│   ├── test_yara_sigma.py    # YARA/Sigma + pipeline nodes
-│   └── test_full_pipeline.py # Полный пайплайн с RAG
-├── chroma_db/                # Векторная база (генерируется)
-├── mitre_data/               # MITRE STIX JSON (генерируется)
+│   ├── log_analysis.py
+│   └── __init__.py
+├── visual_graph/            # Визуализация графа
+│   ├── render_graph.py    # Рендер графа
+│   └── pipeline_graph.mmd # Mermaid диаграмма
+├── pipeline_tests/           # Тесты
+│   ├── conftest.py
+│   ├── test_yara_sigma.py
+│   ├── test_full_pipeline.py
+│   ├── test_quick.py
+│   ├── test_rag.py
+│   ├── test_rag_flow.py
+│   └── __init__.py
+├── examples/              # Примеры использования
+│   ├── basic.py
+│   └── __init__.py
+├── chroma_db/             # Векторная база (генерируется, не в Git)
+├── app_integration.py      # Интеграция с FastAPI
+├── callbacks.py         # Колбэки
+├── chat_integration.py  # Интеграция чата
+├── config.py          # Конфигурация агента
+├── init_mitre.py      # Инициализация MITRE
+├── models_types.py   # Типы моделей
+├── run.py           # Точка входа
+├── __init__.py
 └── README.md
 ```
 
@@ -384,7 +428,6 @@ print(f'Техник в базе: {coll.count()}')
 ```bash
 # Удалить существующую базу
 rm -rf log_ai_agent/ai_agent_v2/chroma_db
-rm -rf log_ai_agent/ai_agent_v2/mitre_data
 
 # Запустить пайплайн (скачает заново)
 uv run python log_ai_agent/ai_agent_v2/pipeline_tests/test_full_pipeline.py
