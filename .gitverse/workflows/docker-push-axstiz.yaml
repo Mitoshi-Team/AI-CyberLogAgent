@@ -21,8 +21,11 @@ jobs:
       - name: Generate date tag
         run: echo "DATE_TAG=$(date +%Y-%m-%d)" >> $GITHUB_ENV
 
-      - name: Build and push
-        run: |
-          docker build -t axstiz/ai-cyberlogagent:latest -t axstiz/ai-cyberlogagent:$DATE_TAG -f log_ai_agent/Dockerfile log_ai_agent/
-          docker push axstiz/ai-cyberlogagent:latest
-          docker push axstiz/ai-cyberlogagent:$DATE_TAG
+      - name: Build and push with Kaniko
+        uses: GoogleContainerTools/kaniko-action@main
+        with:
+          image: axstiz/ai-cyberlogagent
+          tags: latest,${{ env.DATE_TAG }}
+          dockerfile: log_ai_agent/Dockerfile
+          context: .
+          push: true
