@@ -17,7 +17,7 @@ jobs:
         with:
           registry: gitverse.ru
           username: ${{ gitverse.actor }}
-          password: ${{ secrets.GITVERSE_TOKEN }}
+          password: ${{ secrets.API_GITVERSE_TOKEN }}
 
       - name: Build and push with Kaniko
         uses: docker://gcr.io/kaniko-project/executor:v1.24.0
