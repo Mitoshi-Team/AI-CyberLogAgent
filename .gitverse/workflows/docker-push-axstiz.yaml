@@ -17,7 +17,7 @@ jobs:
         with:
           registry: gitverse.ru
           username: ${{ gitverse.actor }}
-          password: ${{ secrets.API_GITVERSE_TOKEN }}
+          password: ${{ secrets.GITVERSE_TOKEN }}
 
       - name: Build and push with Kaniko
         uses: docker://gcr.io/kaniko-project/executor:v1.24.0
@@ -25,5 +25,5 @@ jobs:
           args: >
             --context=./log_ai_agent
             --dockerfile=./log_ai_agent/Dockerfile
-            --destination=gitverse.ru/mitoshi_team/ai-cyberlogagent:latest
-            --destination=gitverse.ru/mitoshi_team/ai-cyberlogagent:${{ gitverse.run_number }}
+            --destination=gitverse.ru/litsu/ai-cyberlogagent:latest
+            --destination=gitverse.ru/litsu/ai-cyberlogagent:${{ gitverse.run_number }}
