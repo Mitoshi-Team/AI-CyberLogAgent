@@ -1,4 +1,4 @@
-name: Build and Push to DockerHub
+name: Build and Push to GitVerse Registry
 
 on:
   push:
@@ -12,24 +12,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Build and push with Kaniko
+        uses: docker://gcr.io/kaniko-project/executor:v1.24.0
         with:
-          username: axstiz
-          password: ${{ secrets.DOCKERHUB_KEY_AXSTIZ }}
-
-      - name: Generate date tag
-        run: echo "DATE_TAG=$(date +%Y-%m-%d)" >> $GITHUB_ENV
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: ./log_ai_agent
-          file: ./log_ai_agent/Dockerfile
-          push: true
-          tags: |
-            axstiz/ai-cyberlogagent:latest
-            axstiz/ai-cyberlogagent:${{ env.DATE_TAG }}
+          args: >
+            --context=./log_ai_agent
+            --dockerfile=./log_ai_agent/Dockerfile
+            --destination=gitverse.ru/litsu/ai-cyberlogagent:latest
+            --destination=gitverse.ru/litsu/ai-cyberlogagent:${{ gitverse.run_number }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /kaniko/service-account
