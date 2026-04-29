@@ -12,6 +12,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Login to GitVerse Registry
+        if: secrets.GITVERSE_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          registry: gitverse.ru
+          username: ${{ gitverse.actor }}
+          password: ${{ secrets.GITVERSE_TOKEN }}
+
       - name: Build and push with Kaniko
         uses: docker://gcr.io/kaniko-project/executor:v1.24.0
         with:
