@@ -21,11 +21,26 @@ jobs:
       - name: Generate date tag
         run: echo "DATE_TAG=$(date +%Y-%m-%d)" >> $GITHUB_ENV
 
+      - name: Install Kaniko
+        run: |
+          wget -q -O /usr/local/bin/executor https://github.com/GoogleContainerTools/kaniko/releases/download/v1.23.0/executor-linux-amd64
+          chmod +x /usr/local/bin/executor
+          mkdir -p /kaniko/.docker
+
+      - name: Create Kaniko config
+        run: |
+          cat > /kaniko/.docker/config.json <<EOF
+          {
+            "auths": {
+              "https://index.docker.io/v1/": {}
+            }
+          }
+          EOF
+
       - name: Build and push with Kaniko
-        uses: GoogleContainerTools/kaniko-action@main
-        with:
-          image: axstiz/ai-cyberlogagent
-          tags: latest,${{ env.DATE_TAG }}
-          dockerfile: log_ai_agent/Dockerfile
-          context: .
-          push: true
+        run: |
+          /usr/local/bin/executor \
+            --context ./log_ai_agent \
+            --dockerfile log_ai_agent/Dockerfile \
+            --destination axstiz/ai-cyberlogagent:latest \
+            --destination axstiz/ai-cyberlogagent:$DATE_TAG
