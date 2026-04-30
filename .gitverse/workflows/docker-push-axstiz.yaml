@@ -44,7 +44,10 @@ jobs:
             --dockerfile=log_ai_agent/Dockerfile
             --destination=${{ secrets.CLOUD_RU_REGISTRY }}:latest
             --destination=${{ secrets.CLOUD_RU_REGISTRY }}:${{ gitverse.run_id }}
+            --cache=true
+            --cache-repo=${{ secrets.CLOUD_RU_REGISTRY }}/cache
+            --cache-ttl=168h
             --insecure
             --skip-tls-verify
             --push-retry=3
-            --verbosity=debug
+            --verbosity=info
