@@ -35,7 +35,7 @@ jobs:
         shell: bash
 
       - name: Kaniko build and push to Evolution Artifact Registry
-        uses: docker://gcr.io/kaniko-project/executor:v1.24.0
+        uses: docker://gcr.io/kaniko-project/executor:v1.23.0
         env:
           DOCKER_CONFIG: ${{ gitverse.workspace }}/.docker
         with:
@@ -45,6 +45,6 @@ jobs:
             --destination=${{ secrets.CLOUD_RU_REGISTRY }}:latest
             --destination=${{ secrets.CLOUD_RU_REGISTRY }}:${{ gitverse.run_id }}
             --insecure
-            --verbosity=info
-
-  # Сохранение в Artifact-registry по axstiz/log_ai_agent`qqq
+            --skip-tls-verify
+            --push-retry=3
+            --verbosity=debug

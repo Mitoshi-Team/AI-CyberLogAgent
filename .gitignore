@@ -51,3 +51,4 @@ secrets.py
 /log_ai_agent/ai_agent_v2/embedding/models/
 
 data/
+/log_ai_agent/default_logs_analyse/
