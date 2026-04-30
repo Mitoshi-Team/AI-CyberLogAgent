@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
 
         # создается конфигурационный файл .docker/config.json с учетными данными для авторизации в реестре cloud.ru;
-        # используются секреты CLOUD_RU_REGISTRY, CLOUD_RU_USERNAME, CLOUD_RU_PASSWORD QQ hello github >>>
+        # используются секреты CLOUD_RU_REGISTRY, CLOUD_RU_USERNAME, CLOUD_RU_PASSWORD QQ>>> hello github >>>
       - name: Prepare Kaniko credentials for cloud.ru
         run: |
           mkdir -p "${{ gitverse.workspace }}/.docker"
