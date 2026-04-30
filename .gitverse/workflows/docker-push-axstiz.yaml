@@ -1,6 +1,7 @@
 name: Build with Kaniko and Deploy App to cloud.ru
 on:
   push:
+    branches: [axstiz]
 jobs:
   build_push_image:
     name: Build and push to Evolution Artifact Registry
