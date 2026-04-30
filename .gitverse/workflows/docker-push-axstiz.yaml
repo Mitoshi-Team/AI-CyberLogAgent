@@ -47,4 +47,4 @@ jobs:
             --insecure
             --verbosity=info
 
-  # Сохранение в Artifact-registry по axstiz/log_ai_agent`
+  # Сохранение в Artifact-registry по axstiz/log_ai_agent` ййй
