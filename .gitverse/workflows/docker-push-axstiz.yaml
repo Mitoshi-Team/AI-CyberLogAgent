@@ -40,8 +40,8 @@ jobs:
           DOCKER_CONFIG: ${{ gitverse.workspace }}/.docker
         with:
           args: >-
-            --context=${{ gitverse.workspace }}/log_ai_agent
-            --dockerfile=Dockerfile
+            --context=${{ gitverse.workspace }}
+            --dockerfile=log_ai_agent/Dockerfile
             --destination=${{ secrets.CLOUD_RU_REGISTRY }}:latest
             --destination=${{ secrets.CLOUD_RU_REGISTRY }}:${{ gitverse.run_id }}
             --insecure
