@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Создаем путь заранее
 RUN mkdir -p /app/log_ai_agent/ai_agent_v2/embedding/models/multilingual-e5-base && \
     pip install tqdm && \
-    huggingface-cli download intfloat/multilingual-e5-base \
+    hf download intfloat/multilingual-e5-base \
     --local-dir /app/log_ai_agent/ai_agent_v2/embedding/models/multilingual-e5-base
 
 # --- ШАГ 3: Теперь копируем ВЕСЬ код ---
