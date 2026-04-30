@@ -31,7 +31,7 @@ RUN mkdir -p /app/log_ai_agent/ai_agent_v2/embedding/models/multilingual-e5-base
     --local-dir /app/log_ai_agent/ai_agent_v2/embedding/models/multilingual-e5-base
 
 # --- ШАГ 3: Теперь копируем ВЕСЬ код ---
-# Этот слой будет меняться часто, но он идет ПОСЛЕ тяжелых скачиваний
+# Этот слой будет меняться часто, но он идет ПОСЛЕ тяжелых скачиваний   йй
 COPY log_ai_agent/ ./log_ai_agent/
 
 # Доустанавливаем проект (теперь с кодом) и чистим мусор
