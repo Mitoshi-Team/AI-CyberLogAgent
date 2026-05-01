@@ -19,14 +19,26 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push backend
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./log_ai_agent/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent:${{ github.run_id }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_backend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_backend:${{ github.run_id }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./log_ai_agent/site
+          file: ./log_ai_agent/site/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
