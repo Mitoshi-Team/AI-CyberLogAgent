@@ -3,12 +3,26 @@ name: Build and Push to Docker Hub
 on:
   push:
     branches: [main]
+
 jobs:
   build_push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Generate Semantic Version
+        id: version
+        run: |
+          git fetch --tags
+          # Последний тег вида vX.Y.Z, если нет – используем базовый v13.0.0
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "v13.0.0")
+          echo "Latest tag: $LATEST_TAG"
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          PATCH=${PATCH:-0}
+          PATCH=$((PATCH + 1))
+          echo "new_tag=$MAJOR.$MINOR.$PATCH" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -27,7 +41,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/log-ai-agent-backend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/log-ai-agent-backend:${{ github.run_id }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/log-ai-agent-backend:${{ steps.version.outputs.new_tag }}
 
       - name: Build and push frontend
         uses: docker/build-push-action@v5
@@ -37,6 +51,14 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:${{ github.run_id }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Push new Git tag
+        if: success()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git tag "v${{ steps.version.outputs.new_tag }}"
+          git push origin "v${{ steps.version.outputs.new_tag }}"
