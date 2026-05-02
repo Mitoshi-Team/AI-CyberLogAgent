@@ -10,12 +10,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Generate Semantic Version
         id: version
         run: |
           git fetch --tags
-          # Последний тег вида vX.Y.Z, если нет – используем базовый v13.0.0
           LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "v13.0.0")
           echo "Latest tag: $LATEST_TAG"
           VERSION=${LATEST_TAG#v}
@@ -33,25 +34,51 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push backend
+      - name: Build and push Wavescan-backend
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./log_ai_agent/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/log-ai-agent-backend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/log-ai-agent-backend:${{ steps.version.outputs.new_tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-backend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-backend:${{ steps.version.outputs.new_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Build and push frontend
+      - name: Build and push Wavescan-frontend
         uses: docker/build-push-action@v5
         with:
           context: ./log_ai_agent/site
           file: ./log_ai_agent/site/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/log_ai_agent_frontend:${{ steps.version.outputs.new_tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-frontend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-frontend:${{ steps.version.outputs.new_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Wavescan-vector
+        uses: docker/build-push-action@v5
+        with:
+          context: ./log_ai_agent/vector
+          file: ./log_ai_agent/vector/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-vector:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-vector:${{ steps.version.outputs.new_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Wavescan-postgres
+        uses: docker/build-push-action@v5
+        with:
+          context: ./log_ai_agent
+          file: ./log_ai_agent/postgres/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-postgres:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/Wavescan-postgres:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
