@@ -44,7 +44,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-backend:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-backend:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Build and push wavescan-frontend
         uses: docker/build-push-action@v5
@@ -56,7 +56,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-frontend:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-frontend:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Build and push wavescan-vector
         uses: docker/build-push-action@v5
@@ -68,7 +68,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-vector:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-vector:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Build and push wavescan-postgres
         uses: docker/build-push-action@v5
@@ -80,15 +80,12 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-postgres:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-postgres:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Push new Git tag via API
         if: success()
-        env:
-          TAG: v${{ steps.version.outputs.new_tag }}
-          SHA: ${{ github.sha }}
         run: |
           gh api repos/${{ github.repository }}/git/refs \
             -X POST \
-            -H "Authorization: Bearer ${{ github.token }}" \
-            -d '{"ref": "refs/tags/${{ env.TAG }}", "sha": "${{ env.SHA }}"}'
+            -F ref="refs/tags/v${{ steps.version.outputs.new_tag }}" \
+            -F sha="${{ github.sha }}"
