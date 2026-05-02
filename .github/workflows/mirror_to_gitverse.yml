@@ -1,0 +1,35 @@
+name: Mirror to GitVerse
+
+on:
+  push:
+    branches: ["*"]
+    tags: ["*"]
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch all branches
+        run: git fetch --all
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions Mirror"
+          git config --global user.email "noreply@github.com"
+
+      - name: Add GitVerse remote
+        env:
+          GITVERSE_TOKEN: ${{ secrets.GITVERSE_TOKEN }}
+          GITVERSE_REPO: ${{ secrets.GITVERSE_REPO_URL }}
+        run: |
+          REMOTE_URL="https://${GITVERSE_TOKEN}@${GITVERSE_REPO#https://}"
+          git remote add gitverse "$REMOTE_URL"
+
+      - name: Push full mirror to GitVerse
+        run: git push --mirror gitverse
