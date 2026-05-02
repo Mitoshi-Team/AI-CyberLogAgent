@@ -2,7 +2,7 @@ name: Build and Push to Docker Hub
 
 on:
   push:
-    branches: [axstiz]
+    branches: [main]
 jobs:
   build_push:
     runs-on: ubuntu-latest

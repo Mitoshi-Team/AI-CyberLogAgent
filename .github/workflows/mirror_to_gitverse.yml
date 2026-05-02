@@ -15,8 +15,12 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Fetch all branches
-        run: git fetch --all
+      - name: Fetch all branches from origin
+        run: |
+          git fetch --all
+          git branch -r | grep -v '\->' | sed 's/origin\///' | while read branch; do
+            git branch --track "$branch" "origin/$branch" 2>/dev/null || true
+          done
 
       - name: Configure Git
         run: |
@@ -31,5 +35,27 @@ jobs:
           REMOTE_URL="https://${GITVERSE_TOKEN}@${GITVERSE_REPO#https://}"
           git remote add gitverse "$REMOTE_URL"
 
-      - name: Push full mirror to GitVerse
-        run: git push --mirror gitverse
+      - name: Push all branches and tags to GitVerse
+        run: |
+          git push --force gitverse --all 2>&1 || true
+          git push --force gitverse --tags 2>&1 || true
+
+      - name: Delete stale branches on GitVerse (except default)
+        env:
+          GITVERSE_TOKEN: ${{ secrets.GITVERSE_TOKEN }}
+          GITVERSE_REPO: ${{ secrets.GITVERSE_REPO_URL }}
+        run: |
+          DEFAULT_BRANCH="main"
+          # Get branches on GitVerse
+          git fetch gitverse
+          LOCAL_BRANCHES=$(git branch --list | sed 's/^\* //' | tr '\n' ' ')
+          REMOTE_BRANCHES=$(git branch -r | grep 'gitverse/' | sed 's/gitverse\///')
+          for branch in $REMOTE_BRANCHES; do
+            if [[ "$branch" == "$DEFAULT_BRANCH" ]]; then
+              continue
+            fi
+            if [[ ! "$LOCAL_BRANCHES" == *"$branch"* ]]; then
+              echo "Deleting branch $branch from GitVerse"
+              git push gitverse --delete "$branch" 2>&1 || true
+            fi
+          done
