@@ -1,7 +1,8 @@
 ![Wavescan](./log_ai_agent/site/public/wavescan_logo.svg)
 
-# Wavescan
+[![GitHub release](https://shields.io)](https://github.com/Mitoshi-Team/AI-CyberLogAgent/releases/tag/v13.0.4)
 
+# Wavescan
 ## Описание
 
 **Wavescan** - интеллектуальная агентная система для анализа логов в области кибербезопасности, предназначенная для выявления угроз, аномалий и инцидентов в автономном режиме.
