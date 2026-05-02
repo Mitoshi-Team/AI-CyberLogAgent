@@ -27,3 +27,4 @@ Thumbs.db
 .vscode
 .idea
 node_modules
+log_ai_agent/ai_agent_v2/embedding
