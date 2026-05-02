@@ -4,6 +4,3 @@ RUN mkdir -p /etc/vector/lua /data/external /data/processed/collected_logs /var/
 
 COPY vector.toml /etc/vector/vector.toml
 COPY lua/chunk_logs.lua /etc/vector/lua/chunk_logs.lua
-
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["vector", "--config", "/etc/vector/vector.toml"]
