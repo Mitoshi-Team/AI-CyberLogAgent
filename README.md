@@ -1,6 +1,6 @@
 ![Wavescan](./log_ai_agent/site/public/wavescan_logo.svg)
 
-[![GitHub release](https://shields.io)](https://github.com/Mitoshi-Team/AI-CyberLogAgent/releases/tag/v13.0.4)
+*🌊* [![GitHub release](https://shields.io)](https://github.com/Mitoshi-Team/AI-CyberLogAgent/releases/tag/v13.0.4)
 
 # Wavescan
 ## Описание
