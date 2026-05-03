@@ -1,116 +1,107 @@
 #!/usr/bin/env python3
-"""Test script with detailed RAG logging."""
+"""Tests for RAG (Agent 2) functionality."""
 
+import pytest
 import asyncio
-import logging
-import sys
-from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+from langchain_core.language_models import BaseLanguageModel
 
-# Add project root
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
-
-# Load .env file
-from dotenv import load_dotenv
-
-env_path = Path(__file__).parent.parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
-
-# Enable debug logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s - %(message)s",
+from log_ai_agent.ai_agent_v2.chains.rag_chain import (
+    search_mitre_techniques,
+    rag_search_single_event,
 )
-
-from log_ai_agent.ai_agent_v2 import create_pipeline
-from log_ai_agent.ai_agent_v2.callbacks import get_callback_config
+from log_ai_agent.ai_agent_v2.knowledge_base.manager import ChromaDBManager
 
 
-async def main():
-    """Run test with RAG logging."""
-    print("=" * 60)
-    print("  AI Agent v2 - RAG Test with Detailed Logging")
-    print("=" * 60)
+def create_mock_chroma_mgr(results: list[dict]) -> ChromaDBManager:
+    """Create a mock ChromaDB manager."""
+    mock = MagicMock(spec=ChromaDBManager)
+    mock.is_initialized = True
+    mock.search = MagicMock(return_value=results)
+    return mock
 
-    # Sample logs with clear attack patterns (Apache syslog format)
-    log_content = """
-[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
-[Wed Dec 17 13:06:07 2025] [error] [client 89.23.74.19] Authentication failed for user admin from 192.168.1.100
-[Wed Dec 17 13:06:08 2025] [error] [client 89.23.74.19] Multiple failed login attempts detected
-[Wed Dec 17 13:06:10 2025] [error] [client 89.23.74.19] Possible brute force attack from 89.23.74.19
-[Wed Dec 17 13:06:15 2025] [error] [client 45.17.158.24] SQL injection attempt: OR 1=1 DROP TABLE users
-"""
 
-    print("\n1. Creating pipeline with RAG enabled...")
-    pipeline = await create_pipeline(
-        use_rag=True,  # Enable RAG
+def test_rag_search_basic():
+    """Test basic RAG search with threshold."""
+    mock_mgr = create_mock_chroma_mgr([
+        {"content": "T1078: Valid Accounts", "metadata": {"technique_id": "T1078", "technique_name": "Valid Accounts"}},
+    ])
+
+    results = search_mitre_techniques(mock_mgr, "authentication failure", k=3, score_threshold=0.7)
+    assert len(results) == 1
+    assert results[0]["metadata"]["technique_id"] == "T1078"
+
+
+def test_rag_search_threshold():
+    """Test that threshold filters low-similarity results."""
+    # Simulate ChromaDB returning results with different distances
+    mock_mgr = MagicMock(spec=ChromaDBManager)
+    mock_mgr.is_initialized = True
+
+    # Mock search to return results with scores
+    def mock_search(query, k=5, score_threshold=0.7):
+        # Return different results based on threshold
+        if score_threshold <= 0.7:
+            return [
+                {"content": "T1110: Brute Force", "metadata": {"technique_id": "T1110"}},
+            ]
+        return []
+
+    mock_mgr.search = MagicMock(side_effect=mock_search)
+
+    results = search_mitre_techniques(mock_mgr, "brute force", k=3, score_threshold=0.7)
+    assert len(results) <= 1
+
+
+def test_rag_search_no_results():
+    """Test RAG search with no results."""
+    mock_mgr = create_mock_chroma_mgr([])
+
+    results = search_mitre_techniques(mock_mgr, "unknown attack", k=3, score_threshold=0.7)
+    assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_rag_search_single_event():
+    """Test single event RAG search."""
+    mock_llm = MagicMock(spec=BaseLanguageModel)
+    mock_llm.ainvoke = AsyncMock(return_value="T1110 brute force")
+
+    mock_mgr = create_mock_chroma_mgr([
+        {"content": "T1110: Brute Force", "metadata": {"technique_id": "T1110", "technique_name": "Brute Force"}},
+    ])
+
+    result = await rag_search_single_event(
+        llm=mock_llm,
+        chroma_mgr=mock_mgr,
+        description="Multiple failed login attempts",
+        k=3,
+        score_threshold=0.7,
     )
-    print("[OK] Pipeline created\n")
 
-    print("2. Analyzing logs...\n")
-    print("-" * 60)
+    assert result["has_match"] == True
+    assert result["technique_id"] == "T1110"
 
-    results = await pipeline.analyze(
-        log_content=log_content,
-        config=get_callback_config(show_output=False),
+
+@pytest.mark.asyncio
+async def test_rag_search_single_event_no_match():
+    """Test single event with no RAG match."""
+    mock_llm = MagicMock(spec=BaseLanguageModel)
+    mock_llm.ainvoke = AsyncMock(return_value="No relevant technique")
+
+    mock_mgr = create_mock_chroma_mgr([])
+
+    result = await rag_search_single_event(
+        llm=mock_llm,
+        chroma_mgr=mock_mgr,
+        description="Normal user login",
+        k=3,
+        score_threshold=0.7,
     )
 
-    print("-" * 60)
-    print("\n3. Results:")
-
-    if results.get("success"):
-        stages = results.get("stages", {})
-
-        # Agent 1
-        if "agent1" in stages:
-            agent1 = stages["agent1"]
-            print(f"\n[OK] Agent 1 Output ({agent1.get('events_found', 0)} events):")
-            print(f"  {agent1.get('primary_analysis', '')[:200]}...")
-
-        # RAG
-        if "rag" in stages:
-            rag = stages["rag"]
-            print("\n[OK] RAG Search:")
-            print(f"  Techniques found: {rag.get('techniques_count', 0)}")
-            print(f"  Technique IDs: {rag.get('technique_ids', [])}")
-            print("\n  MITRE Context:")
-            print(f"  {rag.get('mitre_context', '')[:300]}...")
-
-        # Agent 2
-        if "agent2" in stages:
-            agent2 = stages["agent2"]
-            print("\n[OK] Agent 2 Output (detailed):")
-            print(f"  Severity: {agent2.get('severity_level_id')}/4")
-            print(f"  Threat: {agent2.get('threat_type_id')}/11")
-            print(f"  MITRE Techniques: {agent2.get('mitre_techniques', [])}")
-
-        # Agent 3 (final)
-        if "agent3" in stages:
-            agent3 = stages["agent3"]
-            print("\n[OK] Agent 3 Output (final summarization):")
-            print(f"  Severity: {agent3.get('severity_level_id')}/4")
-            print(f"  Threat: {agent3.get('threat_type_id')}/11")
-            print(f"  MITRE Techniques: {agent3.get('mitre_techniques', [])}")
-            print(f"  YARA Rules: {agent3.get('yara_rules', [])}")
-            print(f"  Sigma Rules: {agent3.get('sigma_rules', [])}")
-
-        print(f"\n[OK] Total time: {results.get('total_time_sec', 0):.1f}s")
-        print("\n" + "=" * 60)
-        print("  TEST COMPLETE")
-        print("=" * 60)
-
-    else:
-        print(f"[X] Analysis failed: {results.get('error', 'Unknown error')}")
-        sys.exit(1)
+    assert result["has_match"] == False
+    assert result["technique_id"] is None
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
+    pytest.main([__file__, "-v"])

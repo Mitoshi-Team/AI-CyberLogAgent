@@ -109,8 +109,10 @@ def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
                         pass
 
                 elif key == "confidence_level":
-                    if value in ["high", "medium", "low"]:
-                        confidence_level = value
+                    # Remove quotes if present
+                    clean_value = value.strip('"\'')
+                    if clean_value in ["high", "medium", "low"]:
+                        confidence_level = clean_value
 
                 elif key == "unconfirmed_events_count":
                     try:
