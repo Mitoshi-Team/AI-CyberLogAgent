@@ -12,7 +12,19 @@ from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
-import asyncpg
+from sqlalchemy import select, func, text, case
+from log_ai_agent.db.session import get_async_session, get_sync_session
+from log_ai_agent.db.models import (
+    User,
+    AgentLog,
+    ActionType,
+    UserLog,
+    Log,
+    Report,
+    Message,
+    SeverityLevel,
+    ThreatType,
+)
 from dotenv import load_dotenv
 from fastapi import (
     FastAPI,
@@ -351,29 +363,27 @@ def _schedule_background_task(coro, task_name: str) -> None:
 
 
 async def _insert_agent_log(
-    conn: asyncpg.Connection,
     action_type_id: int,
     description: str,
 ) -> None:
     """Persist a short agent action log into AgentLogs table."""
-    await conn.execute(
-        """
-        INSERT INTO public."AgentLogs" (action_type_id, description, date)
-        VALUES ($1, $2, NOW())
-        """,
-        action_type_id,
-        description,
-    )
+    try:
+        async with get_async_session() as session:
+            log = AgentLog(action_type_id=action_type_id, description=description)
+            session.add(log)
+            await session.commit()
+    except Exception:
+        # Swallow to keep best-effort behaviour
+        return
 
 
 async def _try_insert_agent_log(
-    conn: asyncpg.Connection,
     action_type_id: int,
     description: str,
 ) -> None:
     """Best-effort wrapper for AgentLogs writes to avoid breaking main flow."""
     try:
-        await _insert_agent_log(conn, action_type_id, description)
+        await _insert_agent_log(action_type_id, description)
     except Exception as error:
         logger.warning(
             "Failed to write AgentLogs entry (action_type_id=%s): %s",
@@ -383,32 +393,28 @@ async def _try_insert_agent_log(
 
 
 async def _insert_user_log(
-    conn: asyncpg.Connection,
     user_id: int,
     action_type_id: int,
     description: str,
 ) -> None:
     """Persist a short user action log into UserLogs table."""
-    await conn.execute(
-        """
-        INSERT INTO public."UserLogs" (user_id, action_type_id, description, date)
-        VALUES ($1, $2, $3, NOW())
-        """,
-        user_id,
-        action_type_id,
-        description,
-    )
+    try:
+        async with get_async_session() as session:
+            log = UserLog(user_id=user_id, action_type_id=action_type_id, description=description)
+            session.add(log)
+            await session.commit()
+    except Exception:
+        return
 
 
 async def _try_insert_user_log(
-    conn: asyncpg.Connection,
     user_id: int,
     action_type_id: int,
     description: str,
 ) -> None:
     """Best-effort wrapper for UserLogs writes to avoid breaking main flow."""
     try:
-        await _insert_user_log(conn, user_id, action_type_id, description)
+        await _insert_user_log(user_id, action_type_id, description)
     except Exception as error:
         logger.warning(
             "Failed to write UserLogs entry (user_id=%s, action_type_id=%s): %s",
@@ -488,77 +494,54 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             f"\n{analysis_result['description']}"
         )
 
-        conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-        try:
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_RECEIVE_LOGS,
-                f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
-            )
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_ANALYZE_LOGS,
-                "Анализ логов через AI Agent v2 (Kafka batch)",
-            )
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_MATCH_THREATS,
-                "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
-            )
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_BUILD_REPORT,
-                "Формирование итогового отчета по Kafka batch",
-            )
+        await _try_insert_agent_log(
+            AGENT_ACTION_RECEIVE_LOGS,
+            f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
+        )
+        await _try_insert_agent_log(
+            AGENT_ACTION_ANALYZE_LOGS,
+            "Анализ логов через AI Agent v2 (Kafka batch)",
+        )
+        await _try_insert_agent_log(
+            AGENT_ACTION_MATCH_THREATS,
+            "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
+        )
+        await _try_insert_agent_log(
+            AGENT_ACTION_BUILD_REPORT,
+            "Формирование итогового отчета по Kafka batch",
+        )
 
-            log_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Logs" (file_content, date)
-                VALUES ($1, NOW())
-                RETURNING log_id
-                """,
-                log_content,
-            )
-            log_id = log_row["log_id"]
+        async with get_async_session() as session:
+            log = Log(file_content=log_content)
+            session.add(log)
+            await session.flush()
+            log_id = log.log_id
 
-            report_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Reports" (
-                    log_id,
-                    severity_level_id,
-                    threat_type_id,
-                    description,
-                    created_at
-                )
-                VALUES ($1, $2, $3, $4, NOW())
-                RETURNING report_id
-                """,
-                log_id,
-                analysis_result["severity_level_id"],
-                analysis_result["threat_type_id"],
-                report_description,
+            report = Report(
+                log_id=log_id,
+                severity_level_id=analysis_result.get("severity_level_id"),
+                threat_type_id=analysis_result.get("threat_type_id"),
+                description=report_description,
             )
-            report_id = report_row["report_id"]
+            session.add(report)
+            await session.flush()
+            report_id = report.report_id
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_SAVE_REPORT,
                 f"Сохранение отчета по Kafka batch: log_id={log_id}, report_id={report_id}",
             )
 
             chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
-            inserted_messages = await conn.fetch(
-                """
-                INSERT INTO public."Messages" (user_id, role, content, created_at)
-                SELECT user_id, 'agent', $1, NOW()
-                FROM public."Users"
-                RETURNING user_id
-                """,
-                chat_message,
-            )
+
+            # Post a message for every user
+            result = await session.execute(select(User.user_id))
+            user_ids = result.scalars().all()
+            messages_to_add = [Message(user_id=uid, role="agent", content=chat_message) for uid in user_ids]
+            session.add_all(messages_to_add)
+            await session.commit()
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_RESPOND,
                 "Отправка автоотчета пользователям через чат",
             )
@@ -573,30 +556,28 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             )
             logger.info(
                 "Kafka report auto-posted to chat for users: %s",
-                len(inserted_messages),
+                len(user_ids),
             )
 
-            for row in inserted_messages:
+            for uid in user_ids:
                 await _broadcast_chat_response_event(
-                    user_id=row["user_id"],
+                    user_id=uid,
                     response_text=chat_message,
                     mode="auto_report",
                 )
 
-            await _broadcast_incident_event(
-                title=f"Инцидент из Kafka потока ({source_label})",
-                description=report_description,
-                severity_level_id=analysis_result.get("severity_level_id"),
-                source="Kafka Pipeline",
-            )
-            await _broadcast_report_created_event(
-                report_id=report_id,
-                source="Kafka Pipeline",
-                severity_level_id=analysis_result.get("severity_level_id"),
-            )
-            analysis_completed = True
-        finally:
-            await conn.close()
+        await _broadcast_incident_event(
+            title=f"Инцидент из Kafka потока ({source_label})",
+            description=report_description,
+            severity_level_id=analysis_result.get("severity_level_id"),
+            source="Kafka Pipeline",
+        )
+        await _broadcast_report_created_event(
+            report_id=report_id,
+            source="Kafka Pipeline",
+            severity_level_id=analysis_result.get("severity_level_id"),
+        )
+        analysis_completed = True
     except Exception as error:
         runtime_error = str(error)
         raise
@@ -777,16 +758,11 @@ async def login(request: LoginRequest):
             AUTH_TOKENS[token] = user_data["user_id"]
 
             if DATABASE_URL and user_data and user_data.get("user_id"):
-                conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-                try:
-                    await _try_insert_user_log(
-                        conn,
-                        user_data["user_id"],
-                        USER_ACTION_LOGIN,
-                        f"Вход в систему: login={user_data.get('login', request.username)}",
-                    )
-                finally:
-                    await conn.close()
+                await _try_insert_user_log(
+                    user_data["user_id"],
+                    USER_ACTION_LOGIN,
+                    f"Вход в систему: login={user_data.get('login', request.username)}",
+                )
 
             return LoginResponse(
                 success=True,
@@ -833,16 +809,11 @@ async def logout(user_id: int, request: Request):
             AUTH_TOKENS.pop(token, None)
 
         if DATABASE_URL:
-            conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-            try:
-                await _try_insert_user_log(
-                    conn,
-                    user_id,
-                    USER_ACTION_LOGOUT,
-                    "Выход из системы",
-                )
-            finally:
-                await conn.close()
+            await _try_insert_user_log(
+                user_id,
+                USER_ACTION_LOGOUT,
+                "Выход из системы",
+            )
 
         return {
             "success": True,
@@ -862,9 +833,8 @@ async def health_check():
     # Проверка подключения к базе данных
     if DATABASE_URL:
         try:
-            conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-            await conn.execute("SELECT 1")
-            await conn.close()
+            async with get_async_session() as session:
+                await session.execute(text("SELECT 1"))
             db_status = "connected"
         except Exception as e:
             db_error = str(e)
@@ -1159,48 +1129,32 @@ async def update_yara_rule_file_content(request: RuleContentUpdateRequest):
 async def get_severity_statistics(start_date: str = None, end_date: str = None):
     """Получить статистику по уровням серьезности"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            # Формируем запрос с учетом фильтров по датам
+            if start_date and end_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
 
-        # Формируем запрос с учетом фильтров по датам
-        if start_date and end_date:
-            # Преобразуем строки в datetime
-            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                count_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
+                ).label("count")
+            else:
+                count_expr = func.count(Report.report_id).label("count")
 
-            rows = await conn.fetch(
-                """
-                SELECT 
-                    sl.severity_level_id,
-                    sl.name,
-                    COUNT(CASE WHEN r.created_at BETWEEN $1 AND $2 THEN r.report_id END) as count
-                FROM public."SeverityLevels" sl
-                LEFT JOIN public."Reports" r ON sl.severity_level_id = r.severity_level_id
-                GROUP BY sl.severity_level_id, sl.name
-                ORDER BY sl.severity_level_id
-            """,
-                start_dt,
-                end_dt,
+            stmt = (
+                select(SeverityLevel.severity_level_id, SeverityLevel.name, count_expr)
+                .outerjoin(Report, SeverityLevel.severity_level_id == Report.severity_level_id)
+                .group_by(SeverityLevel.severity_level_id, SeverityLevel.name)
+                .order_by(SeverityLevel.severity_level_id)
             )
-        else:
-            rows = await conn.fetch("""
-                SELECT 
-                    sl.severity_level_id,
-                    sl.name,
-                    COUNT(r.report_id) as count
-                FROM public."SeverityLevels" sl
-                LEFT JOIN public."Reports" r ON sl.severity_level_id = r.severity_level_id
-                GROUP BY sl.severity_level_id, sl.name
-                ORDER BY sl.severity_level_id
-            """)
 
-        await conn.close()
+            rows = await session.execute(stmt)
+            records = rows.all()
+            result = [
+                {"id": r[0], "name": r[1], "count": int(r[2] or 0)} for r in records
+            ]
 
-        result = [
-            {"id": row["severity_level_id"], "name": row["name"], "count": row["count"]}
-            for row in rows
-        ]
-
-        return {"data": result}
+            return {"data": result}
     except Exception as e:
         logger.error(f"Error getting severity statistics: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения статистики")
@@ -1210,48 +1164,34 @@ async def get_severity_statistics(start_date: str = None, end_date: str = None):
 async def get_threat_statistics(start_date: str = None, end_date: str = None):
     """Получить статистику по типам угроз"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            if start_date and end_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                count_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
+                ).label("count")
+                order_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
+                ).desc()
+            else:
+                count_expr = func.count(Report.report_id).label("count")
+                order_expr = func.count(Report.report_id).desc()
 
-        # Формируем запрос с учетом фильтров по датам
-        if start_date and end_date:
-            # Преобразуем строки в datetime
-            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-
-            rows = await conn.fetch(
-                """
-                SELECT 
-                    tt.threat_type_id,
-                    tt.name,
-                    COUNT(CASE WHEN r.created_at BETWEEN $1 AND $2 THEN r.report_id END) as count
-                FROM public."ThreatTypes" tt
-                LEFT JOIN public."Reports" r ON tt.threat_type_id = r.threat_type_id
-                GROUP BY tt.threat_type_id, tt.name
-                ORDER BY COUNT(CASE WHEN r.created_at BETWEEN $1 AND $2 THEN r.report_id END) DESC, tt.name
-            """,
-                start_dt,
-                end_dt,
+            stmt = (
+                select(ThreatType.threat_type_id, ThreatType.name, count_expr)
+                .outerjoin(Report, ThreatType.threat_type_id == Report.threat_type_id)
+                .group_by(ThreatType.threat_type_id, ThreatType.name)
+                .order_by(order_expr, ThreatType.name)
             )
-        else:
-            rows = await conn.fetch("""
-                SELECT 
-                    tt.threat_type_id,
-                    tt.name,
-                    COUNT(r.report_id) as count
-                FROM public."ThreatTypes" tt
-                LEFT JOIN public."Reports" r ON tt.threat_type_id = r.threat_type_id
-                GROUP BY tt.threat_type_id, tt.name
-                ORDER BY COUNT(r.report_id) DESC, tt.name
-            """)
 
-        await conn.close()
+            rows = await session.execute(stmt)
+            records = rows.all()
+            result = [
+                {"id": r[0], "name": r[1], "count": int(r[2] or 0)} for r in records
+            ]
 
-        result = [
-            {"id": row["threat_type_id"], "name": row["name"], "count": row["count"]}
-            for row in rows
-        ]
-
-        return {"data": result}
+            return {"data": result}
     except Exception as e:
         logger.error(f"Error getting threat statistics: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения статистики")
@@ -1270,8 +1210,6 @@ async def get_activity_statistics(
 
     """
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-
         from datetime import datetime, timedelta
 
         if start_date and end_date:
@@ -1322,31 +1260,25 @@ async def get_activity_statistics(
                 end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         # Получаем количество отчетов по дням
-        rows = await conn.fetch(
-            """
-            SELECT 
-                DATE(created_at) as date,
-                COUNT(*) as count
-            FROM public."Reports"
-            WHERE created_at >= $1 AND created_at <= $2
-            GROUP BY DATE(created_at)
-            ORDER BY date
-        """,
-            start,
-            end,
-        )
-
-        await conn.close()
+        async with get_async_session() as session:
+            stmt = (
+                select(func.date(Report.created_at).label("date"), func.count().label("count"))
+                .where(Report.created_at >= start, Report.created_at <= end)
+                .group_by(func.date(Report.created_at))
+                .order_by(func.date(Report.created_at))
+            )
+            rows = await session.execute(stmt)
+            rows = rows.all()
 
         # Создаем полный список дней с нулями для дней без данных
         result = []
-        day_counts = {row["date"]: row["count"] for row in rows}
+        day_counts = {r[0]: int(r[1] or 0) for r in rows}
 
         # Вычисляем количество дней между start и end
         start_date_obj = start.date()
         end_date_obj = end.date()
 
-        # Рассчитываем количество дней (разница + 1 день, так как включаем оба конца)
+        # Рассчитываем количество дней (разница + 1 день, так как включаем оба концы)
         days_count = (end_date_obj - start_date_obj).days + 1
 
         # Генерируем даты: для недели будет 7 дней, для месяца - количество дней в месяце
@@ -1382,95 +1314,68 @@ async def get_reports_history(
 ):
     """Получение истории отчетов с фильтрацией и пагинацией"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            # Build base query
+            base = (
+                select(
+                    Report.report_id,
+                    Report.description,
+                    Report.created_at,
+                    SeverityLevel.severity_level_id,
+                    SeverityLevel.name.label("severity_name"),
+                    ThreatType.threat_type_id,
+                    ThreatType.name.label("threat_name"),
+                )
+                .outerjoin(SeverityLevel, Report.severity_level_id == SeverityLevel.severity_level_id)
+                .outerjoin(ThreatType, Report.threat_type_id == ThreatType.threat_type_id)
+            )
 
-        # Базовый SQL запрос для подсчета общего количества
-        count_query = """
-            SELECT COUNT(*) as total
-            FROM public."Reports" r
-            WHERE 1=1
-        """
+            filters = []
+            if date_from:
+                filters.append(Report.created_at >= datetime.fromisoformat(date_from.replace("Z", "+00:00")))
+            if date_to:
+                filters.append(Report.created_at <= datetime.fromisoformat(date_to.replace("Z", "+00:00")))
+            if severity_level_id:
+                filters.append(Report.severity_level_id == severity_level_id)
+            if threat_type_id:
+                filters.append(Report.threat_type_id == threat_type_id)
 
-        # Базовый SQL запрос для получения данных
-        query = """
-            SELECT 
-                r.report_id,
-                r.description,
-                r.created_at,
-                sl.severity_level_id,
-                sl.name as severity_name,
-                tt.threat_type_id,
-                tt.name as threat_name
-            FROM public."Reports" r
-            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
-            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
-            WHERE 1=1
-        """
-        params = []
-        param_count = 1
+            if filters:
+                base = base.where(*filters)
 
-        # Добавляем фильтры к обоим запросам
-        filter_conditions = ""
+            # total count
+            count_stmt = select(func.count()).select_from(Report)
+            if filters:
+                count_stmt = count_stmt.where(*filters)
+            total_res = await session.execute(count_stmt)
+            total = int(total_res.scalar() or 0)
 
-        if date_from:
-            filter_conditions += f" AND r.created_at >= ${param_count}"
-            params.append(datetime.fromisoformat(date_from.replace("Z", "+00:00")))
-            param_count += 1
+            # pagination
+            offset = (page - 1) * page_size
+            stmt = base.order_by(Report.created_at.desc()).limit(page_size).offset(offset)
+            rows = await session.execute(stmt)
+            records = rows.all()
 
-        if date_to:
-            filter_conditions += f" AND r.created_at <= ${param_count}"
-            params.append(datetime.fromisoformat(date_to.replace("Z", "+00:00")))
-            param_count += 1
+            result = [
+                {
+                    "id": r[0],
+                    "description": r[1],
+                    "created_at": r[2].isoformat() if r[2] else None,
+                    "severity_level_id": r[3],
+                    "severity_name": r[4],
+                    "threat_type_id": r[5],
+                    "threat_name": r[6],
+                }
+                for r in records
+            ]
 
-        if severity_level_id:
-            filter_conditions += f" AND r.severity_level_id = ${param_count}"
-            params.append(severity_level_id)
-            param_count += 1
-
-        if threat_type_id:
-            filter_conditions += f" AND r.threat_type_id = ${param_count}"
-            params.append(threat_type_id)
-            param_count += 1
-
-        # Добавляем фильтры к запросам
-        count_query += filter_conditions
-        query += filter_conditions
-
-        # Получаем общее количество записей
-        total_row = await conn.fetchrow(count_query, *params)
-        total = total_row["total"]
-
-        # Вычисляем offset
-        offset = (page - 1) * page_size
-
-        # Добавляем сортировку, лимит и offset
-        query += f" ORDER BY r.created_at DESC LIMIT ${param_count} OFFSET ${param_count + 1}"
-        params.extend([page_size, offset])
-
-        rows = await conn.fetch(query, *params)
-        await conn.close()
-
-        # Форматируем результаты
-        result = [
-            {
-                "id": row["report_id"],
-                "description": row["description"],
-                "created_at": row["created_at"].isoformat(),
-                "severity_level_id": row["severity_level_id"],
-                "severity_name": row["severity_name"],
-                "threat_type_id": row["threat_type_id"],
-                "threat_name": row["threat_name"],
+            return {
+                "data": result,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size,
             }
-            for row in rows
-        ]
-
-        return {
-            "data": result,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size,
-        }
     except Exception as e:
         logger.error(f"Error getting reports history: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения истории отчетов")
@@ -1480,34 +1385,17 @@ async def get_reports_history(
 async def get_reports_filters():
     """Получение всех доступных фильтров для отчетов"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            sev_res = await session.execute(select(SeverityLevel).order_by(SeverityLevel.severity_level_id))
+            severity_levels = sev_res.scalars().all()
 
-        # Получаем уровни серьезности
-        severity_levels = await conn.fetch("""
-            SELECT severity_level_id, name
-            FROM public."SeverityLevels"
-            ORDER BY severity_level_id
-        """)
+            th_res = await session.execute(select(ThreatType).order_by(ThreatType.threat_type_id))
+            threat_types = th_res.scalars().all()
 
-        # Получаем типы угроз
-        threat_types = await conn.fetch("""
-            SELECT threat_type_id, name
-            FROM public."ThreatTypes"
-            ORDER BY threat_type_id
-        """)
-
-        await conn.close()
-
-        return {
-            "severity_levels": [
-                {"id": row["severity_level_id"], "name": row["name"]}
-                for row in severity_levels
-            ],
-            "threat_types": [
-                {"id": row["threat_type_id"], "name": row["name"]}
-                for row in threat_types
-            ],
-        }
+            return {
+                "severity_levels": [{"id": s.severity_level_id, "name": s.name} for s in severity_levels],
+                "threat_types": [{"id": t.threat_type_id, "name": t.name} for t in threat_types],
+            }
     except Exception as e:
         logger.error(f"Error getting reports filters: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения фильтров отчетов")
@@ -1517,40 +1405,35 @@ async def get_reports_filters():
 async def get_report_details(report_id: int):
     """Получение детальной информации об отчете"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            stmt = (
+                select(
+                    Report.report_id,
+                    Report.description,
+                    Report.created_at,
+                    Report.log_id,
+                    SeverityLevel.name.label("severity_name"),
+                    ThreatType.name.label("threat_name"),
+                    Log.file_content,
+                )
+                .outerjoin(SeverityLevel, Report.severity_level_id == SeverityLevel.severity_level_id)
+                .outerjoin(ThreatType, Report.threat_type_id == ThreatType.threat_type_id)
+                .outerjoin(Log, Report.log_id == Log.log_id)
+                .where(Report.report_id == report_id)
+            )
+            res = await session.execute(stmt)
+            row = res.mappings().one_or_none()
 
-        # Получаем отчет с логами
-        report = await conn.fetchrow(
-            """
-            SELECT 
-                r.report_id,
-                r.description,
-                r.created_at,
-                r.log_id,
-                sl.name as severity_name,
-                tt.name as threat_name,
-                l.file_content
-            FROM public."Reports" r
-            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
-            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
-            LEFT JOIN public."Logs" l ON r.log_id = l.log_id
-            WHERE r.report_id = $1
-        """,
-            report_id,
-        )
-
-        await conn.close()
-
-        if not report:
+        if not row:
             raise HTTPException(status_code=404, detail="Отчет не найден")
 
         return {
-            "id": report["report_id"],
-            "description": report["description"],
-            "created_at": report["created_at"].isoformat(),
-            "severity_name": report["severity_name"],
-            "threat_name": report["threat_name"],
-            "file_content": report["file_content"] or "Логи отсутствуют",
+            "id": row["report_id"],
+            "description": row["description"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "severity_name": row["severity_name"] or None,
+            "threat_name": row["threat_name"] or None,
+            "file_content": row["file_content"] or "Логи отсутствуют",
         }
     except HTTPException:
         raise
@@ -1563,29 +1446,19 @@ async def get_report_details(report_id: int):
 async def save_chat_message(request: ChatMessageRequest):
     """Сохранение сообщения в чат"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            msg = Message(user_id=request.user_id, role=request.role, content=request.content)
+            session.add(msg)
+            await session.flush()
+            await session.commit()
 
-        # Сохраняем сообщение в базу данных
-        row = await conn.fetchrow(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            VALUES ($1, $2, $3, NOW())
-            RETURNING message_id, user_id, role, content, created_at
-        """,
-            request.user_id,
-            request.role,
-            request.content,
-        )
-
-        await conn.close()
-
-        return ChatMessageResponse(
-            message_id=row["message_id"],
-            user_id=row["user_id"],
-            role=row["role"],
-            content=row["content"],
-            created_at=row["created_at"].isoformat(),
-        )
+            return ChatMessageResponse(
+                message_id=msg.message_id,
+                user_id=msg.user_id,
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at.isoformat() if msg.created_at else None,
+            )
     except Exception as e:
         logger.error(f"Error saving chat message: {e}")
         raise HTTPException(status_code=500, detail="Ошибка сохранения сообщения")
@@ -1595,33 +1468,25 @@ async def save_chat_message(request: ChatMessageRequest):
 async def get_chat_messages(user_id: int, limit: int = 50):
     """Получение последних сообщений чата"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            stmt = (
+                select(Message)
+                .where(Message.user_id == user_id)
+                .order_by(Message.created_at.desc())
+                .limit(limit)
+            )
+            rows = await session.execute(stmt)
+            messages_rows = rows.scalars().all()
 
-        # Получаем последние N сообщений для пользователя
-        rows = await conn.fetch(
-            """
-            SELECT message_id, user_id, role, content, created_at
-            FROM public."Messages"
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2
-        """,
-            user_id,
-            limit,
-        )
-
-        await conn.close()
-
-        # Возвращаем в обратном порядке (от старых к новым)
         messages = [
             {
-                "message_id": row["message_id"],
-                "user_id": row["user_id"],
-                "role": row["role"],
-                "content": row["content"],
-                "created_at": row["created_at"].isoformat(),
+                "message_id": m.message_id,
+                "user_id": m.user_id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
             }
-            for row in reversed(rows)
+            for m in reversed(messages_rows)
         ]
 
         return {"data": messages, "total": len(messages)}
@@ -1669,19 +1534,13 @@ async def _store_agent_fallback_message(user_id: int, text: str) -> None:
     if not DATABASE_URL:
         return
 
-    conn = await asyncpg.connect(DATABASE_URL, timeout=10)
     try:
-        await conn.execute(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            VALUES ($1, $2, $3, NOW())
-            """,
-            user_id,
-            "agent",
-            text,
-        )
-    finally:
-        await conn.close()
+        async with get_async_session() as session:
+            msg = Message(user_id=user_id, role="agent", content=text)
+            session.add(msg)
+            await session.commit()
+    except Exception:
+        return
 
 
 @app.post("/api/chat/send", response_model=ChatSendResponse)
@@ -1703,16 +1562,11 @@ async def send_chat_message(request: ChatSendRequest):
             )
 
         if DATABASE_URL:
-            conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-            try:
-                await _try_insert_user_log(
-                    conn,
-                    request.user_id,
-                    USER_ACTION_SEND_MESSAGE,
-                    "Отправка сообщения в чат AI-агента",
-                )
-            finally:
-                await conn.close()
+            await _try_insert_user_log(
+                request.user_id,
+                USER_ACTION_SEND_MESSAGE,
+                "Отправка сообщения в чат AI-агента",
+            )
 
         # Обрабатываем сообщение через GigaChat
         result = await process_chat_message(
@@ -1873,17 +1727,14 @@ async def upload_log_file(
             raise HTTPException(status_code=499, detail="Клиент прервал загрузку")
         _raise_if_log_upload_canceled(cancel_event)
 
-        conn = await asyncpg.connect(DATABASE_URL, timeout=10)
         try:
             await _try_insert_user_log(
-                conn,
                 user_id,
                 USER_ACTION_SEND_LOGS,
                 f"Отправка логов: файл={file.filename}, размер={len(content_str)} байт",
             )
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_RECEIVE_LOGS,
                 f"Получение логов: файл={file.filename}, user_id={user_id}, размер={len(content_str)} байт",
             )
@@ -1893,7 +1744,6 @@ async def upload_log_file(
             logger.info("Используем AI Agent v2 для анализа")
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_ANALYZE_LOGS,
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
@@ -1929,7 +1779,6 @@ async def upload_log_file(
                 or "402" in lowered_analysis_error
             ):
                 await _try_insert_agent_log(
-                    conn,
                     AGENT_ACTION_RESPOND,
                     "Ответ на запрос: отчет не создан из-за ошибки внешнего AI сервиса (402 Payment Required)",
                 )
@@ -1942,7 +1791,6 @@ async def upload_log_file(
                 )
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_MATCH_THREATS,
                 (
                     "Сопоставление с базой угроз/MITRE: "
@@ -1951,49 +1799,36 @@ async def upload_log_file(
             )
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_BUILD_REPORT,
                 "Формирование итогового отчета по результатам анализа",
             )
             _raise_if_log_upload_canceled(cancel_event)
 
             # Сохраняем содержимое лога
-            log_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Logs" (file_content, date)
-                VALUES ($1, NOW())
-                RETURNING log_id
-                """,
-                content_str,
-            )
-            log_id = log_row["log_id"]
-            _raise_if_log_upload_canceled(cancel_event)
+            async with get_async_session() as session:
+                log = Log(file_content=content_str)
+                session.add(log)
+                await session.flush()
+                log_id = log.log_id
+                _raise_if_log_upload_canceled(cancel_event)
 
-            # Создаем отчет на основе анализа GigaChat
-            report_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Reports" (
-                    log_id,
-                    severity_level_id,
-                    threat_type_id,
-                    description,
-                    created_at
+                report = Report(
+                    log_id=log_id,
+                    severity_level_id=analysis_result.get("severity_level_id"),
+                    threat_type_id=analysis_result.get("threat_type_id"),
+                    description=analysis_result.get("description"),
                 )
-                VALUES ($1, $2, $3, $4, NOW())
-                RETURNING report_id
-                """,
-                log_id,
-                analysis_result["severity_level_id"],
-                analysis_result["threat_type_id"],
-                analysis_result["description"],
-            )
-            report_id = report_row["report_id"]
+                session.add(report)
+                await session.flush()
+                report_id = report.report_id
 
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_SAVE_REPORT,
-                f"Сохранение отчета в БД: log_id={log_id}, report_id={report_id}",
-            )
+                await _try_insert_agent_log(
+                    AGENT_ACTION_SAVE_REPORT,
+                    f"Сохранение отчета в БД: log_id={log_id}, report_id={report_id}",
+                )
+                
+                # Явно коммитим перед отправкой broadcast событий
+                await session.commit()
 
             logger.info(
                 f"Файл {file.filename} успешно обработан. "
@@ -2015,7 +1850,6 @@ async def upload_log_file(
                 response["processing_time_ms"] = analysis_result["processing_time_ms"]
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_RESPOND,
                 f"Ответ на запрос загрузки логов: user_id={user_id}, report_id={report_id}",
             )
@@ -2047,9 +1881,8 @@ async def upload_log_file(
             )
 
             return response
-
         finally:
-            await conn.close()
+            pass
 
     except HTTPException:
         raise
@@ -2132,24 +1965,15 @@ def _format_runtime_timestamp(value: object) -> str:
 def show_agent_logs(limit: int = 50):
     """Show latest agent action logs for admin console."""
     try:
-        conn = commands.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                al.agent_log_id,
-                al.action_type_id,
-                at.name,
-                al.description,
-                al.date
-            FROM public."AgentLogs" al
-            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
-            ORDER BY al.date DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        rows = cursor.fetchall()
+        with get_sync_session() as session:
+            stmt = (
+                select(AgentLog.agent_log_id, AgentLog.action_type_id, ActionType.name, AgentLog.description, AgentLog.date)
+                .outerjoin(ActionType, AgentLog.action_type_id == ActionType.action_type_id)
+                .order_by(AgentLog.date.desc())
+                .limit(limit)
+            )
+            res = session.execute(stmt)
+            rows = res.fetchall()
 
         print("\n" + "=" * 60)
         print(f"  Логи агента (последние {limit}")
@@ -2162,9 +1986,6 @@ def show_agent_logs(limit: int = 50):
                 date_str = _format_cli_datetime(row[4])
                 print(f"[{date_str}] id={row[0]} type={row[1]} ({row[2]}) | {row[3]}")
             print()
-
-        cursor.close()
-        conn.close()
     except Exception as e:
         print(f"❌ Ошибка получения логов агента: {e}")
 
@@ -2172,27 +1993,24 @@ def show_agent_logs(limit: int = 50):
 def show_user_logs(limit: int = 50):
     """Show latest user action logs for admin console."""
     try:
-        conn = commands.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                ul.user_log_id,
-                ul.user_id,
-                u.login,
-                ul.action_type_id,
-                at.name,
-                ul.description,
-                ul.date
-            FROM public."UserLogs" ul
-            LEFT JOIN public."Users" u ON u.user_id = ul.user_id
-            LEFT JOIN public."ActionTypes" at ON at.action_type_id = ul.action_type_id
-            ORDER BY ul.date DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        rows = cursor.fetchall()
+        with get_sync_session() as session:
+            stmt = (
+                select(
+                    UserLog.user_log_id,
+                    UserLog.user_id,
+                    User.login,
+                    UserLog.action_type_id,
+                    ActionType.name,
+                    UserLog.description,
+                    UserLog.date,
+                )
+                .outerjoin(User, UserLog.user_id == User.user_id)
+                .outerjoin(ActionType, UserLog.action_type_id == ActionType.action_type_id)
+                .order_by(UserLog.date.desc())
+                .limit(limit)
+            )
+            res = session.execute(stmt)
+            rows = res.fetchall()
 
         print("\n" + "=" * 60)
         print(f"  Логи пользователей (последние {limit})")
@@ -2207,9 +2025,6 @@ def show_user_logs(limit: int = 50):
                     f"[{date_str}] id={row[0]} user_id={row[1]} ({row[2]}) type={row[3]} ({row[4]}) | {row[5]}"
                 )
             print()
-
-        cursor.close()
-        conn.close()
     except Exception as e:
         print(f"❌ Ошибка получения логов пользователей: {e}")
 
@@ -2722,24 +2537,15 @@ def _fetch_runtime_status_from_api() -> dict | None:
 def show_agent_status() -> None:
     """Show the latest known agent stage from AgentLogs."""
     try:
-        conn = commands.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                al.action_type_id,
-                at.name,
-                al.description,
-                al.date
-            FROM public."AgentLogs" al
-            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
-            ORDER BY al.date DESC
-            LIMIT 1
-            """
-        )
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        with get_sync_session() as session:
+            stmt = (
+                select(AgentLog.action_type_id, ActionType.name, AgentLog.description, AgentLog.date)
+                .outerjoin(ActionType, AgentLog.action_type_id == ActionType.action_type_id)
+                .order_by(AgentLog.date.desc())
+                .limit(1)
+            )
+            res = session.execute(stmt)
+            row = res.fetchone()
 
         print("\n" + "=" * 60)
         print("  Статус:")

@@ -1,6 +1,8 @@
 import logging
 
-import asyncpg
+from sqlalchemy import select, delete, func
+from log_ai_agent.db.session import get_async_session
+from log_ai_agent.db.models import Message, Report
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .chains.llm import create_llm
@@ -13,6 +15,8 @@ CHAT_SYSTEM_PROMPT = """Ты - AI-ассистент по кибербезопа
 
 Правила ответа:
 - Используй контекст диалога и данные последнего отчета, если они доступны.
+- Если пользователь задает вопрос, на который нет данных в контексте, честно скажи, что не знаешь, и предложи следующий шаг (например, запросить больше информации).
+- Если пользователь ни слова не говорит о последнем отчете, не упоминай его в ответе.
 - Если данных для точного вывода недостаточно, явно укажи это и предложи следующий шаг.
 - Не выдумывай факты, которых нет в переданных данных.
 - Формулируй ответ как нормальный диалоговый ответ ассистента, без служебных меток.
@@ -41,46 +45,36 @@ def _extract_llm_text(result: object) -> str:
 
 
 async def _generate_agent_response(
-    conn: asyncpg.Connection,
+    session,
     user_id: int,
     user_message: str,
 ) -> str:
     """Generate chat response via LLM using recent conversation and latest report."""
-    history_rows = await conn.fetch(
-        """
-        SELECT role, content, created_at
-        FROM public."Messages"
-        WHERE user_id = $1
-          AND role IN ('user', 'agent')
-        ORDER BY created_at DESC
-        LIMIT 10
-        """,
-        user_id,
+    stmt = (
+        select(Message)
+        .where(Message.user_id == user_id, Message.role.in_(["user", "agent"]))
+        .order_by(Message.created_at.desc())
+        .limit(10)
     )
+    res = await session.execute(stmt)
+    history_rows = res.scalars().all()
 
-    latest_report = await conn.fetchrow(
-        """
-        SELECT r.report_id, r.description, r.created_at
-        FROM public."Reports" r
-        ORDER BY r.created_at DESC
-        LIMIT 1
-        """
-    )
+    latest_stmt = select(Report).order_by(Report.created_at.desc()).limit(1)
+    latest_res = await session.execute(latest_stmt)
+    latest_report = latest_res.scalars().first()
 
     history_lines: list[str] = []
-    for row in reversed(history_rows):
-        role = "Пользователь" if row["role"] == "user" else "Агент"
-        history_lines.append(
-            f"[{row['created_at'].isoformat()}] {role}: {row['content']}"
-        )
+    for msg in reversed(history_rows):
+        role = "Пользователь" if msg.role == "user" else "Агент"
+        history_lines.append(f"[{msg.created_at.isoformat()}] {role}: {msg.content}")
 
     history_text = "\n".join(history_lines) if history_lines else "История отсутствует"
 
     if latest_report:
         report_context = (
-            f"ID: {latest_report['report_id']}\n"
-            f"Время: {latest_report['created_at'].isoformat()}\n"
-            f"Описание:\n{latest_report['description']}"
+            f"ID: {latest_report.report_id}\n"
+            f"Время: {latest_report.created_at.isoformat()}\n"
+            f"Описание:\n{latest_report.description}"
         )
     else:
         report_context = "Отчеты пока отсутствуют"
@@ -112,18 +106,13 @@ async def _generate_agent_response(
 
 async def clear_user_context(user_id: int, database_url: str) -> int:
     """Clear all chat messages for a user and return deleted row count."""
-    conn = await asyncpg.connect(database_url, timeout=10)
-    try:
-        result = await conn.execute(
-            'DELETE FROM public."Messages" WHERE user_id = $1',
-            user_id,
-        )
-        try:
-            return int(result.split()[-1])
-        except Exception:
-            return 0
-    finally:
-        await conn.close()
+    async with get_async_session() as session:
+        count_stmt = select(func.count()).where(Message.user_id == user_id)
+        count_res = await session.execute(count_stmt)
+        count = int(count_res.scalar() or 0)
+        await session.execute(delete(Message).where(Message.user_id == user_id))
+        await session.commit()
+        return count
 
 
 async def process_chat_message(
@@ -134,35 +123,16 @@ async def process_chat_message(
     if not message:
         raise ValueError("Message cannot be empty")
 
-    conn = await asyncpg.connect(database_url, timeout=10)
-    try:
-        await conn.execute(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            VALUES ($1, $2, $3, NOW())
-            """,
-            user_id,
-            "user",
-            message,
-        )
+    async with get_async_session() as session:
+        msg = Message(user_id=user_id, role="user", content=message)
+        session.add(msg)
+        await session.flush()
 
-        response = await _generate_agent_response(
-            conn=conn,
-            user_id=user_id,
-            user_message=message,
-        )
+        response = await _generate_agent_response(session=session, user_id=user_id, user_message=message)
         mode = "agent_llm"
 
-        await conn.execute(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            VALUES ($1, $2, $3, NOW())
-            """,
-            user_id,
-            "agent",
-            response,
-        )
+        agent_msg = Message(user_id=user_id, role="agent", content=response)
+        session.add(agent_msg)
+        await session.commit()
 
         return {"response": response, "mode": mode}
-    finally:
-        await conn.close()

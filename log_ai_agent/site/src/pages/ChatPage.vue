@@ -1032,6 +1032,13 @@ const handleFileUpload = async (event) => {
       
       // Сохраняем ответ в БД
       await saveChatMessage('agent', analysisMsg)
+      
+      // Явно обновляем историю отчетов, чтобы новый отчет появился в вкладке "История"
+      appStore.notifyReportsUpdated()
+      
+      // Также явно обновляем чат, чтобы убедиться что сообщение отображается
+      // (это гарантирует что сообщение синхронизировано после сохранения в БД)
+      await syncChatHistoryIfVisible()
     } else {
       throw new Error(response.data.message || 'Ошибка при анализе файла')
     }

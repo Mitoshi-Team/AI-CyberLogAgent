@@ -29,6 +29,7 @@ dependencies = [
     "ruff>=0.14.9",
     "scikit-learn==1.6.1",
     "sentence-transformers==5.2.0",
+    "sqlalchemy==2.0.49",
     "taxii2-client>=2.3.0",
     "tenacity==9.0.0",
     "uvicorn==0.38.0",
