@@ -53,6 +53,7 @@ def search_mitre_techniques(
     chroma_mgr: ChromaDBManager,
     query: str,
     k: int = 5,
+    score_threshold: float = 0.7,
 ) -> list[dict]:
     """Search MITRE ATT&CK techniques using vector similarity.
 
@@ -60,6 +61,8 @@ def search_mitre_techniques(
         chroma_mgr: ChromaDB manager
         query: Search query (will be embedded)
         k: Number of results
+        score_threshold: Minimum similarity threshold (0.0-1.0). Only results with
+            similarity >= threshold will be returned. Default: 0.7
 
     Returns:
         List of technique documents with metadata
@@ -69,8 +72,8 @@ def search_mitre_techniques(
         logger.warning("ChromaDB not initialized, returning empty results")
         return []
 
-    results = chroma_mgr.search(query=query, k=k)
-    logger.info(f"RAG search found {len(results)} techniques")
+    results = chroma_mgr.search(query=query, k=k, score_threshold=score_threshold)
+    logger.info(f"RAG search found {len(results)} techniques (threshold: {score_threshold})")
     return results
 
 
@@ -79,6 +82,7 @@ async def rag_search_single_event(
     chroma_mgr: ChromaDBManager,
     description: str,
     k: int = 3,
+    score_threshold: float = 0.7,
 ) -> dict[str, Any]:
     """Search for MITRE technique for a single suspicious event.
 
@@ -92,6 +96,7 @@ async def rag_search_single_event(
         chroma_mgr: ChromaDB manager for vector search
         description: Description of the suspicious event (WITHOUT timestamp)
         k: Number of techniques to retrieve
+        score_threshold: Minimum similarity threshold (0.0-1.0). Default: 0.7
 
     Returns:
         Dictionary with:
@@ -118,12 +123,12 @@ async def rag_search_single_event(
         logger.warning(f"Query enhancement failed: {e}, using original")
         search_query = description[:200]
 
-    results = search_mitre_techniques(chroma_mgr, search_query, k=k)
+    results = search_mitre_techniques(chroma_mgr, search_query, k=k, score_threshold=0.7)
 
     if results:
         best_match = results[0]
         metadata = best_match.get("metadata", {})
-        confidence = best_match.get("distance", 0)
+        distance = best_match.get("score", 1.0)
 
         return {
             "has_match": True,
@@ -131,7 +136,7 @@ async def rag_search_single_event(
             "name": metadata.get("technique_name", ""),
             "details": best_match,
             "search_query": search_query,
-            "confidence": confidence,
+            "confidence": distance,
         }
 
     return {
@@ -186,7 +191,7 @@ async def retrieve_mitre_context(
             logger.warning(f"Query enhancement failed: {e}, using original query")
 
     logger.info(f"Searching ChromaDB for: '{search_query[:100]}...'")
-    results = search_mitre_techniques(chroma_mgr, search_query, k=k)
+    results = search_mitre_techniques(chroma_mgr, search_query, k=k, score_threshold=0.7)
 
     if results:
         technique_ids = [

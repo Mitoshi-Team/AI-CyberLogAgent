@@ -40,6 +40,7 @@ class PipelineNodes:
         sigma_engine: SigmaEngine | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
+        rag_score_threshold: float = 0.7,
         rag_parallelism: int = 5,
     ):
         self.llm = llm
@@ -48,6 +49,7 @@ class PipelineNodes:
         self.sigma_engine = sigma_engine
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
+        self.rag_score_threshold = rag_score_threshold
 
         self._agent1_chain = create_agent1_chain(llm)
         self._rag_semaphore = asyncio.Semaphore(rag_parallelism)
@@ -191,6 +193,7 @@ class PipelineNodes:
                         chroma_mgr=self.chroma_mgr,
                         description=description,
                         k=self.rag_top_k,
+                        score_threshold=self.rag_score_threshold,
                     )
 
                     if rag_result.get("has_match"):

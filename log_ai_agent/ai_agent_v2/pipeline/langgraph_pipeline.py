@@ -134,6 +134,7 @@ class LogAnalysisPipeline:
         llm: BaseLanguageModel | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
+        rag_score_threshold: float = 0.7,
         yara_engine: Any | None = None,
         sigma_engine: Any | None = None,
     ):
@@ -144,6 +145,7 @@ class LogAnalysisPipeline:
             llm: Language model (creates default if None)
             use_rag: Whether to use RAG
             rag_top_k: Number of techniques to retrieve
+            rag_score_threshold: Minimum similarity threshold for RAG (0.0-1.0). Default: 0.7
             yara_engine: YARA engine instance (optional)
             sigma_engine: Sigma engine instance (optional)
 
@@ -151,6 +153,7 @@ class LogAnalysisPipeline:
         self.chroma_mgr = chroma_mgr
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
+        self.rag_score_threshold = rag_score_threshold
 
         self.llm = llm or create_llm()
 
@@ -161,13 +164,15 @@ class LogAnalysisPipeline:
             sigma_engine=sigma_engine,
             use_rag=self.use_rag,
             rag_top_k=self.rag_top_k,
+            rag_score_threshold=self.rag_score_threshold,
             rag_parallelism=8,  # Increased from default 3 for better parallelism
         )
         self._graph = build_analysis_graph(self._nodes)
 
         logger.info(
             f"LogAnalysisPipeline initialized, "
-            f"RAG={self.use_rag}, YARA={yara_engine is not None}, Sigma={sigma_engine is not None}"
+            f"RAG={self.use_rag}, rag_top_k={rag_top_k}, rag_score_threshold={rag_score_threshold}, "
+            f"YARA={yara_engine is not None}, Sigma={sigma_engine is not None}"
         )
 
     async def analyze(

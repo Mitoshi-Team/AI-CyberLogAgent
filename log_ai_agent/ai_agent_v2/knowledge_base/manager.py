@@ -134,6 +134,7 @@ class ChromaDBManager:
         query: str,
         k: int = 5,
         filter_dict: dict | None = None,
+        score_threshold: float = 0.7,
     ) -> list[dict]:
         """Search for relevant MITRE techniques.
 
@@ -141,6 +142,8 @@ class ChromaDBManager:
             query: Search query text
             k: Number of results to return
             filter_dict: Optional metadata filter
+            score_threshold: Minimum similarity threshold (0.0-1.0). Only results with
+                similarity >= threshold will be returned. Default: 0.7
 
         Returns:
             List of documents with metadata
@@ -150,21 +153,40 @@ class ChromaDBManager:
             raise RuntimeError("ChromaDB not initialized")
 
         try:
-            retriever = self._vectorstore.as_retriever(
-                search_kwargs={"k": k, "filter": filter_dict}
+            # Use similarity_search_with_score to get distance scores
+            # For ChromaDB: distance < threshold means similarity > threshold
+            # Convert similarity threshold to distance threshold: distance = 1 - similarity
+            distance_threshold = 1.0 - score_threshold
+
+            docs_with_scores = self._vectorstore.similarity_search_with_score(
+                query,
+                k=k,
+                filter=filter_dict,
             )
-            documents = retriever.invoke(query)
 
             results = []
-            for doc in documents:
-                results.append(
-                    {
-                        "content": doc.page_content,
-                        "metadata": doc.metadata,
-                    }
+            filtered_count = 0
+            for doc, score in docs_with_scores:
+                # Score is L2 distance (lower = more similar)
+                # Filter by distance threshold
+                if score <= distance_threshold:
+                    results.append(
+                        {
+                            "content": doc.page_content,
+                            "metadata": doc.metadata,
+                            "score": score,
+                        }
+                    )
+                else:
+                    filtered_count += 1
+
+            if filtered_count > 0:
+                logger.info(
+                    f"RAG: filtered {filtered_count} results below "
+                    f"threshold {score_threshold}"
                 )
 
-            logger.debug(f"RAG search returned {len(results)} results")
+            logger.debug(f"RAG search returned {len(results)} results (threshold: {score_threshold})")
             return results
 
         except Exception as e:
