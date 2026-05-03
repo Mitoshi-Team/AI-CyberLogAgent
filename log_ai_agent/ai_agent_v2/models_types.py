@@ -97,6 +97,8 @@ class AnalysisState(TypedDict, total=False):
     recommendations: list[str]
     severity_level_id: int
     threat_type_id: int
+    confidence_level: str
+    unconfirmed_events_count: int
 
     # ===== METADATA =====
     success: bool

@@ -395,6 +395,8 @@ class PipelineNodes:
                 "yara_rules_matched": agent3_result.get("yara_rules", []),
                 "sigma_rules_matched": agent3_result.get("sigma_rules", []),
                 "events_found": agent3_result.get("events_found", 0),
+                "confidence_level": agent3_result.get("confidence_level", "medium"),
+                "unconfirmed_events_count": agent3_result.get("unconfirmed_events_count", 0),
             }
 
         except Exception as e:
