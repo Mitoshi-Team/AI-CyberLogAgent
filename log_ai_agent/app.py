@@ -6,6 +6,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
+import uuid
+import urllib.parse
+import ssl
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager, suppress
@@ -86,6 +90,22 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
 CLI_TZ_OFFSET_HOURS = int(os.getenv("CLI_TZ_OFFSET_HOURS", "5"))
 CLI_TZ = timezone(timedelta(hours=CLI_TZ_OFFSET_HOURS))
+SBER_SPEECH_AUTH_KEY = os.getenv("VITE_SBER_SPEECH_API_KEY")
+SBER_SPEECH_API_URL = os.getenv(
+    "VITE_SBER_SPEECH_API_URL", "https://smartspeech.sber.ru/rest/v1/speech:recognize"
+)
+SBER_SPEECH_VALIDATE_URL = os.getenv(
+    "VITE_SBER_SPEECH_VALIDATE_URL", "https://smartspeech.sber.ru/rest/v1/text:synthesize"
+)
+SBER_SPEECH_OAUTH_URL = os.getenv(
+    "VITE_SBER_SPEECH_OAUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+)
+SBER_SPEECH_SCOPE = os.getenv("VITE_SBER_SPEECH_SCOPE", "SALUTE_SPEECH_PERS")
+
+_sber_token_cache: dict[str, object] = {
+    "access_token": None,
+    "expires_at": 0.0,
+}
 APP_DIR = Path(__file__).parent.resolve()
 AI_AGENT_RULES_DIR = APP_DIR / "ai_agent_v2" / "rules"
 SIGMA_RULES_DIR = AI_AGENT_RULES_DIR / "sigma"
@@ -151,6 +171,119 @@ def _read_analysis_marker(marker_file: Path) -> int | None:
         return marker if marker >= 0 else 0
     except Exception:
         return None
+
+
+def _build_sber_speech_request(
+    url: str,
+    method: str,
+    payload: bytes | None = None,
+    content_type: str | None = None,
+    access_token: str | None = None,
+) -> urllib.request.Request:
+    headers = {
+        "Accept": "application/json",
+    }
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if content_type:
+        headers["Content-Type"] = content_type
+
+    request = urllib.request.Request(
+        url=url,
+        data=payload,
+        headers=headers,
+        method=method,
+    )
+    return request
+
+
+def _perform_sber_speech_request(
+    url: str,
+    method: str,
+    payload: bytes | None = None,
+    content_type: str | None = None,
+    access_token: str | None = None,
+) -> tuple[int, str]:
+    request = _build_sber_speech_request(
+        url, method, payload, content_type, access_token=access_token
+    )
+    try:
+        ssl_context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:
+            body = response.read().decode("utf-8")
+            return response.status, body
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8") if error.fp else ""
+        return error.code, body
+    except urllib.error.URLError as error:
+        return 0, str(error)
+
+
+def _parse_sber_token_response(payload: dict) -> tuple[str | None, float]:
+    access_token = payload.get("access_token")
+    if not access_token:
+        return None, 0.0
+
+    now = time.time()
+    expires_in = payload.get("expires_in")
+    expires_at = payload.get("expires_at")
+
+    if isinstance(expires_at, (int, float)):
+        if expires_at > now * 10:
+            expires_at = expires_at / 1000
+        return access_token, float(expires_at)
+
+    if isinstance(expires_in, (int, float)):
+        return access_token, now + float(expires_in)
+
+    return access_token, now + 60 * 25
+
+
+def _get_sber_access_token() -> tuple[str | None, str | None]:
+    if not SBER_SPEECH_AUTH_KEY:
+        return None, "missing_key"
+
+    now = time.time()
+    cached_token = _sber_token_cache.get("access_token")
+    cached_expiry = float(_sber_token_cache.get("expires_at") or 0)
+    if cached_token and now < cached_expiry - 15:
+        return str(cached_token), None
+
+    payload = urllib.parse.urlencode({"scope": SBER_SPEECH_SCOPE}).encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "RqUID": str(uuid.uuid4()),
+        "Authorization": f"Basic {SBER_SPEECH_AUTH_KEY}",
+    }
+
+    request = urllib.request.Request(
+        url=SBER_SPEECH_OAUTH_URL,
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        ssl_context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:
+            body = response.read().decode("utf-8")
+        data = json.loads(body) if body else {}
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8") if error.fp else ""
+        return None, body or f"OAuth error {error.code}"
+    except urllib.error.URLError as error:
+        return None, str(error)
+    except json.JSONDecodeError:
+        return None, "Invalid OAuth response"
+
+    access_token, expires_at = _parse_sber_token_response(data)
+    if not access_token:
+        return None, "Missing access_token in response"
+
+    _sber_token_cache["access_token"] = access_token
+    _sber_token_cache["expires_at"] = expires_at
+    return access_token, None
 
 
 def _write_analysis_marker(marker_file: Path, marker_line: int) -> bool:
@@ -855,6 +988,81 @@ async def get_system_status():
         "consumer_running": bool(getattr(kafka_log_consumer, "_running", False)),
         "analysis": runtime_analysis_state,
     }
+
+
+@app.get("/api/speech/validate")
+async def validate_sber_speech_key():
+    if not SBER_SPEECH_AUTH_KEY:
+        return {
+            "success": False,
+            "reason": "missing_key",
+            "message": "SaluteSpeech API key is not configured",
+        }
+
+    access_token, token_error = await asyncio.to_thread(_get_sber_access_token)
+    if not access_token:
+        return {
+            "success": False,
+            "reason": "token_error",
+            "message": token_error or "Failed to получить access token",
+        }
+
+    return {"success": True}
+
+
+@app.post("/api/speech/transcribe")
+async def transcribe_sber_speech(file: UploadFile = File(...)):
+    if not SBER_SPEECH_AUTH_KEY:
+        raise HTTPException(status_code=400, detail="SaluteSpeech API key is not configured")
+
+    if not SBER_SPEECH_API_URL:
+        raise HTTPException(status_code=400, detail="SaluteSpeech API URL is not configured")
+
+    allowed_content_types = {
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+    }
+
+    if file.content_type not in allowed_content_types:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Unsupported audio content type",
+                "received": file.content_type,
+                "allowed": sorted(allowed_content_types),
+            },
+        )
+
+    access_token, token_error = await asyncio.to_thread(_get_sber_access_token)
+    if not access_token:
+        raise HTTPException(status_code=502, detail=token_error or "Failed to получить access token")
+
+    payload = await file.read()
+    content_type = file.content_type or "audio/ogg;codecs=opus"
+
+    status_code, body = await asyncio.to_thread(
+        _perform_sber_speech_request,
+        SBER_SPEECH_API_URL,
+        "POST",
+        payload,
+        content_type,
+        access_token,
+    )
+
+    if 200 <= status_code < 300:
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=502, detail="Invalid SaluteSpeech response")
+
+    logger.warning("SaluteSpeech transcribe failed: status=%s body=%s", status_code, body)
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "upstream_status": status_code,
+            "upstream_body": body or "",
+        },
+    )
 
 
 def _resolve_sigma_file_path(filename: str) -> Path:

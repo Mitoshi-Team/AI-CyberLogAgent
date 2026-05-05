@@ -122,6 +122,23 @@ export const logs = {
 }
 
 /**
+ * Работа с голосовым вводом
+ */
+export const speech = {
+  validate: () => apiClient.get('/speech/validate'),
+  transcribe: (audioBlob) => {
+    const formData = new FormData()
+    formData.append('file', audioBlob, 'speech.webm')
+
+    return apiClient.post('/speech/transcribe', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+}
+
+/**
  * Работа с конфигурацией правил
  */
 export const configRules = {

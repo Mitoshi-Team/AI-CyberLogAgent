@@ -219,12 +219,23 @@
                 </div>
 
                 <button
-                  :disabled="isSecondaryControlsBlocked || !isVoiceInputEnabled"
+                  :disabled="!canUseVoiceControl"
                   class="w-9 h-9 rounded-xl bg-[#2a2d36] border border-[#363a46] text-[#bcc1cf] hover:text-white hover:border-[#5566ff] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#bcc1cf] disabled:hover:border-[#363a46] transition-colors"
                   type="button"
-                  title="Голосовой ввод скоро"
+                  :title="voiceControlTitle"
+                  @click="handleVoiceControlClick"
                 >
-                  <img src="/micro_icon.svg" alt="voice" class="w-4 h-4 mx-auto" />
+                  <svg
+                    v-if="isVoiceRecording"
+                    class="w-4 h-4 mx-auto"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  <img v-else src="/micro_icon.svg" alt="voice" class="w-4 h-4 mx-auto" />
                 </button>
 
                 <button
@@ -242,6 +253,16 @@
                     aria-hidden="true"
                   >
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  <svg
+                    v-else-if="isVoiceRecording"
+                    class="w-4 h-4 mx-auto"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
                   </svg>
                   <img v-else src="/send_icon.svg" alt="send" class="w-4 h-4 mx-auto" />
                 </button>
@@ -327,7 +348,7 @@
 import { ref, nextTick, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRoute } from 'vue-router'
-import { chat, logs } from '@/services/api'
+import { chat, logs, speech } from '@/services/api'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -388,6 +409,26 @@ const SCROLLBAR_EDGE_GAP = 96
 const messages = ref([])
 const shouldSyncAfterBackgroundCompletion = ref(false)
 
+const validateSberSpeechKey = async () => {
+  isVoiceKeyCheckInProgress.value = true
+  try {
+    const response = await speech.validate()
+    const isValid = Boolean(response?.data?.success)
+
+    isVoiceKeyValid.value = isValid
+    voiceKeyError.value = response?.data?.reason || ''
+    if (!isValid) {
+      console.warn('SaluteSpeech key validation failed:', response?.data)
+    }
+  } catch (error) {
+    console.warn('SaluteSpeech key validation error:', error)
+    isVoiceKeyValid.value = false
+    voiceKeyError.value = 'request_failed'
+  } finally {
+    isVoiceKeyCheckInProgress.value = false
+  }
+}
+
 // Загрузка истории чата при монтировании
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -395,6 +436,8 @@ onMounted(async () => {
   // Очищаем с задержкой при монтировании компонента
   clearNotifications(false)
   adjustTextareaHeight()
+
+  await validateSberSpeechKey()
 
   if (isLoading.value) {
     shouldSyncAfterBackgroundCompletion.value = true
@@ -565,6 +608,7 @@ const canSendMessage = computed(() => {
 
 // Сообщение о причине блокировки
 const getRateLimitMessage = computed(() => {
+  if (isVoiceRecording.value) return 'Остановить запись и распознать'
   if (isLogAnalysisInProgress.value) return 'Отменить анализ лога'
   if (isLoading.value) return 'Ожидание ответа агента...'
   if (isRateLimited.value) return 'Подождите 2 секунды перед следующим сообщением'
@@ -575,6 +619,7 @@ const getRateLimitMessage = computed(() => {
 
 const canUseSendControl = computed(() => {
   if (isLogAnalysisInProgress.value) return true
+  if (isVoiceRecording.value) return true
   return canSendMessage.value
 })
 
@@ -582,7 +627,17 @@ const isSecondaryControlsBlocked = computed(() => {
   return isLoading.value || isRateLimited.value || isLogAnalysisInProgress.value
 })
 
-const isVoiceInputEnabled = false
+const isVoiceKeyValid = ref(false)
+const isVoiceKeyCheckInProgress = ref(false)
+const voiceKeyError = ref('')
+const isVoiceInputEnabled = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)
+const isVoiceRecording = ref(false)
+const isVoiceTranscribing = ref(false)
+const shouldTranscribeOnStop = ref(false)
+let voiceMediaRecorder = null
+let voiceStream = null
+let voiceChunks = []
+let voiceStopTimer = null
 
 const isQuickQuestionBlocked = computed(() => {
   return isLoading.value || isRateLimited.value || isLogAnalysisInProgress.value
@@ -590,6 +645,27 @@ const isQuickQuestionBlocked = computed(() => {
 
 const isInputBlocked = computed(() => {
   return isLoading.value || isRateLimited.value
+})
+
+const canUseVoiceControl = computed(() => {
+  if (isVoiceRecording.value) return true
+  return !isSecondaryControlsBlocked.value
+    && isVoiceInputEnabled
+    && isVoiceKeyValid.value
+    && !isVoiceKeyCheckInProgress.value
+    && !isVoiceTranscribing.value
+})
+
+const voiceControlTitle = computed(() => {
+  if (!isVoiceInputEnabled) return 'Голосовой ввод недоступен'
+  if (isVoiceKeyCheckInProgress.value) return 'Проверка ключа...'
+  if (!isVoiceKeyValid.value) {
+    if (voiceKeyError.value === 'missing_key') return 'Ключ SaluteSpeech API не настроен'
+    return 'Ключ недействителен'
+  }
+  if (isVoiceRecording.value) return 'Остановить запись'
+  if (isVoiceTranscribing.value) return 'Распознавание речи...'
+  return 'Голосовой ввод'
 })
 
 const scrollToBottom = () => {
@@ -760,11 +836,178 @@ const adjustTextareaHeight = () => {
   })
 }
 
+const getRecorderMimeType = () => {
+  if (typeof MediaRecorder === 'undefined') return ''
+
+  const candidates = [
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ]
+
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
+}
+
+const stopVoiceRecording = (reason = 'manual', transcribe = false) => {
+  if (voiceStopTimer) {
+    clearTimeout(voiceStopTimer)
+    voiceStopTimer = null
+  }
+
+  shouldTranscribeOnStop.value = transcribe
+
+  if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+    voiceMediaRecorder.stop()
+  }
+
+  if (voiceStream) {
+    voiceStream.getTracks().forEach((track) => track.stop())
+    voiceStream = null
+  }
+
+  if (reason === 'timeout') {
+    appStore.addNotification('Запись остановлена: лимит 30 секунд', 'info')
+  }
+}
+
+const applyTranscriptionToInput = (text) => {
+  const normalized = trimBoundaryEmptyLines(text || '')
+  if (!normalized) return
+
+  const current = inputMessage.value || ''
+  const availableSpace = MAX_MESSAGE_LENGTH - current.length
+
+  if (availableSpace <= 0) {
+    appStore.addNotification('Достигнут лимит 500 символов', 'warning')
+    return
+  }
+
+  const snippet = normalized.slice(0, availableSpace)
+  const nextValue = current ? `${current} ${snippet}` : snippet
+
+  if (normalized.length > snippet.length) {
+    appStore.addNotification('Текст сокращен до 500 символов', 'warning')
+  }
+
+  inputMessage.value = nextValue
+  adjustTextareaHeight()
+}
+
+const extractTranscript = (payload) => {
+  if (!payload) return ''
+  if (typeof payload === 'string') return payload
+  if (payload.result) return payload.result
+  if (payload.text) return payload.text
+  if (payload.transcript) return payload.transcript
+  const alt = payload.results?.[0]?.alternatives?.[0]?.transcript
+  return alt || ''
+}
+
+const transcribeVoiceBlob = async (audioBlob) => {
+  if (!audioBlob) return
+
+  isVoiceTranscribing.value = true
+  try {
+    const response = await speech.transcribe(audioBlob)
+    const data = response?.data
+    const transcript = extractTranscript(data)
+
+    if (!transcript) {
+      throw new Error('Ответ распознавания пустой')
+    }
+
+    applyTranscriptionToInput(transcript)
+  } catch (error) {
+    console.error('Voice transcription failed:', error)
+    appStore.addNotification('Не удалось распознать речь', 'error')
+  } finally {
+    isVoiceTranscribing.value = false
+  }
+}
+
+const startVoiceRecording = async () => {
+  if (!isVoiceInputEnabled || isVoiceRecording.value) return
+
+  if (!isVoiceKeyValid.value) {
+    appStore.addNotification('Ключ SaluteSpeech API недействителен', 'error')
+    return
+  }
+
+  try {
+    if (typeof MediaRecorder === 'undefined') {
+      appStore.addNotification('Браузер не поддерживает запись аудио', 'error')
+      return
+    }
+
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const mimeType = getRecorderMimeType()
+    if (!mimeType) {
+      appStore.addNotification('Браузер не поддерживает формат аудио для SaluteSpeech', 'error')
+      stopVoiceRecording('manual', false)
+      return
+    }
+    voiceChunks = []
+    voiceMediaRecorder = new MediaRecorder(voiceStream, mimeType ? { mimeType } : undefined)
+
+    voiceMediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        voiceChunks.push(event.data)
+      }
+    }
+
+    voiceMediaRecorder.onstop = async () => {
+      isVoiceRecording.value = false
+
+      const blobType = voiceMediaRecorder?.mimeType || mimeType || 'audio/ogg;codecs=opus'
+      const audioBlob = new Blob(voiceChunks, { type: blobType })
+      voiceChunks = []
+
+      if (!shouldTranscribeOnStop.value) {
+        shouldTranscribeOnStop.value = false
+        return
+      }
+
+      if (audioBlob.size === 0) {
+        appStore.addNotification('Запись пуста', 'warning')
+        shouldTranscribeOnStop.value = false
+        return
+      }
+
+      await transcribeVoiceBlob(audioBlob)
+      shouldTranscribeOnStop.value = false
+    }
+
+    voiceMediaRecorder.start()
+    isVoiceRecording.value = true
+    shouldTranscribeOnStop.value = false
+
+    voiceStopTimer = setTimeout(() => {
+      stopVoiceRecording('timeout', true)
+    }, 30000)
+  } catch (error) {
+    console.error('Failed to start voice recording:', error)
+    appStore.addNotification('Не удалось получить доступ к микрофону', 'error')
+    stopVoiceRecording()
+  }
+}
+
+const handleVoiceControlClick = async () => {
+  if (isVoiceRecording.value) {
+    stopVoiceRecording('manual', false)
+    return
+  }
+
+  await startVoiceRecording()
+}
+
 const normalizeMessageText = (value) => {
-  if (!value) return ''
+  if (value === null || value === undefined) return ''
+
+  const rawValue = typeof value === 'string' ? value : String(value)
 
   // Нормализуем переносы и удаляем ведущие переносы, если нет текста перед ними
-  let normalized = value.replace(/\r\n/g, '\n').replace(/^\n+/, '')
+  let normalized = rawValue.replace(/\r\n/g, '\n').replace(/^\n+/, '')
 
   // Между текстовыми фрагментами разрешаем максимум два переноса строки
   normalized = normalized.replace(/\n{3,}/g, '\n\n')
@@ -773,9 +1016,11 @@ const normalizeMessageText = (value) => {
 }
 
 const trimBoundaryEmptyLines = (value) => {
-  if (!value) return ''
+  if (value === null || value === undefined) return ''
 
-  return value
+  const rawValue = typeof value === 'string' ? value : String(value)
+
+  return rawValue
     .replace(/\r\n/g, '\n')
     .replace(/^(?:[\t ]*\n)+/, '')
     .replace(/(?:\n[\t ]*)+$/, '')
@@ -961,6 +1206,11 @@ const handleSendControlClick = async () => {
     return
   }
 
+  if (isVoiceRecording.value) {
+    stopVoiceRecording('confirm', true)
+    return
+  }
+
   await sendMessage()
 }
 
@@ -1095,6 +1345,10 @@ onUnmounted(() => {
   if (copyResetTimer) {
     clearTimeout(copyResetTimer)
     copyResetTimer = null
+  }
+
+  if (isVoiceRecording.value) {
+    stopVoiceRecording('manual')
   }
 })
 
