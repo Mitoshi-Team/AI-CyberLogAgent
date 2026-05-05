@@ -1,6 +1,6 @@
 services:
   db:
-    image: axstiz/wavescan-postgres:latest
+    image: axstiz/wavescan-postgres:13.0.4
     container_name: ${DB_CONTAINER_NAME:-cyberlog-db}
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -19,7 +19,7 @@ services:
       - cyberlog-network
 
   backend:
-    image: axstiz/wavescan-backend:latest
+    image: axstiz/wavescan-backend:13.0.4
     container_name: ${BACKEND_CONTAINER_NAME:-cyberlog-backend}
     env_file: .env
     environment:
@@ -109,7 +109,7 @@ services:
     restart: unless-stopped
 
   vector:
-    image: axstiz/wavescan-vector:latest
+    image: axstiz/wavescan-vector:13.0.4
     container_name: ${VECTOR_CONTAINER_NAME:-cyberlog-vector}
     depends_on:
       kafka:
@@ -132,7 +132,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: axstiz/wavescan-frontend:latest
+    image: axstiz/wavescan-frontend:13.0.4
     container_name: ${FRONTEND_CONTAINER_NAME:-cyberlog-frontend}
     env_file: .env
     ports:

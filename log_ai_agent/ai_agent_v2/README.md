@@ -114,9 +114,14 @@ ai_agent_v2/
 │   └── apache_parser.py      # Apache парсер
 ├── rules/                    # Правила обнаружения
 │   ├── yara/
-│   │   ├── cyber_security_rules.yar
-│   │   ├── web_scanner_rules.yar
-│   │   └── web_rce_rules.yar
+│   │   ├── SQL_Injection_Advanced.yar
+│   │   ├── XSS_Advanced.yar
+│   │   ├── Path_Traversal_Advanced.yar
+│   │   ├── Sensitive_File_Access.yar
+│   │   ├── RCE_Payloads.yar
+│   │   ├── WebShell_Indicators.yar
+│   │   ├── Security_Scanner_Signatures.yar
+│   │   └── Protocol_Anomalies.yar
 │   └── sigma/
 │       ├── brute_force_authentication.yml
 │       ├── mimikatz_detection.yml
