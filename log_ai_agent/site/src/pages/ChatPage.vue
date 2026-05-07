@@ -129,10 +129,10 @@
       <div
         :class="[
           'mx-auto w-full max-w-3xl pb-6 shrink-0 transform',
-          messages.length ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
+          (messages.length > 0 || isLoading) ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >
-        <div v-if="isHistoryLoaded && messages.length === 0" class="mb-1 text-center select-none">
+        <div v-if="isHistoryLoaded && messages.length === 0 && !isLoading" class="mb-1 text-center select-none">
           <img
             src="/wavescan_chat_logo.svg"
             alt="wavescan agent"
@@ -271,7 +271,7 @@
           </div>
         </div>
 
-        <div v-if="messages.length === 0" class="flex flex-wrap justify-center gap-3 mt-5">
+        <div v-if="messages.length === 0 && (!isHistoryLoaded || !isLoading)" class="flex flex-wrap justify-center gap-3 mt-5">
           <button
             @click="selectQuickQuestion('Какие рекомендации для предотвращения атак?')"
             :disabled="isQuickQuestionBlocked"
@@ -540,9 +540,16 @@ const clearNotifications = (immediate = false) => {
 // Очистка счетчика непрочитанных при открытии/переходе на страницу чата
 watch(() => route.path, (newPath) => {
   if (newPath === '/chat') {
-    // Очищаем с задержкой, чтобы пользователь увидел выделенные сообщения
-    clearNotifications(false)
-    nextTick(() => updateCustomScrollbar())
+    // Перезагружаем историю чата при возврате на страницу
+    isHistoryLoaded.value = false
+    loadChatHistory().then(() => {
+      isHistoryLoaded.value = true
+      clearNotifications(false)
+      nextTick(() => updateCustomScrollbar())
+    }).catch((error) => {
+      console.error('Error reloading chat history:', error)
+      isHistoryLoaded.value = true
+    })
   }
 }, { immediate: true })
 
@@ -1129,6 +1136,10 @@ const sendMessage = async () => {
     text: userMessage,
   })
   const newUserMessageIndex = messages.value.length - 1
+
+  // Сохраняем сообщение пользователя сразу, чтобы оно было видно при возврате в чат,
+  // даже если ответ ассистента еще не пришел.
+  await saveChatMessage('user', userMessage)
 
   inputMessage.value = ''
   isLoading.value = true

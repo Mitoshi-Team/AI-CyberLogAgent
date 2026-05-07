@@ -118,16 +118,16 @@ async def clear_user_context(user_id: int, database_url: str) -> int:
 async def process_chat_message(
     user_id: int, user_message: str, database_url: str
 ) -> dict:
-    """Process user chat message and save user/agent messages."""
+    """Process a user chat message and save the agent response.
+
+    The frontend persists the user message immediately before calling this
+    flow, so the backend only appends the generated assistant reply.
+    """
     message = (user_message or "").strip()
     if not message:
         raise ValueError("Message cannot be empty")
 
     async with get_async_session() as session:
-        msg = Message(user_id=user_id, role="user", content=message)
-        session.add(msg)
-        await session.flush()
-
         response = await _generate_agent_response(session=session, user_id=user_id, user_message=message)
         mode = "agent_llm"
 
