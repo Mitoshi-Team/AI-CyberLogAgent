@@ -136,6 +136,104 @@
         </div>
       </div>
     </div>
+
+    <!-- Модальное окно создания файла -->
+    <div
+      v-if="showCreateFileModal"
+      class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      @click.self="closeCreateFileModal"
+    >
+      <div class="bg-[#252525] rounded-xl max-w-md w-full border border-[#3C3C3C]">
+        <!-- Заголовок модального окна -->
+        <div class="bg-[#252525] rounded-xl px-6 py-4 flex items-center justify-between">
+          <h2 class="text-xl font-bold text-white">Создание файла</h2>
+          <button
+            @click="closeCreateFileModal"
+            class="hover:text-white transition-colors p-1"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Содержимое модального окна -->
+        <div class="p-6">
+          <p class="mb-4 text-sm text-[#c6cde0]">
+            {{ createFileType === 'sigma' ? 'Введите имя файла Sigma (.yml или .yaml):' : 'Введите имя файла Yara (.yar или .yara):' }}
+          </p>
+          <input
+            v-model="createFileInput"
+            type="text"
+            class="w-full px-3 py-2 rounded-lg border border-[#3a3d46] bg-[#1A1A1A] text-[#f0f2f9] focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent mb-6"
+            :placeholder="createFileType === 'sigma' ? 'example.yml' : 'example.yar'"
+            @keydown.enter="confirmCreateFile"
+          />
+          <div class="flex gap-3 justify-end">
+            <button
+              @click="closeCreateFileModal"
+              class="px-4 py-2 bg-[#343434] hover:bg-[#444444] rounded-lg transition-colors text-[#c6cde0]"
+            >
+              Отмена
+            </button>
+            <button
+              @click="confirmCreateFile"
+              :disabled="!createFileInput.trim() || createFileLoading"
+              class="px-4 py-2 bg-[#6675ff] hover:bg-[#7383ff] disabled:bg-[#4a4a4a] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2 justify-center"
+            >
+              <span v-if="createFileLoading" class="inline-block w-4 h-4 border-2 border-[#e0e0e0] border-t-transparent rounded-full animate-spin"></span>
+              {{ createFileLoading ? 'Создание...' : 'Создать' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно подтверждения удаления файла -->
+    <div
+      v-if="showDeleteFileModal"
+      class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      @click.self="closeDeleteFileModal"
+    >
+      <div class="bg-[#252525] rounded-xl max-w-md w-full border border-[#3C3C3C]">
+        <!-- Заголовок модального окна -->
+        <div class="bg-[#252525] rounded-xl px-6 py-4 flex items-center justify-between">
+          <h2 class="text-xl font-bold text-white">Подтверждение</h2>
+          <button
+            @click="closeDeleteFileModal"
+            class="hover:text-white transition-colors p-1"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Содержимое модального окна -->
+        <div class="p-6">
+          <p class="mb-6 text-[#c6cde0]">
+            Вы уверены, что хотите удалить файл <span class="font-semibold text-white">{{ deleteFileName }}</span>?
+          </p>
+          <div class="flex gap-3 justify-end">
+            <button
+              @click="closeDeleteFileModal"
+              :disabled="deleteFileLoading"
+              class="px-4 py-2 bg-[#343434] hover:bg-[#444444] disabled:bg-[#343434] disabled:cursor-not-allowed rounded-lg transition-colors text-[#c6cde0]"
+            >
+              Отмена
+            </button>
+            <button
+              @click="confirmDeleteFile"
+              :disabled="deleteFileLoading"
+              class="px-4 py-2 bg-[#9F2727] hover:bg-[#C22D2D] disabled:bg-[#6a1a1a] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2 justify-center"
+            >
+              <span v-if="deleteFileLoading" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              {{ deleteFileLoading ? 'Удаление...' : 'Удалить' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -157,6 +255,18 @@ const selectedYaraFile = ref('')
 const yaraEditorContent = ref('')
 const yaraSaving = ref(false)
 const yaraDeleting = ref(false)
+
+// Модальное окно для создания файла
+const showCreateFileModal = ref(false)
+const createFileInput = ref('')
+const createFileType = ref('')
+const createFileLoading = ref(false)
+
+// Модальное окно для удаления файла
+const showDeleteFileModal = ref(false)
+const deleteFileName = ref('')
+const deleteFileType = ref('')
+const deleteFileLoading = ref(false)
 
 const loadSigmaFiles = async () => {
   try {
@@ -182,21 +292,54 @@ const selectSigmaFile = async (fileName) => {
   }
 }
 
-const createSigmaFile = async () => {
-  const fileName = window.prompt('Введите имя нового файла (.yml или .yaml):')
-  if (!fileName) {
+const closeCreateFileModal = () => {
+  if (createFileLoading.value) return
+  showCreateFileModal.value = false
+  createFileInput.value = ''
+  createFileType.value = ''
+}
+
+const closeDeleteFileModal = () => {
+  if (deleteFileLoading.value) return
+  showDeleteFileModal.value = false
+  deleteFileName.value = ''
+  deleteFileType.value = ''
+}
+
+const createSigmaFile = () => {
+  createFileType.value = 'sigma'
+  createFileInput.value = ''
+  showCreateFileModal.value = true
+}
+
+const confirmCreateFile = async () => {
+  const fileName = createFileInput.value.trim()
+  if (!fileName || createFileLoading.value) {
     return
   }
 
+  createFileLoading.value = true
   try {
-    await configRules.createSigmaFile(fileName.trim())
-    await loadSigmaFiles()
-    await selectSigmaFile(fileName.trim())
+    if (createFileType.value === 'sigma') {
+      await configRules.createSigmaFile(fileName)
+      await loadSigmaFiles()
+      await selectSigmaFile(fileName)
+    } else if (createFileType.value === 'yara') {
+      await configRules.createYaraFile(fileName)
+      await loadYaraFiles()
+      await selectYaraFile(fileName)
+    }
     appStore.addNotification('Новый файл успешно создан', 'success')
   } catch (error) {
-    console.error('Ошибка создания Sigma файла:', error)
-    const message = error?.response?.data?.detail || 'Ошибка создания Sigma файла'
+    console.error(`Ошибка создания файла:`, error)
+    const fileType = createFileType.value === 'sigma' ? 'Sigma' : 'Yara'
+    const message = error?.response?.data?.detail || `Ошибка создания ${fileType} файла`
     appStore.addNotification(message, 'error')
+  } finally {
+    createFileLoading.value = false
+    showCreateFileModal.value = false
+    createFileInput.value = ''
+    createFileType.value = ''
   }
 }
 
@@ -218,43 +361,78 @@ const saveSigmaFile = async () => {
   }
 }
 
-const deleteSigmaFile = async () => {
+const showDeleteSigmaFileModal = () => {
   if (!selectedSigmaFile.value) {
     return
   }
+  deleteFileType.value = 'sigma'
+  deleteFileName.value = selectedSigmaFile.value
+  showDeleteFileModal.value = true
+}
 
-  const fileToDelete = selectedSigmaFile.value
-  const confirmed = window.confirm(`Удалить файл ${fileToDelete}?`)
-  if (!confirmed) {
+const showDeleteYaraFileModal = () => {
+  if (!selectedYaraFile.value) {
+    return
+  }
+  deleteFileType.value = 'yara'
+  deleteFileName.value = selectedYaraFile.value
+  showDeleteFileModal.value = true
+}
+
+const confirmDeleteFile = async () => {
+  if (!deleteFileName.value || deleteFileLoading.value) {
     return
   }
 
-  sigmaDeleting.value = true
+  deleteFileLoading.value = true
   try {
-    await configRules.deleteSigmaFile(fileToDelete)
-    const oldFiles = [...sigmaFiles.value]
-    await loadSigmaFiles()
+    if (deleteFileType.value === 'sigma') {
+      await configRules.deleteSigmaFile(deleteFileName.value)
+      const oldFiles = [...sigmaFiles.value]
+      await loadSigmaFiles()
 
-    const remainingFiles = sigmaFiles.value.filter((name) => name !== fileToDelete)
-    if (!remainingFiles.includes(selectedSigmaFile.value)) {
-      const oldIndex = oldFiles.indexOf(fileToDelete)
-      const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
-      if (nextFile) {
-        await selectSigmaFile(nextFile)
-      } else {
-        selectedSigmaFile.value = ''
-        sigmaEditorContent.value = ''
+      const remainingFiles = sigmaFiles.value.filter((name) => name !== deleteFileName.value)
+      if (!remainingFiles.includes(selectedSigmaFile.value)) {
+        const oldIndex = oldFiles.indexOf(deleteFileName.value)
+        const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
+        if (nextFile) {
+          await selectSigmaFile(nextFile)
+        } else {
+          selectedSigmaFile.value = ''
+          sigmaEditorContent.value = ''
+        }
+      }
+    } else if (deleteFileType.value === 'yara') {
+      await configRules.deleteYaraFile(deleteFileName.value)
+      const oldFiles = [...yaraFiles.value]
+      await loadYaraFiles()
+
+      const remainingFiles = yaraFiles.value.filter((name) => name !== deleteFileName.value)
+      if (!remainingFiles.includes(selectedYaraFile.value)) {
+        const oldIndex = oldFiles.indexOf(deleteFileName.value)
+        const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
+        if (nextFile) {
+          await selectYaraFile(nextFile)
+        } else {
+          selectedYaraFile.value = ''
+          yaraEditorContent.value = ''
+        }
       }
     }
-
     appStore.addNotification('Файл успешно удален', 'success')
   } catch (error) {
-    console.error('Ошибка удаления Sigma файла:', error)
-    const message = error?.response?.data?.detail || 'Ошибка удаления Sigma файла'
+    console.error('Ошибка удаления файла:', error)
+    const fileType = deleteFileType.value === 'sigma' ? 'Sigma' : 'Yara'
+    const message = error?.response?.data?.detail || `Ошибка удаления ${fileType} файла`
     appStore.addNotification(message, 'error')
   } finally {
-    sigmaDeleting.value = false
+    deleteFileLoading.value = false
+    closeDeleteFileModal()
   }
+}
+
+const deleteSigmaFile = () => {
+  showDeleteSigmaFileModal()
 }
 
 const loadYaraFiles = async () => {
@@ -281,22 +459,10 @@ const selectYaraFile = async (fileName) => {
   }
 }
 
-const createYaraFile = async () => {
-  const fileName = window.prompt('Введите имя нового файла (.yar или .yara):')
-  if (!fileName) {
-    return
-  }
-
-  try {
-    await configRules.createYaraFile(fileName.trim())
-    await loadYaraFiles()
-    await selectYaraFile(fileName.trim())
-    appStore.addNotification('Новый файл успешно создан', 'success')
-  } catch (error) {
-    console.error('Ошибка создания Yara файла:', error)
-    const message = error?.response?.data?.detail || 'Ошибка создания Yara файла'
-    appStore.addNotification(message, 'error')
-  }
+const createYaraFile = () => {
+  createFileType.value = 'yara'
+  createFileInput.value = ''
+  showCreateFileModal.value = true
 }
 
 const saveYaraFile = async () => {
@@ -317,43 +483,8 @@ const saveYaraFile = async () => {
   }
 }
 
-const deleteYaraFile = async () => {
-  if (!selectedYaraFile.value) {
-    return
-  }
-
-  const fileToDelete = selectedYaraFile.value
-  const confirmed = window.confirm(`Удалить файл ${fileToDelete}?`)
-  if (!confirmed) {
-    return
-  }
-
-  yaraDeleting.value = true
-  try {
-    await configRules.deleteYaraFile(fileToDelete)
-    const oldFiles = [...yaraFiles.value]
-    await loadYaraFiles()
-
-    const remainingFiles = yaraFiles.value.filter((name) => name !== fileToDelete)
-    if (!remainingFiles.includes(selectedYaraFile.value)) {
-      const oldIndex = oldFiles.indexOf(fileToDelete)
-      const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
-      if (nextFile) {
-        await selectYaraFile(nextFile)
-      } else {
-        selectedYaraFile.value = ''
-        yaraEditorContent.value = ''
-      }
-    }
-
-    appStore.addNotification('Файл успешно удален', 'success')
-  } catch (error) {
-    console.error('Ошибка удаления Yara файла:', error)
-    const message = error?.response?.data?.detail || 'Ошибка удаления Yara файла'
-    appStore.addNotification(message, 'error')
-  } finally {
-    yaraDeleting.value = false
-  }
+const deleteYaraFile = () => {
+  showDeleteYaraFileModal()
 }
 
 onMounted(async () => {
