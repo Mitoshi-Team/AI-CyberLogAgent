@@ -321,7 +321,11 @@
       "Disk Wipe",
       "MBR",
       "уничтожение данных",
-      "повреждение диска"
+      "повреждение диска",
+      "MBR overwritten"
+    ],
+    "keywords_en": [
+      "MBR overwritten"
     ]
   },
   {
@@ -360,7 +364,11 @@
       "автозагрузка",
       "Run ключи",
       "загрузка системы",
-      "закрепление в системе"
+      "закрепление в системе",
+      "registry run key persistence"
+    ],
+    "keywords_en": [
+      "registry run key persistence"
     ]
   },
   {
@@ -425,7 +433,11 @@
       "сетевые ресурсы",
       "LNK-файлы",
       "латеральное перемещение",
-      "заражение бинарников"
+      "заражение бинарников",
+      "network share malware"
+    ],
+    "keywords_en": [
+      "network share malware"
     ]
   },
   {
@@ -581,7 +593,15 @@
       "C2 связь",
       "маскировка трафика",
       "DNS туннелирование",
-      "веб-трафик"
+      "веб-трафик",
+      "C2 beacon",
+      "beacon communication",
+      "HTTPS beacon"
+    ],
+    "keywords_en": [
+      "C2 beacon",
+      "beacon communication",
+      "HTTPS beacon"
     ]
   },
   {
@@ -698,7 +718,13 @@
       "веб-приложения",
       "интернет-сервисы",
       "уязвимость ПО",
-      "начальный доступ"
+      "начальный доступ",
+      "path traversal payload"
+    ],
+    "keywords_en": [
+      "path traversal payload",
+      "web server path traversal",
+      "server exploit CVE"
     ]
   },
   {
@@ -738,6 +764,10 @@
       "Dropbox",
       "Google Drive",
       "облачная эксфильтрация"
+    ],
+    "keywords_en": [
+      "Dropbox upload attacker",
+      "archive uploaded cloud"
     ]
   },
   {
@@ -971,7 +1001,11 @@
       "сжатие файлов",
       "шифрование данных",
       "zip архив",
-      "подготовка к выводу"
+      "подготовка к выводу",
+      "compressed encrypted DNS"
+    ],
+    "keywords_en": [
+      "compressed encrypted DNS"
     ]
   },
   {
@@ -997,7 +1031,15 @@
       "SSH",
       "RDP",
       "VNC",
-      "латеральное перемещение"
+      "латеральное перемещение",
+      "network share executed",
+      "remote services executed"
+    ],
+    "keywords_en": [
+      "network share executed",
+      "remote services executed",
+      "malicious file network share executed",
+      "remote service execution"
     ]
   },
   {
@@ -1049,7 +1091,11 @@
       "reg.exe",
       "модификация реестра",
       "скрытие ключей",
-      "Win32 API"
+      "Win32 API",
+      "registry key modified"
+    ],
+    "keywords_en": [
+      "registry key modified"
     ]
   },
   {
@@ -1114,7 +1160,11 @@
       "история браузера",
       "закладки",
       "Chrome профили",
-      "данные браузера"
+      "данные браузера",
+      "browser information discovery"
+    ],
+    "keywords_en": [
+      "browser information discovery"
     ]
   },
   {
@@ -1322,7 +1372,11 @@
       "очистка логов",
       "сокрытие следов",
       "Indicator Removal",
-      "удаление артефактов"
+      "удаление артефактов",
+      "binary modified timestamp"
+    ],
+    "keywords_en": [
+      "binary modified timestamp"
     ]
   },
   {
@@ -1439,7 +1493,11 @@
       "BIOS",
       "UEFI",
       "загрузочные секторы",
-      "буткит"
+      "буткит",
+      "bootkit rootkit firmware"
+    ],
+    "keywords_en": [
+      "bootkit rootkit firmware"
     ]
   },
   {
@@ -1595,7 +1653,13 @@
       "социальная инженерия",
       "фишинг",
       "вредоносные вложения",
-      "запуск файлов"
+      "запуск файлов",
+      "user execution",
+      "user clicked"
+    ],
+    "keywords_en": [
+      "user execution",
+      "user clicked"
     ]
   },
   {
@@ -1803,7 +1867,15 @@
       "FTP exfiltration",
       "DNS туннелирование",
       "SMTP передача",
-      "эксфильтрация"
+      "эксфильтрация",
+      "DNS exfiltration",
+      "alternative protocol exfil"
+    ],
+    "keywords_en": [
+      "DNS exfiltration",
+      "alternative protocol exfil",
+      "data compressed encrypted DNS",
+      "alternative protocol DNS exfil"
     ]
   },
   {
@@ -1842,7 +1914,18 @@
       "spearphishing",
       "вредоносная почта",
       "фишинговые ссылки",
-      "социальная инженерия"
+      "социальная инженерия",
+      "phishing email",
+      "spear phishing",
+      "phishing link"
+    ],
+    "keywords_en": [
+      "phishing email",
+      "spear phishing",
+      "phishing link",
+      "phishing link email user",
+      "spear phishing user clicked",
+      "user entered credentials"
     ]
   },
   {
@@ -1856,6 +1939,10 @@
       "атака подбора",
       "систематический подбор",
       "грубая сила"
+    ],
+    "keywords_en": [
+      "SSH login password authentication",
+      "brute force login multiple"
     ]
   },
   {
@@ -1959,7 +2046,13 @@
       "обход фильтрации",
       "HTTPS",
       "порт 8088",
-      "Registry"
+      "Registry",
+      "non-standard port",
+      "unusual port"
+    ],
+    "keywords_en": [
+      "non-standard port",
+      "unusual port"
     ]
   },
   {
@@ -1998,7 +2091,15 @@
       "шифрование файлов",
       "кодирование",
       "скрытие кода",
-      "сокрытие данных"
+      "сокрытие данных",
+      "obfuscated encoded",
+      "encoded command obfuscation"
+    ],
+    "keywords_en": [
+      "obfuscated encoded",
+      "encoded command obfuscation",
+      "PowerShell encoded command obfuscated",
+      "obfuscated script execution"
     ]
   },
   {
@@ -2076,7 +2177,13 @@
       "ransomware",
       "шифрование файлов",
       "вымогатели",
-      "блокировка данных"
+      "блокировка данных",
+      "files overwritten random",
+      "ransomware encrypted"
+    ],
+    "keywords_en": [
+      "files overwritten random",
+      "ransomware encrypted"
     ]
   },
   {
@@ -2428,7 +2535,11 @@
       "wiper",
       "Shamoon",
       "перезапись файлов",
-      "нарушение доступности"
+      "нарушение доступности",
+      "files overwritten random data"
+    ],
+    "keywords_en": [
+      "files overwritten random data"
     ]
   },
   {
