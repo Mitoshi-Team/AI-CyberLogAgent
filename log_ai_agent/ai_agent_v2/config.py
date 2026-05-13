@@ -18,6 +18,7 @@ class LLMProvider(str, Enum):
 
     OLLAMA = "ollama"
     GIGACHAT = "gigachat"
+    OPENAI = "openai"
 
 
 def _detect_provider(

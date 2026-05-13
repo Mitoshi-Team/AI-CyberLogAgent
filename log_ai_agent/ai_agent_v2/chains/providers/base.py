@@ -49,6 +49,16 @@ def create_llm(
             **kwargs,
         )
 
+    if provider.value == "openai":
+        from .openai import create_openai_llm
+
+        return create_openai_llm(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            **kwargs,
+        )
+
     raise ValueError(f"Unknown LLM provider: {provider}")
 
 

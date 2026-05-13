@@ -1,4 +1,4 @@
-"""Agent 1: Primary log analysis chain."""
+"""Agent 1: Primary log analysis chain with event grouping."""
 
 import json
 import logging
@@ -14,7 +14,7 @@ from langchain_core.prompts import (
 )
 from langchain_core.runnables import RunnableSequence
 
-from ..models_types import SuspiciousEvent
+from ..models_types import EventGroup, SuspiciousEvent
 from ..parsers import parse_log_content
 from ..prompts import (
     PRIMARY_ANALYSIS_SYSTEM_PROMPT,
@@ -95,34 +95,60 @@ def build_log_line_mapping(log_content: str) -> dict[str, str]:
     return mapping
 
 
-def parse_events_from_response(response: str) -> list[SuspiciousEvent]:
-    """Parse suspicious events from Agent 1 response.
+def parse_groups_from_response(response: str) -> list[EventGroup]:
+    """Parse event groups from Agent 1 response.
 
     Args:
-        response: LLM response containing ---EVENTS--- section
+        response: LLM response containing ---GROUPS--- section
 
     Returns:
-        List of SuspiciousEvent dictionaries
+        List of EventGroup dictionaries
+
+    """
+    groups = []
+
+    groups_match = re.search(r"---GROUPS---\s*(\[[\s\S]*?\])\s*---GROUPS---", response)
+
+    if groups_match:
+        try:
+            groups_data = json.loads(groups_match.group(1))
+            for group in groups_data:
+                event_group: EventGroup = {
+                    "group_id": group.get("group_id", f"g{len(groups) + 1}"),
+                    "events": group.get("events", []),
+                    "first_seen": group.get("first_seen", ""),
+                    "last_seen": group.get("last_seen", ""),
+                    "keywords": group.get("keywords", group.get("keywords_ru", [])),
+                    "description": group.get("description", ""),
+                }
+                groups.append(event_group)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse groups JSON: {e}")
+
+    return groups
+
+
+def parse_events_from_response(response: str) -> list[SuspiciousEvent]:
+    """Parse suspicious events from Agent 1 response (legacy compatibility).
+
+    Args:
+        response: LLM response containing ---GROUPS--- section
+
+    Returns:
+        List of SuspiciousEvent (flattened from groups)
 
     """
     events = []
-
-    events_match = re.search(r"---EVENTS---\s*(\[[\s\S]*?\])\s*---EVENTS---", response)
-
-    if events_match:
-        try:
-            events_data = json.loads(events_match.group(1))
-            for event in events_data:
-                events.append(
-                    SuspiciousEvent(
-                        description=event.get("description", ""),
-                        timestamp=event.get("timestamp"),
-                        log_line=event.get("log_line", ""),
-                    )
+    groups = parse_groups_from_response(response)
+    for group in groups:
+        for event in group.get("events", []):
+            events.append(
+                SuspiciousEvent(
+                    description=event.get("description", ""),
+                    timestamp=event.get("timestamp"),
+                    log_line=event.get("log_line", ""),
                 )
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse events JSON: {e}")
-
+            )
     return events
 
 
@@ -168,8 +194,8 @@ async def analyze_logs_primary(
         Dictionary with:
         - primary_analysis: full analysis text
         - mini_report: brief summary
-        - suspicious_events: list of SuspiciousEvent
-        - events_found: count of events
+        - groups: list of EventGroup with suspicious events
+        - events_found: count of events across all groups
 
     """
     chain = create_agent1_chain(llm)
@@ -179,15 +205,15 @@ async def analyze_logs_primary(
 
     primary_analysis = result
     mini_report = extract_mini_report(result)
-    suspicious_events = parse_events_from_response(result)
+    groups = parse_groups_from_response(result)
 
-    events_found = len(suspicious_events)
+    events_found = sum(len(g.get("events", [])) for g in groups)
 
-    logger.info(f"Agent 1 complete: {events_found} suspicious events found")
+    logger.info(f"Agent 1 complete: {len(groups)} groups, {events_found} events found")
 
     return {
         "primary_analysis": primary_analysis,
         "mini_report": mini_report,
-        "suspicious_events": suspicious_events,
+        "groups": groups,
         "events_found": events_found,
     }
