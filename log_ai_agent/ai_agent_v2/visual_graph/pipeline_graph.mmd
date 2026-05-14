@@ -7,6 +7,7 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	prefilter(prefilter)
 	agent1(agent1)
+	description_agent(description_agent)
 	parse_logs(parse_logs)
 	agent2(agent2)
 	yara_scan(yara_scan)
@@ -15,9 +16,10 @@ graph TD;
 	__end__([<p>__end__</p>]):::last
 	__start__ --> parse_logs;
 	__start__ --> prefilter;
-	agent1 -. &nbsp;False&nbsp; .-> agent2;
-	agent1 -. &nbsp;True&nbsp; .-> agent3;
+	agent1 --> description_agent;
 	agent2 --> agent3;
+	description_agent -. &nbsp;False&nbsp; .-> agent2;
+	description_agent -. &nbsp;True&nbsp; .-> agent3;
 	parse_logs --> sigma_scan;
 	parse_logs --> yara_scan;
 	prefilter --> agent1;

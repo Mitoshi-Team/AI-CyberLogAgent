@@ -10,11 +10,40 @@ class SuspiciousEvent(TypedDict, total=False):
     """A suspicious event extracted from logs by Agent 1.
 
     This is sent to Agent 2 for RAG/MITRE lookup.
+    Deprecated: Use EventGroup instead.
     """
 
     description: str
     timestamp: str | None
     log_line: str
+
+
+class EventGroup(TypedDict, total=False):
+    """Group of related events from Agent1.
+
+    Agent1 groups events by possible connection (user, attack_pattern etc.),
+    but NOT by timestamp. One event can be in multiple groups.
+    """
+
+    group_id: str
+    events: list[dict]
+    first_seen: str
+    last_seen: str
+    keywords: list[str]
+    description: str
+
+
+class GroupDescription(TypedDict, total=False):
+    """Description of group from Description Agent.
+
+    For each group, one coherent description and keywords are generated.
+    """
+
+    group_id: str
+    description: str
+    first_seen: str
+    last_seen: str
+    keywords: list[str]
 
 
 class MITRETechnique(TypedDict, total=False):
@@ -70,7 +99,10 @@ class AnalysisState(TypedDict, total=False):
     primary_analysis: str
     mini_report: str
     events_found: int
-    suspicious_events: list[SuspiciousEvent]
+    groups: list[EventGroup]
+
+    # ===== DESCRIPTION AGENT OUTPUT =====
+    group_descriptions: list[GroupDescription]
 
     # ===== RAG + AGENT 2 OUTPUT =====
     mitre_context: str

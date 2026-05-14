@@ -1,0 +1,72 @@
+[
+  {
+    "id": "brute_force_1",
+    "description": "Multiple failed login attempts for user admin from IP 89.23.74.19 detected in Apache logs",
+    "expected_technique_ids": ["T1110"],
+    "category": "credential_access",
+    "notes": "T1110 - Brute Force. Exact match for password brute force."
+  },
+  {
+    "id": "sql_injection_1",
+    "description": "SQL injection attempt detected in HTTP request: OR 1=1 DROP TABLE users",
+    "expected_technique_ids": ["T1190"],
+    "category": "initial_access",
+    "notes": "T1190 - Exploit Public-Facing Application. SQL injection in web application."
+  },
+  {
+    "id": "priv_escalation_1",
+    "description": "User executed sudo command to gain root privileges without proper authorization",
+    "expected_technique_ids": ["T1548"],
+    "category": "privilege_escalation",
+    "notes": "T1548 - Abuse Elevation Control Mechanism. sudo = elevation."
+  },
+  {
+    "id": "lateral_movement_rdp_1",
+    "description": "Remote connection to internal server 192.168.1.50 via RDP protocol",
+    "expected_technique_ids": ["T1021"],
+    "category": "lateral_movement",
+    "notes": "T1021 - Remote Services. RDP = remote service. Exact match."
+  },
+  {
+    "id": "persistence_service_1",
+    "description": "New Windows service created with executable at path C:\\temp\\malware.exe",
+    "expected_technique_ids": ["T1543"],
+    "category": "persistence",
+    "notes": "T1543 - Create or Modify System Process. Service creation = persistence."
+  },
+  {
+    "id": "defense_evasion_process_injection_1",
+    "description": "Process injection detected: malicious code injected into legitimate process memory",
+    "expected_technique_ids": ["T1055"],
+    "category": "defense_evasion",
+    "notes": "T1055 - Process Injection. Exact match."
+  },
+  {
+    "id": "execution_powershell_1",
+    "description": "PowerShell script executed with EncodedCommand parameter: -EncodedCommand aQB2AHg...",
+    "expected_technique_ids": ["T1059"],
+    "category": "execution",
+    "notes": "T1059 - Command and Scripting Interpreter. PowerShell execution."
+  },
+  {
+    "id": "discovery_commands_1",
+    "description": "Discovery commands executed: whoami, net user, systeminfo in rapid succession",
+    "expected_technique_ids": ["T1033"],
+    "category": "discovery",
+    "notes": "T1033 - System Owner/User Discovery. whoami = discovery."
+  },
+  {
+    "id": "data_exfiltration_1",
+    "description": "Large volume of data uploaded to external FTP server using encrypted connection",
+    "expected_technique_ids": ["T1048"],
+    "category": "exfiltration",
+    "notes": "T1048 - Exfiltration Over Alternative Protocol. FTP = alternative protocol."
+  },
+  {
+    "id": "c2_communication_1",
+    "description": "Periodic HTTPS C2 communication with domain malicious-c2.example.com with encoded payload",
+    "expected_technique_ids": ["T1071"],
+    "category": "command_and_control",
+    "notes": "T1071 - Application Layer Protocol. HTTPS C2 communication."
+  }
+]

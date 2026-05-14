@@ -51,3 +51,5 @@ secrets.py
 
 data/
 /log_ai_agent/default_logs_analyse/
+/log_ai_agent/ai_agent_v2/knowledge_base/enterprise-attack.json
+/.opencode/

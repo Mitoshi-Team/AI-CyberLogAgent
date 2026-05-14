@@ -34,58 +34,89 @@ PRIMARY_ANALYSIS_USER_PROMPT = """Проанализируй следующий 
 ## Итог
 Краткое резюме всех обнаруженных подозрительных активностей."""
 
-PRIMARY_ANALYSIS_USER_PROMPT_V2 = """Проанализируй следующий лог-файл на предмет подозрительной активности.
+PRIMARY_ANALYSIS_USER_PROMPT_V2 = """Analyze the following log file for suspicious activity. Output ONLY in English.
 
-ЛОГ-ФАЙЛ:
+LOG FILE:
 ```
 {log_content}
 ```
 
-ЗАДАЧА:
-1. Выяви все подозрительные активности, ошибки и аномалии
-2. Определи временные рамки событий (timestamp)
-3. Выдели конкретные строки лога которые указывают на проблемы
-4. Сгруппируй похожие события
-5. Опиши что произошло в каждом случае
-6. Определи ВЗАИМОСВЯЗИ между событиями
+TASK:
+1. Identify all suspicious activities, errors, and anomalies
+2. Determine timeframes of events (timestamp)
+3. Extract specific log lines that indicate problems
+4. GROUP related events
+5. Describe what happened in each case
+6. Identify RELATIONSHIPS between events
 
-ВЫХОДНЫЕ ДАННЫЕ:
-1. **Первичный анализ** - полный отчёт с описанием событий и связей между ними
-2. **Краткий отчёт** - 2-3 предложения для быстрого понимания ситуации
-3. **Список подозрительных событий** - для дальнейшего поиска в MITRE ATT&CK
+IMPORTANT: EVENT GROUPING
+- Group events by possible connection: user, IP, attack_pattern, service, destination, request_path etc.
+- DO NOT group by timestamp! This is forbidden as logs already come in 5-minute intervals.
+- One event (log line) CAN be in multiple groups if it may be related to different activities.
+- If an event is suspicious but not connected to others - create a single-element group.
 
-ФОРМАТ ОТВЕТА:
-## Первичный анализ
+OUTPUT:
+1. **Primary analysis** - full report with event descriptions and relationships
+2. **Brief summary** - 2-3 sentences for quick understanding
+3. **Event groups** - for MITRE ATT&CK lookup
 
-[Полный структурированный анализ всех событий и их взаимосвязей]
+RESPONSE FORMAT:
+## Primary Analysis
 
-## Краткий отчёт
+[Full structured analysis of all events and their relationships]
 
-[2-3 предложения суммирующие ситуацию]
+## Brief Summary
 
-## Подозрительные события для MITRE
+[2-3 sentences summarizing the situation]
 
-Для каждого события укажи:
-- **Описание**: краткое описание события
-- **Timestamp**: точное время из лога (если есть)
-- **Строка лога**: оригинальная строка из лога
+## Event Groups for MITRE
 
----EVENTS---
+For each group provide:
+- **group_id**: unique group identifier (g1, g2, ...)
+- **events**: list of events in the group (each with description, timestamp, log_line)
+- **first_seen**: time of first event in group
+- **last_seen**: time of last event in group
+- **keywords**: list of keywords for RAG search (5-10 terms in English, including: attack type, tools, techniques, indicators, commands, file/process names, vulnerabilities, etc.)
+- **description**: DETAILED English description in style "Detected...", "Observed..." (minimum 100 characters). Description should include:
+  - Nature of threat (brute force, SQL injection, etc.)
+  - Key indicators (IP, user, path, ports, etc.)
+  - Context and scope of activity
+  - Potential consequences
+
+---GROUPS---
 [
   {{
-    "description": "Описание события",
-    "timestamp": "2025-12-17 13:06:06",
-    "log_line": "[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed..."
+    "group_id": "g1",
+    "events": [
+      {{
+        "description": "Event description",
+        "timestamp": "2025-12-17 13:06:06",
+        "log_line": "[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed..."
+      }}
+    ],
+    "first_seen": "2025-12-17 13:06:06",
+    "last_seen": "2025-12-17 13:06:06",
+    "keywords": ["SSH brute force", "authentication failure", "89.23.74.19", "admin", "failed login"],
+    "description": "Detected a series of failed SSH authentication attempts for user admin from IP 89.23.74.19. Observed 15 login attempts with various passwords indicating a brute force attack. Source IP belongs to suspicious range, recommend blocking and checking logs for successful login."
   }},
-  ...
+  {{
+    "group_id": "g2",
+    "events": [...],
+    "first_seen": "...",
+    "last_seen": "...",
+    "keywords": [...],
+    "description": "..."
+  }}
 ]
----EVENTS---
+---GROUPS---
 
-ВАЖНО: 
-- Секция ---EVENTS--- должна содержать ТОЛЬКО подозрительные события, которые требуют проверки в MITRE ATT&CK. 
-- Если событий нет - напиши пустой массив [].
-- Если в событии есть сомнения - добавь пометку "возможно, требует проверки" в описание.
-- Лучше перебдеть, чем недобдеть, но не добавляй события "на всякий случай"."""
+IMPORTANT:
+- Section ---GROUPS--- should contain ONLY suspicious groups.
+- If no events - write empty array [].
+- If an event can belong to multiple groups - include it in all relevant groups.
+- Descriptions must be DETAILED and informative (minimum 100 characters).
+- Keywords should include terms for MITRE ATT&CK knowledge base search.
+- Better to over-detect than miss, but do not add events "just in case"."""
 
 # =============================================================================
 # Агент 2: Промпт для финального отчёта

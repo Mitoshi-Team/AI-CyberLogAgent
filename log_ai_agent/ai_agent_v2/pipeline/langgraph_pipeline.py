@@ -15,27 +15,24 @@ Architecture:
 ┌────▼────┐     │       ┌─────▼─────┐
 │ Agent 1 │     │       │  Sigma    │
 └────┬────┘     └───────┴────┬─────┘
-     │                       │
+     │                        │
      │            ┌──────────┴──────────┐
-     │                  │               │
-     ▼                  ▼               ▼
-┌─────────┐      ┌─────────────┐   ┌──────────┐
-│ Agent 2 │      │   Agent 3    │◄───│ Agent 3  │
-│ (RAG)   │─────▶│ (summarize) │   │          │
-└────┬────┘      └─────────────┘   └──────────┘
-     │
-     └──────────┬─────────────┘
-                │
-         ┌──────▼──────┐
-         │ END (report)│
-         └─────────────┘
+     ▼            │                     ▼
+┌──────────────────┴────┐      ┌──────────┐
+│  Description Agent   │      │ Agent 3  │
+└──────────────┬───────┘      └──────────┘
+               │
+┌──────────────▼───────┐
+│       Agent 2 (RAG)  │──────▶│ Agent 3 │
+└──────────────────────┘       └──────────┘
 ```
 
 Flow:
-- START → prefilter → Agent 1 (filtered logs for LLM)
+- START → prefilter → Agent 1 (groups of events)
 - START → parse_logs → YARA/Sigma (all logs, no filtering)
-- Agent2 (RAG) runs after Agent1
-- Agent3 waits for ALL branches to complete
+- Agent1 → Description Agent (generate group descriptions)
+- Description Agent → Agent2 (RAG search for each description)
+- All branches converge at Agent 3
 """
 
 import logging
@@ -75,6 +72,7 @@ def build_analysis_graph(
 
     workflow.add_node("prefilter", nodes.prefilter_node)
     workflow.add_node("agent1", nodes.agent1_node)
+    workflow.add_node("description_agent", nodes.description_agent_node)
     workflow.add_node("parse_logs", nodes.parse_logs_node)
     workflow.add_node("agent2", nodes.agent2_node)
     workflow.add_node("yara_scan", nodes.yara_scan_node)
@@ -82,20 +80,21 @@ def build_analysis_graph(
     workflow.add_node("agent3", nodes.agent3_node)
 
     workflow.add_edge("prefilter", "agent1")
+    workflow.add_edge("agent1", "description_agent")
 
     # parse_logs runs on all logs (not filtered), for YARA/Sigma
     workflow.add_edge("parse_logs", "yara_scan")
     workflow.add_edge("parse_logs", "sigma_scan")
 
-    # Conditional edge: if no events found by agent1, skip agent2 (RAG) and go directly to agent3
-    def should_skip_agent2(state):
-        return state.get("events_found", 0) == 0
+    # Conditional edge: if no groups found by agent1, skip description_agent and agent2
+    def should_skip_description_agent(state):
+        return state.get("groups", []) == []
 
     workflow.add_conditional_edges(
-        "agent1",
-        should_skip_agent2,
+        "description_agent",
+        should_skip_description_agent,
         {
-            True: "agent3",  # Skip agent2
+            True: "agent3",
             False: "agent2",
         },
     )
@@ -202,8 +201,9 @@ class LogAnalysisPipeline:
             "parsed_logs": [],
             "primary_analysis": "",
             "mini_report": "",
-            "suspicious_events": [],
+            "groups": [],
             "events_found": 0,
+            "group_descriptions": [],
             "mitre_context": "",
             "mitre_techniques": [],
             "technique_ids": [],
@@ -244,8 +244,15 @@ class LogAnalysisPipeline:
                 "success": True,
                 "primary_analysis": final_state.get("primary_analysis", ""),
                 "mini_report": final_state.get("mini_report", ""),
-                "suspicious_events": final_state.get("suspicious_events", []),
+                "groups": final_state.get("groups", []),
                 "events_found": final_state.get("events_found", 0),
+            }
+
+            # Description Agent stage
+            results["stages"]["description_agent"] = {
+                "success": True,
+                "group_descriptions": final_state.get("group_descriptions", []),
+                "descriptions_count": len(final_state.get("group_descriptions", [])),
             }
 
             # Agent 2 stage (contains RAG processing results + agent2 report)
