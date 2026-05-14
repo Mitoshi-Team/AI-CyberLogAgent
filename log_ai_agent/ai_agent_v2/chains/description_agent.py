@@ -17,53 +17,53 @@ from ..models_types import EventGroup, GroupDescription
 
 logger = logging.getLogger(__name__)
 
-DESCRIPTION_AGENT_SYSTEM_PROMPT = """You are an expert in security event analysis.
-Your task is to generate coherent descriptions for groups of suspicious events.
+DESCRIPTION_AGENT_SYSTEM_PROMPT = """Ты — эксперт по анализу событий безопасности.
+Твоя задача — генерировать связные описания для групп подозрительных событий.
 
-For each group create ONE description that:
-- Combines all events in the group
-- Indicates the nature of the threat (brute force, SQL injection, etc.)
-- Includes key indicators (IP, user, path, etc.)
-- Preserves time frames
+Для каждой группы создай ОДНО описание, которое:
+- Объединяет все события в группе
+- Указывает характер угрозы (брутфорс, SQL-инъекция и т.д.)
+- Включает ключевые индикаторы (IP, пользователь, путь и т.д.)
+- Сохраняет временные рамки
 
-Examples:
-- "Series of 15 failed SSH authentication attempts for user admin from IP 89.23.74.19"
-- "Suspicious POST requests to /admin/login with SQL-injection patterns"
-- "Multiple attempts to access confidential files from IP 192.168.1.50"
+Примеры:
+- "Серия из 15 неудачных попыток SSH-аутентификации для пользователя admin с IP 89.23.74.19"
+- "Подозрительные POST-запросы к /admin/login с паттернами SQL-инъекции"
+- "Множественные попытки доступа к конфиденциальным файлам с IP 192.168.1.50"
 
-Be specific and informative. Description should help in MITRE ATT&CK search."""
+Будь конкретным и информативным. Описание должно помочь в поиске MITRE ATT&CK."""
 
 
-DESCRIPTION_AGENT_USER_PROMPT = """Generate a coherent description and keywords for an event group.
+DESCRIPTION_AGENT_USER_PROMPT = """Сгенерируй связное описание и ключевые слова для группы событий.
 
-GROUP:
+ГРУППА:
 - ID: {group_id}
-- Time: {first_seen} - {last_seen}
-- Events in group: {events_count}
+- Время: {first_seen} - {last_seen}
+- Событий в группе: {events_count}
 
-EVENTS:
+СОБЫТИЯ:
 {events}
 
-TASK:
-Create one coherent description and keywords list for RAG search.
+ЗАДАЧА:
+Создай одно связное описание и список ключевых слов для RAG-поиска.
 
-DESCRIPTION:
-- Combine all events in the group
-- Include the nature of activity (brute force, injection, etc.)
-- Add key indicators (IP, user, path, etc.)
-- Indicate scale and time frame
-- Style: "Detected...", "Observed..." (minimum 100 characters)
+ОПИСАНИЕ:
+- Объедини все события в группе
+- Включи характер активности (брутфорс, инъекция и т.д.)
+- Добавь ключевые индикаторы (IP, пользователь, путь и т.д.)
+- Укажи масштаб и временные рамки
+- Стиль: "Обнаружено...", "Зафиксировано..." (минимум 100 символов)
 
-KEYWORDS:
-- 5-10 terms for MITRE ATT&CK search
-- Include: attack type, tools, techniques, indicators, commands, file/process names
-- In English
+КЛЮЧЕВЫЕ СЛОВА:
+- 5-10 терминов для поиска в MITRE ATT&CK
+- Включи: тип атаки, инструменты, техники, индикаторы, команды, имена файлов/процессов
+- На русском языке
 
-RESPONSE FORMAT:
-Return ONLY JSON:
-{{"description": "your detailed description here (min. 100 characters)", "keywords": ["word1", "word2", ...], "first_seen": "{first_seen}", "last_seen": "{last_seen}", "group_id": "{group_id}"}}
+ФОРМАТ ОТВЕТА:
+Верни ТОЛЬКО JSON:
+{{"description": "твоё подробное описание здесь (мин. 100 символов)", "keywords": ["слово1", "слово2", ...], "first_seen": "{first_seen}", "last_seen": "{last_seen}", "group_id": "{group_id}"}}
 
-DO NOT add any additional text."""
+НЕ добавляй дополнительный текст."""
 
 
 def create_description_agent_chain(llm: BaseLanguageModel) -> RunnableSequence:

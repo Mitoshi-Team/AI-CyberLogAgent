@@ -17,6 +17,8 @@ def create_mock_chroma_mgr(results: list[dict]) -> ChromaDBManager:
     """Create a mock ChromaDB manager."""
     mock = MagicMock(spec=ChromaDBManager)
     mock.is_initialized = True
+    # rag_chain now uses hybrid_search when use_hybrid=True
+    mock.hybrid_search = MagicMock(return_value=results)
     mock.search = MagicMock(return_value=results)
     return mock
 

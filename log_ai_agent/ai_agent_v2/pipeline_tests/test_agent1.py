@@ -206,7 +206,7 @@ async def test_agent1_hallucination_resistance():
     from log_ai_agent.ai_agent_v2.prompts.system import PRIMARY_ANALYSIS_SYSTEM_PROMPT
 
     assert len(PRIMARY_ANALYSIS_SYSTEM_PROMPT) > 100
-    assert "Ты - эксперт" in PRIMARY_ANALYSIS_SYSTEM_PROMPT
+    assert "Ты — эксперт" in PRIMARY_ANALYSIS_SYSTEM_PROMPT
     assert "Твоя задача" in PRIMARY_ANALYSIS_SYSTEM_PROMPT
 
 
