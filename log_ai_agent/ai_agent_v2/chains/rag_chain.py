@@ -16,37 +16,37 @@ from ..knowledge_base.manager import ChromaDBManager
 
 logger = logging.getLogger(__name__)
 
-QUERY_ENHANCEMENT_PROMPT = """You are a MITRE ATT&CK expert.
-Generate an optimal search query in ENGLISH for finding relevant techniques.
+QUERY_ENHANCEMENT_PROMPT = """Ты — эксперт по базе знаний MITRE ATT&CK.
+Сгенерируй оптимальный поисковый запрос на РУССКОМ для поиска релевантных техник.
 
-EVENT DESCRIPTION:
+ОПИСАНИЕ СОБЫТИЯ:
 {description}
 
-INSTRUCTIONS:
-1. Identify the core attack technique type (brute force, SQL injection, etc.)
-2. Keep query concise (3-5 key terms)
-3. Focus on the attack purpose and target, not encoding or obfuscation mechanism
-4. For PowerShell commands use terms like 'PowerShell command execution'
+ИНСТРУКЦИИ:
+1. Определи основной тип техники атаки (брутфорс, SQL-инъекция и т.д.)
+2. Держи запрос кратким (3-5 ключевых терминов)
+3. Фокусируйся на цели и назначении атаки, а не на кодировании или обфускации
+4. Для PowerShell-команд используй термины типа 'выполнение команды PowerShell'
 
-SEARCH QUERY (English, 3-5 terms):"""
+ПОИСКОВЫЙ ЗАПРОС (на русском, 3-5 терминов):"""
 
-RERANK_PROMPT = """You are a MITRE ATT&CK expert specializing in precise technique matching.
+RERANK_PROMPT = """Ты — эксперт по базе знаний MITRE ATT&CK, специализирующийся на точном сопоставлении техник.
 
-TASK: Select the SINGLE best matching MITRE technique from the list below.
+ЗАДАЧА: Выбери ЕДИНУЮ лучшую подходящую технику MITRE из списка ниже.
 
-EVENT DESCRIPTION:
+ОПИСАНИЕ СОБЫТИЯ:
 {description}
 
-FOUND TECHNIQUES (top-{k}):
+НАЙДЕННЫЕ ТЕХНИКИ (топ-{k}):
 {techniques}
 
-CRITICAL INSTRUCTIONS:
-1. The list is sorted by relevance (most relevant first).
-2. If the FIRST technique clearly matches the event, choose it.
-3. Only choose a LOWER-ranked technique if the first one is clearly wrong.
-4. DO NOT override a good match with a generic or unrelated technique.
-5. If the top result matches the attack type described, that is your answer.
-6. Answer ONLY the technique ID (e.g. T1110) or NONE if nothing fits."""
+КРИТИЧЕСКИЕ ИНСТРУКЦИИ:
+1. Список отсортирован по релевантности (наиболее релевантная первой).
+2. Если ПЕРВАЯ техника чётко подходит событию — выбери её.
+3. Выбирай технику с более низким рангом ТОЛЬКО если первая явно неверна.
+4. НЕ заменяй хорошее совпадение общей или нерелевантной техникой.
+5. Если топ-результат соответствует типу описанной атаки — это твой ответ.
+6. Отвечай ТОЛЬКО ID техники (например T1110) или NONE если ничего не подходит."""
 
 
 def create_query_enhancement_chain(llm: BaseLanguageModel) -> RunnableSequence:
@@ -62,8 +62,8 @@ def create_query_enhancement_chain(llm: BaseLanguageModel) -> RunnableSequence:
     prompt = ChatPromptTemplate.from_messages(
         [
             SystemMessagePromptTemplate.from_template(
-                "You are an expert in MITRE ATT&CK knowledge base search. "
-                "Extract keywords for technique search."
+                "Ты — эксперт по поиску в базе знаний MITRE ATT&CK. "
+                "Извлекай ключевые слова для поиска техник."
             ),
             HumanMessagePromptTemplate.from_template(QUERY_ENHANCEMENT_PROMPT),
         ]
