@@ -19,7 +19,7 @@
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div class="rounded-lg border border-[#2d313d] bg-[#242424] p-3">
+          <div class="rounded-lg bg-[#222222] p-3">
             <p class="text-sm font-medium text-[#949daf] mb-3">Каталог файлов</p>
             <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               <button
@@ -28,8 +28,8 @@
                 @click="selectSigmaFile(fileName)"
                 class="w-full text-left px-3 py-2 rounded-lg border transition-colors"
                 :class="selectedSigmaFile === fileName
-                  ? 'bg-[#2f2f2f] border-[#4a5070] text-white'
-                  : 'bg-[#252525] border-[#2d313d] text-[#c6cde0] hover:bg-[#2f2f2f]'"
+                  ? 'bg-[#2A2A2A] border-[#4a5070] text-white'
+                  : 'bg-[#202020] border-[#2d313d] text-[#c6cde0] hover:bg-[#262626]'"
               >
                 {{ fileName }}
               </button>
@@ -37,7 +37,7 @@
             </div>
           </div>
 
-          <div class="rounded-lg border border-[#2d313d] bg-[#242424] p-3">
+          <div class="rounded-lg bg-[#222222] p-3">
             <div class="flex items-center justify-between mb-3">
               <p class="text-sm font-medium text-[#949daf]">
                 Редактор: <span class="text-[#d8deec]">{{ selectedSigmaFile || '—' }}</span>
@@ -84,7 +84,7 @@
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div class="rounded-lg border border-[#2d313d] bg-[#242424] p-3">
+          <div class="rounded-lg bg-[#222222] p-3">
             <p class="text-sm font-medium text-[#949daf] mb-3">Каталог файлов</p>
             <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               <button
@@ -93,8 +93,8 @@
                 @click="selectYaraFile(fileName)"
                 class="w-full text-left px-3 py-2 rounded-lg border transition-colors"
                 :class="selectedYaraFile === fileName
-                  ? 'bg-[#2f2f2f] border-[#4a5070] text-white'
-                  : 'bg-[#252525] border-[#2d313d] text-[#c6cde0] hover:bg-[#2f2f2f]'"
+                  ? 'bg-[#2A2A2A] border-[#4a5070] text-white'
+                  : 'bg-[#202020] border-[#2d313d] text-[#c6cde0] hover:bg-[#262626]'"
               >
                 {{ fileName }}
               </button>
@@ -102,7 +102,7 @@
             </div>
           </div>
 
-          <div class="rounded-lg border border-[#2d313d] bg-[#242424] p-3">
+          <div class="rounded-lg bg-[#222222] p-3">
             <div class="flex items-center justify-between mb-3">
               <p class="text-sm font-medium text-[#949daf]">
                 Редактор: <span class="text-[#d8deec]">{{ selectedYaraFile || '—' }}</span>
@@ -160,15 +160,20 @@
         <!-- Содержимое модального окна -->
         <div class="p-6">
           <p class="mb-4 text-sm text-[#c6cde0]">
-            {{ createFileType === 'sigma' ? 'Введите имя файла Sigma (.yml или .yaml):' : 'Введите имя файла Yara (.yar или .yara):' }}
+            {{ createFileType === 'sigma' ? 'Введите название файла Sigma:' : 'Введите название файла Yara:' }}
           </p>
           <input
             v-model="createFileInput"
             type="text"
-            class="w-full px-3 py-2 rounded-lg border border-[#3a3d46] bg-[#1A1A1A] text-[#f0f2f9] focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent mb-6"
-            :placeholder="createFileType === 'sigma' ? 'example.yml' : 'example.yar'"
+            class="w-full px-3 py-2 rounded-lg border bg-[#1A1A1A] text-[#f0f2f9] focus:outline-none focus:ring-2 focus:border-transparent mb-2"
+            :class="createFileNameError ? 'border-[#b94a4a] focus:ring-[#b94a4a]' : 'border-[#3a3d46] focus:ring-[#7971F0]'"
+            :placeholder="createFileType === 'sigma' ? 'sigma_rule' : 'yara_rule'"
             @keydown.enter="confirmCreateFile"
           />
+          <p v-if="createFileNameError" class="mb-4 text-sm text-[#ff6b6b]">
+            {{ createFileNameError }}
+          </p>
+          <div v-else class="mb-4"></div>
           <div class="flex gap-3 justify-end">
             <button
               @click="closeCreateFileModal"
@@ -178,7 +183,7 @@
             </button>
             <button
               @click="confirmCreateFile"
-              :disabled="!createFileInput.trim() || createFileLoading"
+              :disabled="!createFileInput.trim() || createFileLoading || !!createFileNameError"
               class="px-4 py-2 bg-[#6675ff] hover:bg-[#7383ff] disabled:bg-[#4a4a4a] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2 justify-center"
             >
               <span v-if="createFileLoading" class="inline-block w-4 h-4 border-2 border-[#e0e0e0] border-t-transparent rounded-full animate-spin"></span>
@@ -238,7 +243,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { configRules } from '@/services/api'
 import { useAppStore } from '@/stores/app'
 
@@ -261,6 +266,35 @@ const showCreateFileModal = ref(false)
 const createFileInput = ref('')
 const createFileType = ref('')
 const createFileLoading = ref(false)
+
+const createFileBaseName = computed(() => {
+  const fileName = createFileInput.value.trim()
+  return fileName.replace(/\.(yml|yaml|yar|yara)$/i, '')
+})
+
+const createFileNameError = computed(() => {
+  const fileName = createFileInput.value.trim()
+  if (!fileName) {
+    return ''
+  }
+
+  return createFileBaseName.value.length > 32
+    ? 'Название файла больше 32 символов'
+    : ''
+})
+
+const buildCreateFileName = () => {
+  const baseName = createFileBaseName.value
+  if (createFileType.value === 'sigma') {
+    return `${baseName}.yml`
+  }
+
+  if (createFileType.value === 'yara') {
+    return `${baseName}.yar`
+  }
+
+  return baseName
+}
 
 // Модальное окно для удаления файла
 const showDeleteFileModal = ref(false)
@@ -314,20 +348,22 @@ const createSigmaFile = () => {
 
 const confirmCreateFile = async () => {
   const fileName = createFileInput.value.trim()
-  if (!fileName || createFileLoading.value) {
+  if (!fileName || createFileLoading.value || createFileNameError.value) {
     return
   }
+
+  const normalizedFileName = buildCreateFileName()
 
   createFileLoading.value = true
   try {
     if (createFileType.value === 'sigma') {
-      await configRules.createSigmaFile(fileName)
+      const response = await configRules.createSigmaFile(normalizedFileName)
       await loadSigmaFiles()
-      await selectSigmaFile(fileName)
+      await selectSigmaFile(response.data.filename || normalizedFileName)
     } else if (createFileType.value === 'yara') {
-      await configRules.createYaraFile(fileName)
+      const response = await configRules.createYaraFile(normalizedFileName)
       await loadYaraFiles()
-      await selectYaraFile(fileName)
+      await selectYaraFile(response.data.filename || normalizedFileName)
     }
     appStore.addNotification('Новый файл успешно создан', 'success')
   } catch (error) {

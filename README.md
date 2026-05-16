@@ -366,3 +366,19 @@ AI-CyberLogAgent/
 
 - severity_level_id (Уникальный идентификатор уровня серьезности, автоинкремент)
 - name: text (Название уровня серьезности)
+
+### Таблица YaraRules
+
+- yara_rule_id (Уникальный идентификатор yara правила, автоинкремент)
+- name: text (Название правила)
+- content: text (Содержимое правила)
+- created_at: timestamp with time zone (Дата и время создания правила)
+- updated_at: timestamp with time zone (Дата и время последнего обновления правила)
+
+### Таблица SigmaRules
+
+- sigma_rule_id (Уникальный идентификатор sigma правила, автоинкремент)
+- name: text (Название правила)
+- content: text (Содержимое правила)
+- created_at: timestamp with time zone (Дата и время создания правила)
+- updated_at: timestamp with time zone (Дата и время последнего обновления правила)

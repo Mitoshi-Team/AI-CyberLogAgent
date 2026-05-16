@@ -87,3 +87,21 @@ class Message(Base):
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User")
+
+
+class YaraRule(Base):
+    __tablename__ = "YaraRules"
+    yara_rule_id = Column(Integer, primary_key=True)
+    name = Column(String(256), unique=True, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SigmaRule(Base):
+    __tablename__ = "SigmaRules"
+    sigma_rule_id = Column(Integer, primary_key=True)
+    name = Column(String(256), unique=True, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
