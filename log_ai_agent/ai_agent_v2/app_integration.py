@@ -8,6 +8,8 @@ from pathlib import Path
 from .callbacks import get_callback_config
 from .config import AgentConfig
 from .pipeline import LogAnalysisPipeline, create_pipeline
+from log_ai_agent.db.session import get_sync_session
+from log_ai_agent.db.models import YaraRule, SigmaRule
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +63,19 @@ async def get_pipeline() -> LogAnalysisPipeline:
         provider = _agent_config.detected_provider
         logger.info("Creating AI Agent v2 pipeline...")
 
-        # Resolve YARA and Sigma rules paths
-        yara_rules = _resolve_rules_path("rules/yara")
-        sigma_rules = _resolve_rules_path("rules/sigma")
+        # Load YARA and Sigma rules from DB (fallback to filesystem if DB unavailable)
+        yara_rules = None
+        sigma_rules = None
+        try:
+            with get_sync_session() as session:
+                yara_rows = session.query(YaraRule).all()
+                sigma_rows = session.query(SigmaRule).all()
+                yara_rules = [(r.name, r.content) for r in yara_rows]
+                sigma_rules = [(r.name, r.content) for r in sigma_rows]
+        except Exception:
+            # If DB read fails, fall back to existing filesystem behavior
+            yara_rules = _resolve_rules_path("rules/yara")
+            sigma_rules = _resolve_rules_path("rules/sigma")
 
         _pipeline = await create_pipeline(
             chroma_path=_agent_config.chroma_path,

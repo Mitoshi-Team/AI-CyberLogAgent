@@ -26,9 +26,15 @@ class SigmaEngine:
     """
 
     def __init__(self, rules_path: str | Path):
-        self.rules_path = Path(rules_path)
-        self._rules: list[dict] = []
-        self._load_rules()
+        # rules_path can be a filesystem path or a list of (name, content) entries
+        if isinstance(rules_path, (list, tuple)):
+            self.rules_path = None
+            self._rules: list[dict] = []
+            self._load_rules_from_list(rules_path)
+        else:
+            self.rules_path = Path(rules_path) if rules_path is not None else None
+            self._rules: list[dict] = []
+            self._load_rules()
 
     def _load_rules(self) -> None:
         """Parse all .yml/.yaml files from the rules directory."""
@@ -47,6 +53,37 @@ class SigmaEngine:
             self._parse_sigma_file(yml_file)
 
         logger.info(f"Loaded {len(self._rules)} Sigma rules from {self.rules_path}")
+
+    def _load_rules_from_list(self, rules_list: list) -> None:
+        """Load Sigma rules from an in-memory list of (name, content) or content strings."""
+        if not rules_list:
+            logger.warning("No Sigma rules provided from DB")
+            return
+
+        for item in rules_list:
+            if isinstance(item, (list, tuple)):
+                name, content = item
+            else:
+                name, content = None, item
+
+            try:
+                # Use yaml.safe_load_all in case file contains multiple documents
+                docs = list(yaml.safe_load_all(content))
+                for data in docs:
+                    if not data or not isinstance(data, dict):
+                        continue
+                    rule = self._build_rule(data)
+                    if rule:
+                        # annotate source name when available
+                        if name:
+                            rule["source_name"] = name
+                        self._rules.append(rule)
+            except yaml.YAMLError as e:
+                logger.error(f"YAML parse error in Sigma rule content '{name}': {e}")
+            except Exception as e:
+                logger.error(f"Failed to parse Sigma content '{name}': {e}")
+
+        logger.info(f"Loaded {len(self._rules)} Sigma rules from DB list")
 
     def _parse_sigma_file(self, filepath: Path) -> None:
         """Parse a single Sigma YAML file."""

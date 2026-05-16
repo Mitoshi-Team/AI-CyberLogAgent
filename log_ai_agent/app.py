@@ -28,6 +28,8 @@ from log_ai_agent.db.models import (
     Message,
     SeverityLevel,
     ThreatType,
+    YaraRule,
+    SigmaRule,
 )
 from dotenv import load_dotenv
 from fastapi import (
@@ -1211,12 +1213,9 @@ def _sync_rule_change_to_docker_container(
 async def list_sigma_rule_files():
     """Get list of Sigma rule files from rules directory."""
     try:
-        SIGMA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        files = sorted(
-            file.name
-            for file in SIGMA_RULES_DIR.iterdir()
-            if file.is_file() and file.suffix.lower() in {".yml", ".yaml"}
-        )
+        with get_sync_session() as session:
+            rows = session.query(SigmaRule).order_by(SigmaRule.name.asc()).all()
+            files = [r.name for r in rows]
         return {"files": files}
     except Exception as e:
         logger.error(f"Error listing Sigma files: {e}")
@@ -1229,29 +1228,30 @@ async def list_sigma_rule_files():
 async def create_sigma_rule_file(request: SigmaFileCreateRequest):
     """Create empty Sigma rule file."""
     try:
-        SIGMA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        file_path = _resolve_sigma_file_path(request.filename)
+        file_name = request.filename
+        with get_sync_session() as session:
+            existing = session.query(SigmaRule).filter(SigmaRule.name == file_name).one_or_none()
+            if existing:
+                raise HTTPException(status_code=409, detail="Файл уже существует")
 
-        if file_path.exists():
-            raise HTTPException(status_code=409, detail="Файл уже существует")
-
-        initial_content = (
-            "title: New Sigma Rule\n"
-            "id: \n"
-            "status: experimental\n"
-            "description: \n"
-            "logsource:\n"
-            "  category: webserver\n"
-            "detection:\n"
-            "  selection:\n"
-            '    raw|contains: ""\n'
-            "  condition: selection\n"
-            "level: medium\n"
-        )
-        file_path.write_text(initial_content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(file_path)
+            initial_content = (
+                "title: New Sigma Rule\n"
+                "id: \n"
+                "status: experimental\n"
+                "description: \n"
+                "logsource:\n"
+                "  category: webserver\n"
+                "detection:\n"
+                "  selection:\n"
+                '    raw|contains: ""\n'
+                "  condition: selection\n"
+                "level: medium\n"
+            )
+            new = SigmaRule(name=file_name, content=initial_content)
+            session.add(new)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        return {"success": True, "filename": file_name}
     except HTTPException:
         raise
     except Exception as e:
@@ -1265,14 +1265,11 @@ async def create_sigma_rule_file(request: SigmaFileCreateRequest):
 async def get_sigma_rule_file_content(filename: str):
     """Get Sigma rule file content."""
     try:
-        file_path = _resolve_sigma_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        return {
-            "filename": file_path.name,
-            "content": file_path.read_text(encoding="utf-8"),
-        }
+        with get_sync_session() as session:
+            row = session.query(SigmaRule).filter(SigmaRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            return {"filename": row.name, "content": row.content}
     except HTTPException:
         raise
     except Exception as e:
@@ -1286,14 +1283,15 @@ async def update_sigma_rule_file_content(
 ):
     """Update Sigma rule file content and reload detection pipeline."""
     try:
-        file_path = _resolve_sigma_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        file_path.write_text(request.content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(file_path)
+        with get_sync_session() as session:
+            row = session.query(SigmaRule).filter(SigmaRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            row.content = request.content
+            session.add(row)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        return {"success": True, "filename": filename}
     except HTTPException:
         raise
     except Exception as e:
@@ -1307,14 +1305,14 @@ async def update_sigma_rule_file_content(
 async def delete_sigma_rule_file(filename: str):
     """Delete Sigma rule file and reload detection pipeline."""
     try:
-        file_path = _resolve_sigma_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        file_path.unlink()
-        _sync_rule_change_to_docker_container(file_path, deleted=True)
+        with get_sync_session() as session:
+            row = session.query(SigmaRule).filter(SigmaRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            session.delete(row)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        return {"success": True, "filename": filename}
     except HTTPException:
         raise
     except Exception as e:
@@ -1328,12 +1326,9 @@ async def delete_sigma_rule_file(filename: str):
 async def list_yara_rule_files():
     """Get list of Yara rule files from rules directory."""
     try:
-        YARA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        files = sorted(
-            file.name
-            for file in YARA_RULES_DIR.iterdir()
-            if file.is_file() and file.suffix.lower() in {".yar", ".yara"}
-        )
+        with get_sync_session() as session:
+            rows = session.query(YaraRule).order_by(YaraRule.name.asc()).all()
+            files = [r.name for r in rows]
         return {"files": files}
     except Exception as e:
         logger.error(f"Error listing Yara files: {e}")
@@ -1344,28 +1339,29 @@ async def list_yara_rule_files():
 async def create_yara_rule_file(request: YaraFileCreateRequest):
     """Create empty Yara rule file."""
     try:
-        YARA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        file_path = _resolve_yara_file_path(request.filename)
+        file_name = request.filename
+        with get_sync_session() as session:
+            existing = session.query(YaraRule).filter(YaraRule.name == file_name).one_or_none()
+            if existing:
+                raise HTTPException(status_code=409, detail="Файл уже существует")
 
-        if file_path.exists():
-            raise HTTPException(status_code=409, detail="Файл уже существует")
-
-        initial_content = (
-            "rule NewYaraRule\n"
-            "{\n"
-            "  meta:\n"
-            "    description = \"\"\n"
-            "    severity = \"medium\"\n"
-            "  strings:\n"
-            "    $s1 = \"example\"\n"
-            "  condition:\n"
-            "    $s1\n"
-            "}\n"
-        )
-        file_path.write_text(initial_content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(file_path)
+            initial_content = (
+                "rule NewYaraRule\n"
+                "{\n"
+                "  meta:\n"
+                "    description = \"\"\n"
+                "    severity = \"medium\"\n"
+                "  strings:\n"
+                "    $s1 = \"example\"\n"
+                "  condition:\n"
+                "    $s1\n"
+                "}\n"
+            )
+            new = YaraRule(name=file_name, content=initial_content)
+            session.add(new)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        return {"success": True, "filename": file_name}
     except HTTPException:
         raise
     except Exception as e:
@@ -1377,14 +1373,11 @@ async def create_yara_rule_file(request: YaraFileCreateRequest):
 async def get_yara_rule_file_content_multi(filename: str):
     """Get Yara rule file content."""
     try:
-        file_path = _resolve_yara_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        return {
-            "filename": file_path.name,
-            "content": file_path.read_text(encoding="utf-8"),
-        }
+        with get_sync_session() as session:
+            row = session.query(YaraRule).filter(YaraRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            return {"filename": row.name, "content": row.content}
     except HTTPException:
         raise
     except Exception as e:
@@ -1398,14 +1391,15 @@ async def update_yara_rule_file_content_multi(
 ):
     """Update Yara rule file content and reload detection pipeline."""
     try:
-        file_path = _resolve_yara_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        file_path.write_text(request.content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(file_path)
+        with get_sync_session() as session:
+            row = session.query(YaraRule).filter(YaraRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            row.content = request.content
+            session.add(row)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        return {"success": True, "filename": filename}
     except HTTPException:
         raise
     except Exception as e:
@@ -1417,14 +1411,14 @@ async def update_yara_rule_file_content_multi(
 async def delete_yara_rule_file(filename: str):
     """Delete Yara rule file and reload detection pipeline."""
     try:
-        file_path = _resolve_yara_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        file_path.unlink()
-        _sync_rule_change_to_docker_container(file_path, deleted=True)
+        with get_sync_session() as session:
+            row = session.query(YaraRule).filter(YaraRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            session.delete(row)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        return {"success": True, "filename": filename}
     except HTTPException:
         raise
     except Exception as e:
@@ -1436,13 +1430,13 @@ async def delete_yara_rule_file(filename: str):
 async def get_yara_rule_file_content():
     """Get single YARA rules file content."""
     try:
-        if not YARA_RULE_FILE.exists() or not YARA_RULE_FILE.is_file():
-            raise HTTPException(status_code=404, detail="Yara файл не найден")
-
-        return {
-            "filename": YARA_RULE_FILE.name,
-            "content": YARA_RULE_FILE.read_text(encoding="utf-8"),
-        }
+        # Return concatenated YARA rules from DB as a single combined file
+        with get_sync_session() as session:
+            rows = session.query(YaraRule).order_by(YaraRule.name.asc()).all()
+            if not rows:
+                raise HTTPException(status_code=404, detail="Yara файл не найден")
+            combined = "\n\n".join(r.content for r in rows)
+            return {"filename": "combined_yara_rules.yar", "content": combined}
     except HTTPException:
         raise
     except Exception as e:
@@ -1454,11 +1448,14 @@ async def get_yara_rule_file_content():
 async def update_yara_rule_file_content(request: RuleContentUpdateRequest):
     """Update YARA rules file content and reload detection pipeline."""
     try:
-        YARA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        YARA_RULE_FILE.write_text(request.content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(YARA_RULE_FILE)
+        # Replace all YaraRule rows with a single combined rule entry
+        with get_sync_session() as session:
+            session.query(YaraRule).delete()
+            new = YaraRule(name="combined_yara_rules", content=request.content)
+            session.add(new)
+            session.commit()
         await _reload_detection_pipeline()
-        return {"success": True, "filename": YARA_RULE_FILE.name}
+        return {"success": True, "filename": "combined_yara_rules.yar"}
     except Exception as e:
         logger.error(f"Error updating Yara file: {e}")
         raise HTTPException(status_code=500, detail="Ошибка сохранения Yara файла")
