@@ -73,6 +73,13 @@
                 class="markdown-content text-base leading-relaxed text-dark-200 text-left break-words"
                 v-html="renderMarkdown(msg.text)"
               ></div>
+              <template v-if="msg.yaraRules && msg.yaraRules.length > 0">
+                <YaraRuleSuggestion
+                  v-for="rule in msg.yaraRules"
+                  :key="rule.pending_rule_id"
+                  :rule="rule"
+                />
+              </template>
               <div class="mt-2 inline-flex items-center gap-2 mb-7">
                 <p class="text-xs text-[#ABABBF] text-left">Wavescan assistant</p>
                 <button
@@ -348,9 +355,10 @@
 import { ref, nextTick, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRoute } from 'vue-router'
-import { chat, logs, speech } from '@/services/api'
+import { chat, logs, speech, configRules } from '@/services/api'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import YaraRuleSuggestion from '@/components/YaraRuleSuggestion.vue'
 
 // Настройка marked для безопасного рендеринга
 marked.setOptions({
@@ -468,6 +476,20 @@ const loadChatHistory = async () => {
         text: msg.content,
         isNew: false,
       }))
+
+      // Прикрепляем ожидающие YARA правила к AI сообщениям
+      try {
+        const rulesRes = await configRules.getPendingYaraRules()
+        const pendingRules = rulesRes.data?.rules
+        if (pendingRules && pendingRules.length > 0) {
+          const lastAiMsg = [...messages.value].reverse().find(m => m.role === 'ai')
+          if (lastAiMsg) {
+            lastAiMsg.yaraRules = pendingRules
+          }
+        }
+      } catch (e) {
+        console.error('Error loading pending YARA rules:', e)
+      }
 
       // При открытии чата прокручиваем к последнему сообщению пользователя,
       // используя ту же логику top-align, что и при отправке сообщения.
@@ -1284,10 +1306,12 @@ const handleFileUpload = async (event) => {
       // Показываем только AI-анализ
       const analysisMsg = response.data.ai_analysis
       
+      const yaraRules = response.data.generated_yara_rules || []
       messages.value.push({
         role: 'ai',
         text: analysisMsg,
         isNew: false,
+        yaraRules: yaraRules.length > 0 ? yaraRules : undefined,
       })
       await reduceTopAlignSpacerByLastAssistantMessage()
       

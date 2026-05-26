@@ -88,6 +88,171 @@ def test_agent1_parse_groups_empty():
     assert len(groups) == 0
 
 
+def test_parse_groups_with_brackets_in_log_lines():
+    """Test parsing groups when log_lines contain brackets (Apache format).
+
+    This was broken by the old regex: the non-greedy match stopped at the
+    first ']' inside a log_line value, producing truncated invalid JSON.
+    """
+    response = """## Группы событий для MITRE
+---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "events": [
+      {
+        "description": "File descriptor limit reached",
+        "timestamp": "2025-12-17 01:15:29",
+        "log_line": "[Wed Dec 17 01:15:29 2025] [crit] File descriptor limit reached, cannot accept connections"
+      },
+      {
+        "description": "MaxClients reached",
+        "timestamp": "2025-12-17 01:16:20",
+        "log_line": "[Wed Dec 17 01:16:20 2025] [crit] Server reached MaxClients setting, refusing new connections"
+      }
+    ],
+    "first_seen": "2025-12-17 01:15:29",
+    "last_seen": "2025-12-17 01:16:20",
+    "keywords": ["file descriptor", "MaxClients", "отказ в обслуживании"],
+    "description": "Обнаружено исчерпание ресурсов сервера."
+  }
+]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 1
+    assert groups[0]["group_id"] == "g1"
+    assert len(groups[0]["events"]) == 2
+    assert "File descriptor" in groups[0]["events"][0]["description"]
+    assert "MaxClients" in groups[0]["events"][1]["description"]
+
+
+def test_parse_groups_multiple_brackets_in_log_line():
+    """Test parsing groups with many bracket pairs in log lines."""
+    response = """---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "events": [
+      {
+        "description": "Auth failed",
+        "timestamp": "2025-12-17 13:06:06",
+        "log_line": "[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user 'admin'"
+      }
+    ],
+    "first_seen": "2025-12-17 13:06:06",
+    "last_seen": "2025-12-17 13:06:06",
+    "keywords": ["брутфорс", "аутентификация"],
+    "description": "Зафиксирована неудачная попытка аутентификации."
+  }
+]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 1
+    assert len(groups[0]["events"]) == 1
+    assert "89.23.74.19" in groups[0]["events"][0]["log_line"]
+
+
+def test_parse_groups_with_nested_braces_in_description():
+    """Test parsing groups with JSON-like text in description."""
+    response = """---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "events": [
+      {
+        "description": "SQL injection with payload: {'OR': '1=1'}",
+        "timestamp": "2025-12-17 13:06:06",
+        "log_line": "GET /search?q='OR'1'='1 HTTP/1.1"
+      }
+    ],
+    "first_seen": "2025-12-17 13:06:06",
+    "last_seen": "2025-12-17 13:06:06",
+    "keywords": ["sql injection"],
+    "description": "Обнаружена SQL-инъекция."
+  }
+]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 1
+    assert "1=1" in groups[0]["events"][0]["description"]
+
+
+def test_parse_groups_missing_optional_fields():
+    """Test parsing groups with missing optional fields."""
+    response = """---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "events": [
+      {"description": "Event", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"}
+    ]
+  }
+]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 1
+    assert groups[0]["group_id"] == "g1"
+    assert groups[0]["events"] == [{"description": "Event", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"}]
+    assert groups[0].get("first_seen") == ""
+    assert groups[0].get("last_seen") == ""
+    assert groups[0].get("keywords") == []
+    assert groups[0].get("description") == ""
+
+
+def test_parse_groups_empty_array():
+    """Test parsing empty groups array."""
+    response = """---GROUPS---
+[]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 0
+
+
+def test_parse_groups_malformed_json():
+    """Test parsing groups with malformed JSON returns empty."""
+    response = """---GROUPS---
+[{bad json here}]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 0
+
+
+def test_parse_groups_no_closing_marker():
+    """Test parsing when closing marker is missing — uses raw_decode fallback."""
+    response = """---GROUPS---
+[{"group_id": "g1", "events": []}]
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 1
+    assert groups[0]["group_id"] == "g1"
+
+
+def test_parse_groups_keywords_ru_fallback():
+    """Test that keywords_ru is used as fallback when keywords missing."""
+    response = """---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "events": [{"description": "Test", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"}],
+    "first_seen": "2025-12-17 13:06:06",
+    "last_seen": "2025-12-17 13:06:06",
+    "keywords_ru": ["тест", "проверка"],
+    "description": "Тестовое событие."
+  }
+]
+---GROUPS---
+"""
+    groups = parse_groups_from_response(response)
+    assert len(groups) == 1
+    assert groups[0]["keywords"] == ["тест", "проверка"]
+
+
 def test_agent1_parse_events_from_groups():
     """Test that parse_events_from_response flattens groups."""
     response = """

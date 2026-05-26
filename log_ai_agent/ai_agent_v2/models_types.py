@@ -57,6 +57,7 @@ class MITRETechnique(TypedDict, total=False):
     timestamp: str | None
     event: str
     log_line: str
+    group_id: str
 
 
 class AnalysisState(TypedDict, total=False):

@@ -155,7 +155,6 @@ class LogAnalysisPipeline:
         self.rag_score_threshold = rag_score_threshold
 
         self.llm = llm or create_llm()
-
         self._nodes = PipelineNodes(
             llm=self.llm,
             chroma_mgr=self.chroma_mgr,
@@ -173,6 +172,14 @@ class LogAnalysisPipeline:
             f"RAG={self.use_rag}, rag_top_k={rag_top_k}, rag_score_threshold={rag_score_threshold}, "
             f"YARA={yara_engine is not None}, Sigma={sigma_engine is not None}"
         )
+
+    def reload_yara_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of YARA rules without recreating the pipeline."""
+        self._nodes.reload_yara_rules(rules_list)
+
+    def reload_sigma_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of Sigma rules without recreating the pipeline."""
+        self._nodes.reload_sigma_rules(rules_list)
 
     async def analyze(
         self,

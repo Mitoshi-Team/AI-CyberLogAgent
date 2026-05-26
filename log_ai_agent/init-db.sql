@@ -330,6 +330,7 @@ INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE 
 INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (8, 'Выход из системы');
 INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (9, 'Отправка логов');
 INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (10, 'Отправка сообщения');
+INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (11, 'Генерация YARA правил');
 
 
 --
@@ -691,6 +692,38 @@ ALTER TABLE ONLY public."YaraRules"
 
 ALTER TABLE ONLY public."SigmaRules"
     ADD CONSTRAINT "SigmaRules_pkey" PRIMARY KEY (sigma_rule_id);
+
+--
+-- PendingYaraRules table
+--
+
+CREATE TABLE IF NOT EXISTS public."PendingYaraRules" (
+    pending_rule_id integer NOT NULL,
+    rule_name text NOT NULL,
+    rule_content text NOT NULL,
+    technique_id text,
+    technique_name text,
+    report_id integer NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at timestamp with time zone NOT NULL
+);
+
+ALTER TABLE public."PendingYaraRules" OWNER TO postgres;
+
+ALTER TABLE public."PendingYaraRules" ALTER COLUMN pending_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public."PendingYaraRules_pending_rule_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+ALTER TABLE ONLY public."PendingYaraRules"
+    ADD CONSTRAINT "PendingYaraRules_pkey" PRIMARY KEY (pending_rule_id);
+
+ALTER TABLE ONLY public."PendingYaraRules"
+    ADD CONSTRAINT "FK_PendingYaraRule_Report" FOREIGN KEY (report_id) REFERENCES public."Reports"(report_id);
 
 
 --

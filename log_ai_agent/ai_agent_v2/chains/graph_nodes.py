@@ -52,8 +52,18 @@ class PipelineNodes:
         self.rag_top_k = rag_top_k
         self.rag_score_threshold = rag_score_threshold
 
-        self._agent1_chain = create_agent1_chain(llm)
         self._rag_semaphore = asyncio.Semaphore(rag_parallelism)
+        self._agent1_chain = create_agent1_chain(llm)
+
+    def reload_yara_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of YARA rules without recreating the pipeline."""
+        if self.yara_engine is not None:
+            self.yara_engine.reload(rules_list)
+
+    def reload_sigma_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of Sigma rules without recreating the pipeline."""
+        if self.sigma_engine is not None:
+            self.sigma_engine.reload(rules_list)
 
     async def prefilter_node(self, state: AnalysisState) -> dict:
         """Node: Pre-filter logs to reduce volume before expensive processing.
@@ -224,7 +234,7 @@ class PipelineNodes:
                         llm=self.llm,
                         chroma_mgr=self.chroma_mgr,
                         description=description,
-                        keywords_ru=desc.get("keywords_ru"),
+                        keywords=desc.get("keywords_ru"),
                         k=self.rag_top_k,
                         score_threshold=self.rag_score_threshold,
                     )
@@ -236,6 +246,7 @@ class PipelineNodes:
                             "timestamp": desc.get("first_seen"),
                             "event": description,
                             "log_line": f"Group: {desc.get('group_id', '')}",
+                            "group_id": desc.get("group_id", ""),
                         }
                         logger.info(
                             f"[Node] Agent 2: Group {i + 1}/{len(group_descriptions)} "

@@ -105,3 +105,16 @@ class SigmaRule(Base):
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PendingYaraRule(Base):
+    __tablename__ = "PendingYaraRules"
+    pending_rule_id = Column(Integer, primary_key=True)
+    rule_name = Column(String(256), nullable=False)
+    rule_content = Column(Text, nullable=False)
+    technique_id = Column(String(64))
+    technique_name = Column(String(256))
+    report_id = Column(Integer, ForeignKey("Reports.report_id"))
+    status = Column(String(32), default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    report = relationship("Report")
