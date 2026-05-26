@@ -97,16 +97,6 @@ Volume по умолчанию:
 - `generated_logs.log` — все сгенерированные логи и вывод атак
 - `attack_markers.csv` — временные метки атак для сопоставления с анализом
 
-Если вы предпочитаете использовать именованный Docker volume вместо папки на хосте, установите переменную окружения `SHARED_EXTERNAL_LOGS_BIND` в значение `shared_external_logs` перед запуском — тогда будет использован именованный volume `cyberlog_external_logs`:
-
-```yaml
-shared_external_logs:
-  external: true
-  name: ${SHARED_EXTERNAL_LOGS_VOLUME_NAME:-cyberlog_external_logs}
-```
-
-Формат `attack_timeline.log` умышленно сокращён до трёх полей, без дублирования времени старта атаки и без статуса cleanup.
-
 ## Примечания
 
 - Если выбранная техника не поддерживается на Linux, Atomic Red Team может пропустить тест или вывести ошибку, но генератор продолжит работу.
