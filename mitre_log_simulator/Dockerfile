@@ -1,35 +1,47 @@
-FROM ubuntu:latest
+FROM ubuntu:24.04
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
-    coreutils \
-    curl \
-    netcat-openbsd \
-    tar \
-    bsdutils \
-    util-linux \
-    sed \
-    gawk \
-    procps \
-    gzip \
-  && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        coreutils \
+        curl \
+        git \
+        gnupg \
+        golang-go \
+        iproute2 \
+        lsb-release \
+        netcat-openbsd \
+        procps \
+        python3 \
+        python3-pip \
+        python3-venv \
+        software-properties-common \
+        tar \
+        unzip \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install flog binary for background noise generation.
-RUN set -eux; \
-    FLOGBIN_VERSION="0.4.3"; \
-    curl -fsSL -o /tmp/flog.tar.gz "https://github.com/mingrammer/flog/releases/download/v${FLOGBIN_VERSION}/flog_${FLOGBIN_VERSION}_linux_amd64.tar.gz"; \
-    tar -xzf /tmp/flog.tar.gz -C /tmp; \
-    install -m 0755 /tmp/flog /usr/local/bin/flog; \
-    rm -f /tmp/flog.tar.gz /tmp/flog
+RUN curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/packages-microsoft-prod.deb \
+    && dpkg -i /tmp/packages-microsoft-prod.deb \
+    && rm -f /tmp/packages-microsoft-prod.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends powershell \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY orchestrator.sh /orchestrator.sh
-RUN sed -i 's/\r$//' /orchestrator.sh && chmod +x /orchestrator.sh
+RUN go install github.com/mingrammer/flog@latest
 
-VOLUME ["/var/log/golden"]
+ENV PATH="/root/go/bin:${PATH}"
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD ["bash", "-ec", "[[ ! -f /tmp/unhealthy ]] || exit 1; [[ -f /tmp/orchestrator.pid ]] || exit 1; pid=$(cat /tmp/orchestrator.pid); kill -0 $pid 2>/dev/null || exit 1; [[ -f /tmp/last_stdout_ts ]] || exit 1; now=$(date +%s); last=$(cat /tmp/last_stdout_ts); (( now - last <= 60 )) || exit 1"]
+RUN pwsh -NoLogo -NoProfile -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module -Name powershell-yaml -Scope AllUsers -Force -AllowClobber; Install-Module -Name Invoke-AtomicRedTeam -Scope AllUsers -Force -AllowClobber" \
+    && git clone --depth 1 https://github.com/redcanaryco/atomic-red-team.git /opt/atomic-red-team \
+    && pwsh -NoLogo -NoProfile -Command "Import-Module Invoke-AtomicRedTeam -Force; Get-Command Invoke-AtomicTest | Out-Null"
 
-ENTRYPOINT ["/orchestrator.sh"]
+WORKDIR /app
+
+COPY generator.py /app/generator.py
+
+RUN chmod +x /app/generator.py
+
+ENTRYPOINT ["python3", "/app/generator.py"]
