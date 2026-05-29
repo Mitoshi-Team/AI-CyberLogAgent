@@ -142,6 +142,8 @@ export const speech = {
  * Настройки системы
  */
 export const settings = {
+  getModel: () =>
+    apiClient.get('/settings/model'),
   setModel: (model) =>
     apiClient.post('/settings/model', { model }),
 }

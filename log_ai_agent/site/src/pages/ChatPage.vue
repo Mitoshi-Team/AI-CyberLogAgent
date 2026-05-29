@@ -438,6 +438,18 @@ const handleModelChange = async () => {
   }
 }
 
+const fetchCurrentModel = async () => {
+  try {
+    const response = await settings.getModel()
+    const model = response.data?.model
+    if (model) {
+      selectedModel.value = model
+    }
+  } catch (error) {
+    console.warn('Failed to fetch current model:', error)
+  }
+}
+
 // Константы ограничений
 const MAX_MESSAGE_LENGTH = 500
 const RATE_LIMIT_DELAY = 2000 // 2 секунды
@@ -478,7 +490,8 @@ onMounted(async () => {
   clearNotifications(false)
   adjustTextareaHeight()
 
-  await validateSberSpeechKey()
+  await     validateSberSpeechKey()
+    fetchCurrentModel()
 
   if (isLoading.value) {
     shouldSyncAfterBackgroundCompletion.value = true

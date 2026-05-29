@@ -2006,6 +2006,11 @@ class ModelSettingsResponse(BaseModel):
     model: str
 
 
+class ModelGetResponse(BaseModel):
+    model: str
+    source: str  # "runtime" or "env"
+
+
 async def _store_agent_fallback_message(user_id: int, text: str) -> None:
     """Persist fallback assistant message so chat history remains consistent."""
     if not DATABASE_URL:
@@ -2114,6 +2119,23 @@ async def send_chat_message(request: ChatSendRequest):
             mode=fallback_mode,
             message=fallback_message,
         )
+
+
+@app.get("/api/settings/model", response_model=ModelGetResponse)
+async def get_active_model_ep():
+    """Вернуть название текущей активной модели (runtime или из .env)."""
+    from log_ai_agent.ai_agent_v2.chains.llm import get_active_model as _get_model
+
+    env_model = os.getenv("AITUNNEL_MODEL", "") or os.getenv("OLLAMA_MODEL", "")
+    runtime_model = _get_model()
+
+    if runtime_model:
+        return ModelGetResponse(model=runtime_model, source="runtime")
+
+    if env_model:
+        return ModelGetResponse(model=env_model, source="env")
+
+    return ModelGetResponse(model="", source="env")
 
 
 @app.post("/api/settings/model", response_model=ModelSettingsResponse)
