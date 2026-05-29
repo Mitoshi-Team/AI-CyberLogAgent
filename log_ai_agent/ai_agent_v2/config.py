@@ -46,7 +46,7 @@ class AgentConfig:
 
     # Common LLM settings
     temperature: float = 0.1
-    max_tokens: int = 4000
+    max_tokens: int = 16384
     timeout: int = 90
 
     # RAG settings
@@ -89,7 +89,7 @@ class AgentConfig:
             ollama_url=os.getenv("OLLAMA_URL", ""),
             ollama_model=os.getenv("OLLAMA_MODEL", "TinyLlama:1.1b"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4000")),
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
             timeout=int(os.getenv("LLM_TIMEOUT", "90")),
             use_rag=_get_bool_env("AI_V2_USE_RAG", True),
             rag_top_k=int(os.getenv("AI_V2_RAG_TOP_K", "5")),

@@ -1,4 +1,5 @@
 """Description Agent: Generate descriptions for event groups."""
+import asyncio
 import json
 import logging
 import re
@@ -158,32 +159,44 @@ async def generate_group_descriptions(
 
     logger.info(f"Description Agent: generating descriptions for {len(groups)} groups")
 
+    semaphore = asyncio.Semaphore(3)
+
     async def process_group(group: EventGroup) -> GroupDescription:
-        events = group.get("events", [])
-        events_text = "\n".join([
-            f"- [{e.get('timestamp', 'N/A')}] {e.get('description', '')}"
-            for e in events
-        ])
+        async with semaphore:
+            events = group.get("events", [])
+            events_text = "\n".join([
+                f"- [{e.get('timestamp', 'N/A')}] {e.get('description', '')}"
+                for e in events
+            ])
 
-        result = await chain.ainvoke({
-            "group_id": group.get("group_id", ""),
-            "first_seen": group.get("first_seen", ""),
-            "last_seen": group.get("last_seen", ""),
-            "events_count": len(events),
-            "events": events_text,
-        })
+            result = await chain.ainvoke({
+                "group_id": group.get("group_id", ""),
+                "first_seen": group.get("first_seen", ""),
+                "last_seen": group.get("last_seen", ""),
+                "events_count": len(events),
+                "events": events_text,
+            })
 
-        return parse_description_response(
-            result,
-            group.get("group_id", ""),
-            group.get("first_seen", ""),
-            group.get("last_seen", ""),
-        )
+            return parse_description_response(
+                result,
+                group.get("group_id", ""),
+                group.get("first_seen", ""),
+                group.get("last_seen", ""),
+            )
 
-    descriptions = await asyncio.gather(*[process_group(g) for g in groups])
+    results = await asyncio.gather(
+        *[process_group(g) for g in groups],
+        return_exceptions=True,
+    )
 
-    logger.info(f"Description Agent: generated {len(descriptions)} descriptions")
-    return list(descriptions)
+    descriptions: list[GroupDescription] = []
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.warning(
+                f"Description Agent: group {groups[i].get('group_id', i)} failed: {r}"
+            )
+        else:
+            descriptions.append(r)
 
-
-import asyncio
+    logger.info(f"Description Agent: generated {len(descriptions)}/{len(groups)} descriptions")
+    return descriptions

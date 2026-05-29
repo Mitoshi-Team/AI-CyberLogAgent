@@ -96,35 +96,93 @@ def build_log_line_mapping(log_content: str) -> dict[str, str]:
 
 
 def parse_groups_from_response(response: str) -> list[EventGroup]:
-    """Parse event groups from Agent 1 response.
 
-    Args:
-        response: LLM response containing ---GROUPS--- section
-
-    Returns:
-        List of EventGroup dictionaries
-
-    """
     groups = []
 
-    groups_match = re.search(r"---GROUPS---\s*(\[[\s\S]*?\])\s*---GROUPS---", response)
+    start_marker = "---GROUPS---"
+    start_idx = response.find(start_marker)
+    if start_idx == -1:
+        logger.warning(
+            f"[Agent1/Parse] ---GROUPS--- marker not found "
+            f"(response length {len(response)}, first 300 chars: {response[:300]!r})"
+        )
+        return groups
 
-    if groups_match:
-        try:
-            groups_data = json.loads(groups_match.group(1))
-            for group in groups_data:
-                event_group: EventGroup = {
-                    "group_id": group.get("group_id", f"g{len(groups) + 1}"),
-                    "events": group.get("events", []),
-                    "first_seen": group.get("first_seen", ""),
-                    "last_seen": group.get("last_seen", ""),
-                    "keywords": group.get("keywords", group.get("keywords_ru", [])),
-                    "description": group.get("description", ""),
-                }
-                groups.append(event_group)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse groups JSON: {e}")
+    logger.info(
+        f"[Agent1/Parse] Opening ---GROUPS--- at position {start_idx} "
+        f"(response length {len(response)})"
+    )
 
+    start_idx += len(start_marker)
+    end_idx = response.find(start_marker, start_idx)
+
+    groups_data: list | None = None
+    if end_idx != -1:
+        json_str = response[start_idx:end_idx].strip()
+        logger.info(
+            f"[Agent1/Parse] Closing marker found at {end_idx}, "
+            f"JSON region: {len(json_str)} chars"
+        )
+        if json_str:
+            try:
+                groups_data = json.loads(json_str)
+                logger.info(
+                    f"[Agent1/Parse] json.loads OK: {len(groups_data)} groups"
+                )
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"[Agent1/Parse] json.loads failed at char {e.pos}: {e}"
+                )
+                return groups
+    else:
+        logger.info(
+            "[Agent1/Parse] No closing marker, falling back to raw_decode"
+        )
+        search_idx = start_idx
+        while search_idx < len(response) and response[search_idx] not in "[{":
+            search_idx += 1
+        if search_idx < len(response):
+            decoder = json.JSONDecoder()
+            try:
+                parsed, end_pos = decoder.raw_decode(response, search_idx)
+                groups_data = parsed if isinstance(parsed, list) else [parsed]
+                json_len = end_pos - search_idx
+                logger.info(
+                    f"[Agent1/Parse] raw_decode OK: {len(groups_data)} groups, "
+                    f"{json_len} JSON chars (ends at {end_pos})"
+                )
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"[Agent1/Parse] raw_decode failed at char {e.pos}: {e}"
+                )
+                logger.warning(
+                    f"[Agent1/Parse] Context around error: "
+                    f"{response[max(0, e.pos - 100):e.pos + 100]!r}"
+                )
+                return groups
+        else:
+            logger.warning(
+                f"[Agent1/Parse] No JSON array/object found after marker "
+                f"(search_idx={search_idx}, response length {len(response)})"
+            )
+            return groups
+
+    if groups_data is None:
+        logger.warning("[Agent1/Parse] groups_data is None after extraction")
+        return groups
+
+    for group in groups_data:
+        event_group: EventGroup = {
+            "group_id": group.get("group_id", f"g{len(groups) + 1}"),
+            "events": group.get("events", []),
+            "first_seen": group.get("first_seen", ""),
+            "last_seen": group.get("last_seen", ""),
+            "keywords": group.get("keywords", group.get("keywords_ru", [])),
+            "description": group.get("description", ""),
+        }
+        groups.append(event_group)
+
+    logger.info(f"[Agent1/Parse] Returning {len(groups)} groups")
     return groups
 
 
@@ -200,8 +258,12 @@ async def analyze_logs_primary(
     """
     chain = create_agent1_chain(llm)
 
-    logger.info("Running Agent 1 analysis...")
+    logger.info("[Agent1] Running Agent 1 analysis...")
     result = await chain.ainvoke({"log_content": log_content})
+    logger.info(f"[Agent1] LLM response received: {len(result)} chars")
+    logger.info(
+        f"[Agent1] ---GROUPS--- marker present: {'---GROUPS---' in result}"
+    )
 
     primary_analysis = result
     mini_report = extract_mini_report(result)
@@ -209,7 +271,21 @@ async def analyze_logs_primary(
 
     events_found = sum(len(g.get("events", [])) for g in groups)
 
-    logger.info(f"Agent 1 complete: {len(groups)} groups, {events_found} events found")
+    if not groups:
+        logger.warning(
+            f"[Agent1] Parsed 0 groups. Response preview (first 500 chars): "
+            f"{result[:500]!r}"
+        )
+    else:
+        logger.info(f"[Agent1] Parsed {len(groups)} groups, {events_found} events")
+        for g in groups:
+            logger.info(
+                f"[Agent1]   Group {g['group_id']}: "
+                f"{len(g.get('events', []))} events, "
+                f"keywords={g.get('keywords', [])[:3]}..."
+            )
+
+    logger.info(f"[Agent1] Complete: {len(groups)} groups, {events_found} events found")
 
     return {
         "primary_analysis": primary_analysis,

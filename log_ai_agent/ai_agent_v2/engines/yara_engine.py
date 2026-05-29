@@ -21,11 +21,13 @@ class YaraEngine:
         # rules will be loaded from that list instead of the filesystem.
         # Track number of source rule documents for diagnostics
         self._source_count = 0
+        self._rules_list: list | None = None
 
         if isinstance(rules_path, (list, tuple)):
             # Expect a list of tuples (name, content) or list of strings (content)
             self.rules_path = None
             self._rules = None
+            self._rules_list = rules_path
             self._load_rules_from_list(rules_path)
         else:
             self.rules_path = Path(rules_path) if rules_path is not None else None
@@ -208,6 +210,22 @@ class YaraEngine:
             logger.info(f"YARA scan error: {e}")
 
         return results
+
+    def reload(self, rules_list: list | None = None) -> None:
+        """Reload YARA rules from DB or filesystem without recreating the engine.
+
+        Args:
+            rules_list: Optional list of (name, content) tuples from DB.
+                        If None, reloads from the original source (filesystem or stored list).
+        """
+        if rules_list is not None:
+            self._rules_list = rules_list
+        if self.rules_path is not None:
+            self._load_rules()
+        elif self._rules_list is not None:
+            self._load_rules_from_list(self._rules_list)
+        else:
+            logger.warning("No YARA rules source available for reload")
 
     @staticmethod
     def _prepare_scan_data(log: dict) -> str:

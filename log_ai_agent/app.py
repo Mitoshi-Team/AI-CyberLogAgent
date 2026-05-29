@@ -30,6 +30,7 @@ from log_ai_agent.db.models import (
     ThreatType,
     YaraRule,
     SigmaRule,
+    PendingYaraRule,
 )
 from dotenv import load_dotenv
 from fastapi import (
@@ -52,6 +53,8 @@ except ImportError:  # pragma: no cover - environment dependent
 from log_ai_agent.ai_agent_v2.app_integration import (
     analyze_log_v2,
     close_pipeline,
+    reload_sigma_rules,
+    reload_yara_rules,
     warmup_pipeline,
 )
 from log_ai_agent.ai_agent_v2.chat_integration import (
@@ -127,6 +130,8 @@ AGENT_ACTION_MATCH_THREATS = 3
 AGENT_ACTION_BUILD_REPORT = 4
 AGENT_ACTION_SAVE_REPORT = 5
 AGENT_ACTION_RESPOND = 6
+
+AGENT_ACTION_GENERATE_YARA = 11
 
 USER_ACTION_LOGIN = 7
 USER_ACTION_LOGOUT = 8
@@ -482,6 +487,26 @@ async def _broadcast_report_created_event(
         )
     except Exception as error:
         logger.warning("Failed to broadcast report_created event: %s", error)
+
+
+async def _broadcast_yara_rules_suggestion(
+    user_id: int,
+    report_id: int,
+    rules: list[dict],
+) -> None:
+    """Notify frontend about new YARA rule suggestions for user decision."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "yara_rules_suggestion",
+                "user_id": user_id,
+                "report_id": report_id,
+                "rules": rules,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast yara_rules_suggestion: %s", error)
 
 
 def _schedule_background_task(coro, task_name: str) -> None:
@@ -1109,12 +1134,6 @@ def _resolve_yara_file_path(filename: str) -> Path:
     return (YARA_RULES_DIR / normalized_name).resolve()
 
 
-async def _reload_detection_pipeline() -> None:
-    """Reload AI pipeline to pick up updated YARA/Sigma rules."""
-    await close_pipeline()
-    await warmup_pipeline()
-
-
 def _sync_rule_change_to_docker_container(
     file_path: Path,
     *,
@@ -1250,7 +1269,7 @@ async def create_sigma_rule_file(request: SigmaFileCreateRequest):
             new = SigmaRule(name=file_name, content=initial_content)
             session.add(new)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_sigma_rules()
         return {"success": True, "filename": file_name}
     except HTTPException:
         raise
@@ -1290,7 +1309,7 @@ async def update_sigma_rule_file_content(
             row.content = request.content
             session.add(row)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_sigma_rules()
         return {"success": True, "filename": filename}
     except HTTPException:
         raise
@@ -1311,7 +1330,7 @@ async def delete_sigma_rule_file(filename: str):
                 raise HTTPException(status_code=404, detail="Файл не найден")
             session.delete(row)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_sigma_rules()
         return {"success": True, "filename": filename}
     except HTTPException:
         raise
@@ -1360,7 +1379,7 @@ async def create_yara_rule_file(request: YaraFileCreateRequest):
             new = YaraRule(name=file_name, content=initial_content)
             session.add(new)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_yara_rules()
         return {"success": True, "filename": file_name}
     except HTTPException:
         raise
@@ -1398,7 +1417,7 @@ async def update_yara_rule_file_content_multi(
             row.content = request.content
             session.add(row)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_yara_rules()
         return {"success": True, "filename": filename}
     except HTTPException:
         raise
@@ -1417,7 +1436,7 @@ async def delete_yara_rule_file(filename: str):
                 raise HTTPException(status_code=404, detail="Файл не найден")
             session.delete(row)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_yara_rules()
         return {"success": True, "filename": filename}
     except HTTPException:
         raise
@@ -1454,11 +1473,123 @@ async def update_yara_rule_file_content(request: RuleContentUpdateRequest):
             new = YaraRule(name="combined_yara_rules", content=request.content)
             session.add(new)
             session.commit()
-        await _reload_detection_pipeline()
+        await reload_yara_rules()
         return {"success": True, "filename": "combined_yara_rules.yar"}
     except Exception as e:
         logger.error(f"Error updating Yara file: {e}")
         raise HTTPException(status_code=500, detail="Ошибка сохранения Yara файла")
+
+
+# --- YARA Rule generation / pending endpoints ---
+
+
+class AcceptYaraRuleRequest(BaseModel):
+    pending_rule_id: int
+    rule_name: str
+    rule_content: str
+
+
+class RejectYaraRuleRequest(BaseModel):
+    pending_rule_id: int
+
+
+@app.get("/api/config/yara/pending")
+async def get_pending_yara_rules(report_id: int | None = None):
+    """Get all pending YARA rules, optionally filtered by report_id."""
+    try:
+        with get_sync_session() as session:
+            query = session.query(PendingYaraRule).filter(
+                PendingYaraRule.status == "pending"
+            )
+            if report_id is not None:
+                query = query.filter(PendingYaraRule.report_id == report_id)
+            rows = query.order_by(PendingYaraRule.created_at.desc()).all()
+            return {
+                "rules": [
+                    {
+                        "pending_rule_id": r.pending_rule_id,
+                        "rule_name": r.rule_name,
+                        "rule_content": r.rule_content,
+                        "technique_id": r.technique_id,
+                        "technique_name": r.technique_name,
+                        "report_id": r.report_id,
+                        "created_at": r.created_at.isoformat() if r.created_at else None,
+                    }
+                    for r in rows
+                ]
+            }
+    except Exception as e:
+        logger.error(f"Error listing pending YARA rules: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения правил")
+
+
+@app.post("/api/config/yara/pending/accept")
+async def accept_pending_yara_rule(request: AcceptYaraRuleRequest, user_id: int = 0):
+    """Accept a pending YARA rule: save to YaraRules and remove from pending."""
+    try:
+        with get_sync_session() as session:
+            pending = session.query(PendingYaraRule).filter(
+                PendingYaraRule.pending_rule_id == request.pending_rule_id
+            ).one_or_none()
+
+            if not pending:
+                raise HTTPException(status_code=404, detail="Правило не найдено")
+
+            if pending.status != "pending":
+                raise HTTPException(status_code=409, detail="Правило уже обработано")
+
+            # Create YaraRule entry
+            new_rule = YaraRule(
+                name=request.rule_name,
+                content=request.rule_content,
+            )
+            session.add(new_rule)
+            pending.status = "accepted"
+            session.commit()
+
+        await reload_yara_rules()
+
+        user_data = commands.get_user_by_id(user_id) if user_id else None
+        login = user_data["login"] if user_data else f"id={user_id}"
+        logger.info(f"User '{login}' accepted YARA rule: {request.rule_name}")
+
+        return {"success": True, "message": "Правило принято и добавлено в базу"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error accepting YARA rule: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сохранения правила")
+
+
+@app.post("/api/config/yara/pending/reject")
+async def reject_pending_yara_rule(request: RejectYaraRuleRequest, user_id: int = 0):
+    """Reject a pending YARA rule: mark as rejected."""
+    try:
+        with get_sync_session() as session:
+            pending = session.query(PendingYaraRule).filter(
+                PendingYaraRule.pending_rule_id == request.pending_rule_id
+            ).one_or_none()
+
+            if not pending:
+                raise HTTPException(status_code=404, detail="Правило не найдено")
+
+            if pending.status != "pending":
+                raise HTTPException(status_code=409, detail="Правило уже обработано")
+
+            user_data = commands.get_user_by_id(user_id) if user_id else None
+            login = user_data["login"] if user_data else f"id={user_id}"
+            logger.info(f"User '{login}' rejected YARA rule: {pending.rule_name}")
+
+            pending.status = "rejected"
+            session.commit()
+
+        logger.info(f"YARA rule '{pending.rule_name}' rejected by user")
+        return {"success": True, "message": "Правило отклонено"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting YARA rule: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка отклонения правила")
 
 
 @app.get("/api/statistics/severity")
@@ -2184,6 +2315,44 @@ async def upload_log_file(
                 response["mitre_techniques"] = analysis_result["mitre_techniques"]
             if "processing_time_ms" in analysis_result:
                 response["processing_time_ms"] = analysis_result["processing_time_ms"]
+
+            # Save generated YARA rules as pending if any
+            generated_rules = analysis_result.get("generated_yara_rules", [])
+            if generated_rules:
+                pending_objs = []
+                for rule_data in generated_rules:
+                    pending = PendingYaraRule(
+                        rule_name=rule_data.get("rule_name", ""),
+                        rule_content=rule_data.get("rule_content", ""),
+                        technique_id=rule_data.get("technique_id", ""),
+                        technique_name=rule_data.get("technique_name", ""),
+                        report_id=report_id,
+                        status="pending",
+                    )
+                    session.add(pending)
+                    pending_objs.append(pending)
+                await session.flush()
+                await session.commit()
+                # Populate pending_rule_id into response dicts
+                enriched_rules = []
+                for pending, rule_data in zip(pending_objs, generated_rules):
+                    enriched = dict(rule_data)
+                    enriched["pending_rule_id"] = pending.pending_rule_id
+                    enriched_rules.append(enriched)
+                logger.info(
+                    f"Saved {len(generated_rules)} pending YARA rules for report_id={report_id}"
+                )
+                response["generated_yara_rules"] = enriched_rules
+
+                # Notify frontend about rule suggestions
+                _schedule_background_task(
+                    _broadcast_yara_rules_suggestion(
+                        user_id=user_id,
+                        report_id=report_id,
+                        rules=generated_rules,
+                    ),
+                    "broadcast_yara_rule_suggestion",
+                )
 
             await _try_insert_agent_log(
                 AGENT_ACTION_RESPOND,

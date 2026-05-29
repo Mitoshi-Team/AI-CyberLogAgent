@@ -27,14 +27,34 @@ class SigmaEngine:
 
     def __init__(self, rules_path: str | Path):
         # rules_path can be a filesystem path or a list of (name, content) entries
+        self._rules_list: list | None = None
         if isinstance(rules_path, (list, tuple)):
             self.rules_path = None
             self._rules: list[dict] = []
+            self._rules_list = rules_path
             self._load_rules_from_list(rules_path)
         else:
             self.rules_path = Path(rules_path) if rules_path is not None else None
             self._rules: list[dict] = []
             self._load_rules()
+
+    def reload(self, rules_list: list | None = None) -> None:
+        """Reload Sigma rules from DB or filesystem without recreating the engine.
+
+        Args:
+            rules_list: Optional list of (name, content) tuples from DB.
+                        If None, reloads from the original source (filesystem or stored list).
+        """
+        if rules_list is not None:
+            self._rules_list = rules_list
+        self._rules = []
+
+        if self.rules_path is not None:
+            self._load_rules()
+        elif self._rules_list is not None:
+            self._load_rules_from_list(self._rules_list)
+        else:
+            logger.warning("No Sigma rules source available for reload")
 
     def _load_rules(self) -> None:
         """Parse all .yml/.yaml files from the rules directory."""

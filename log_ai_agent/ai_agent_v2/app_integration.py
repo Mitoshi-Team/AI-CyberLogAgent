@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from .callbacks import get_callback_config
+from .chains.yara_generator import YaraGenerator
 from .config import AgentConfig
 from .pipeline import LogAnalysisPipeline, create_pipeline
 from log_ai_agent.db.session import get_sync_session
@@ -109,6 +110,32 @@ async def warmup_pipeline() -> None:
     await get_pipeline()
 
 
+async def reload_yara_rules() -> None:
+    """Light reload YARA rules from DB without recreating the pipeline."""
+    try:
+        with get_sync_session() as session:
+            rows = session.query(YaraRule).all()
+            rules_list: list = [(r.name, r.content) for r in rows]
+        pipeline = await get_pipeline()
+        pipeline.reload_yara_rules(rules_list)
+        logger.info(f"YARA rules reloaded: {len(rules_list)} rules")
+    except Exception as e:
+        logger.warning(f"Failed to reload YARA rules: {e}")
+
+
+async def reload_sigma_rules() -> None:
+    """Light reload Sigma rules from DB without recreating the pipeline."""
+    try:
+        with get_sync_session() as session:
+            rows = session.query(SigmaRule).all()
+            rules_list: list = [(r.name, r.content) for r in rows]
+        pipeline = await get_pipeline()
+        pipeline.reload_sigma_rules(rules_list)
+        logger.info(f"Sigma rules reloaded: {len(rules_list)} rules")
+    except Exception as e:
+        logger.warning(f"Failed to reload Sigma rules: {e}")
+
+
 async def analyze_log_v2(log_content: str) -> dict:
     """Analyze log using AI Agent v2.
 
@@ -158,7 +185,7 @@ async def analyze_log_v2(log_content: str) -> dict:
         agent1 = results["stages"].get("agent1", {})
         agent3 = results["stages"]["agent3"]
 
-        return {
+        result_dict = {
             "description": agent3.get("final_report", ""),
             "severity_level_id": agent3.get("severity_level_id", 3),
             "threat_type_id": agent3.get("threat_type_id", 11),
@@ -166,6 +193,34 @@ async def analyze_log_v2(log_content: str) -> dict:
             "events_found": agent1.get("events_found", 0),
             "processing_time_ms": results.get("total_time_sec", 0) * 1000,
         }
+
+        # Generate YARA rules for uncovered MITRE techniques
+        try:
+            pipeline_obj = await get_pipeline()
+            chroma_mgr = getattr(pipeline_obj, "chroma_mgr", None)
+            yara_generator = YaraGenerator(
+                llm=pipeline_obj.llm,
+                chroma_mgr=chroma_mgr,
+            )
+
+            groups = agent1.get("groups", [])
+            generated_rules = await yara_generator.generate_for_pipeline(
+                pipeline_stages=results.get("stages", {}),
+                groups=groups,
+                parsed_logs=[],
+            )
+
+            if generated_rules:
+                result_dict["generated_yara_rules"] = [
+                    r.to_dict() for r in generated_rules
+                ]
+                logger.info(
+                    f"Generated {len(generated_rules)} YARA rules for user review"
+                )
+        except Exception as e:
+            logger.warning(f"YARA rule generation skipped: {e}")
+
+        return result_dict
     else:
         # Return error result
         error_msg = results.get("error") or "Unknown error"
