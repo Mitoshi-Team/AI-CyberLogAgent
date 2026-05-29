@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Text,
     DateTime,
+    Float,
     ForeignKey,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -74,6 +75,7 @@ class Report(Base):
     threat_type_id = Column(Integer, ForeignKey("ThreatTypes.threat_type_id"))
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+    processing_time_ms = Column(Float, nullable=True)
     log = relationship("Log")
     severity = relationship("SeverityLevel")
     threat = relationship("ThreatType")

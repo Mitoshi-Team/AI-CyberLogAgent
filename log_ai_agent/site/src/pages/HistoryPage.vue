@@ -59,6 +59,7 @@
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Дата и время</th>
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Тип угрозы</th>
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Уровень серьезности</th>
+              <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Время анализа</th>
               <th class="text-right py-3 px-4 font-semibold text-[#949daf]">Действия</th>
             </tr>
           </thead>
@@ -75,6 +76,7 @@
                   {{ report.severity_name }}
                 </span>
               </td>
+              <td class="py-3 px-4 text-sm font-mono text-[#858ea1]">{{ formatProcessingTime(report.processing_time_ms) }}</td>
               <td class="py-3 px-4 text-right">
                 <button
                   @click="viewDetails(report.id)"
@@ -175,6 +177,12 @@
           <div>
             <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Тип угрозы</h3>
             <p class="text-white">{{ selectedReport.threat_name }}</p>
+          </div>
+
+          <!-- Время анализа -->
+          <div>
+            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Время анализа</h3>
+            <p class="text-white font-mono">{{ formatProcessingTime(selectedReport.processing_time_ms) }}</p>
           </div>
 
           <!-- Описание -->
@@ -317,6 +325,13 @@ const formatDateTime = (dateStr) => {
 const truncateDescription = (text) => {
   if (!text) return ''
   return text.length > 50 ? text.substring(0, 50) + '...' : text
+}
+
+// Форматирование времени анализа
+const formatProcessingTime = (ms) => {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${ms.toFixed(0)}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 // Получение класса для badge уровня серьезности

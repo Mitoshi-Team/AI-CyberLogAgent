@@ -125,7 +125,7 @@
           <div v-if="isLoading" class="flex justify-center pb-2">
             <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg">
               <span class="w-1.5 h-1.5 bg-[#6b81ff] rounded-full animate-pulse"/>
-              <span class="text-sm text-[#ABABBF]">Thinking... {{ thinkingElapsed }}s</span>
+              <span class="text-sm text-[#ABABBF]">Analyzing... {{ thinkingElapsed }}s</span>
             </div>
           </div>
         </div>
@@ -1393,7 +1393,9 @@ const handleFileUpload = async (event) => {
 
       // Если был переанализ (fast pass <30s), показываем notice
       if (response.data.quality_reanalysis) {
-        const noticeMsg = '⚠️ Первичный анализ выполнен быстрее 30 секунд, запущен повторный для повышения качества.'
+        const initialTime = response.data.initial_processing_time_ms ? (response.data.initial_processing_time_ms / 1000).toFixed(1) : '?'
+        const finalTime = response.data.processing_time_ms ? (response.data.processing_time_ms / 1000).toFixed(1) : '?'
+        const noticeMsg = `⚠️ Первичный анализ выполнен за ${initialTime}s (<30s), запущен повторный. Итоговое время: ${finalTime}s.`
         pushNoticeMessage(noticeMsg)
         await saveChatMessage('notice', noticeMsg)
       }

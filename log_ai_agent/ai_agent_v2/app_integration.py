@@ -222,6 +222,7 @@ async def analyze_log_v2(log_content: str) -> dict:
                     "mitre_techniques": retry_agent3.get("mitre_techniques", []),
                     "events_found": retry_agent1.get("events_found", 0),
                     "processing_time_ms": retry_time_ms,
+                    "initial_processing_time_ms": processing_time_ms,
                     "quality_reanalysis": True,
                 }
                 logger.info(

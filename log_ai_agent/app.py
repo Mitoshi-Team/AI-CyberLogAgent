@@ -1789,6 +1789,7 @@ async def get_reports_history(
                     Report.report_id,
                     Report.description,
                     Report.created_at,
+                    Report.processing_time_ms,
                     SeverityLevel.severity_level_id,
                     SeverityLevel.name.label("severity_name"),
                     ThreatType.threat_type_id,
@@ -1829,10 +1830,11 @@ async def get_reports_history(
                     "id": r[0],
                     "description": r[1],
                     "created_at": r[2].isoformat() if r[2] else None,
-                    "severity_level_id": r[3],
-                    "severity_name": r[4],
-                    "threat_type_id": r[5],
-                    "threat_name": r[6],
+                    "processing_time_ms": r[3],
+                    "severity_level_id": r[4],
+                    "severity_name": r[5],
+                    "threat_type_id": r[6],
+                    "threat_name": r[7],
                 }
                 for r in records
             ]
@@ -1879,6 +1881,7 @@ async def get_report_details(report_id: int):
                     Report.report_id,
                     Report.description,
                     Report.created_at,
+                    Report.processing_time_ms,
                     Report.log_id,
                     SeverityLevel.name.label("severity_name"),
                     ThreatType.name.label("threat_name"),
@@ -1899,6 +1902,7 @@ async def get_report_details(report_id: int):
             "id": row["report_id"],
             "description": row["description"],
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "processing_time_ms": row["processing_time_ms"],
             "severity_name": row["severity_name"] or None,
             "threat_name": row["threat_name"] or None,
             "file_content": row["file_content"] or "Логи отсутствуют",
@@ -2368,6 +2372,7 @@ async def upload_log_file(
                     severity_level_id=analysis_result.get("severity_level_id"),
                     threat_type_id=analysis_result.get("threat_type_id"),
                     description=analysis_result.get("description"),
+                    processing_time_ms=analysis_result.get("processing_time_ms"),
                 )
                 session.add(report)
                 await session.flush()
@@ -2399,6 +2404,8 @@ async def upload_log_file(
                 response["mitre_techniques"] = analysis_result["mitre_techniques"]
             if "processing_time_ms" in analysis_result:
                 response["processing_time_ms"] = analysis_result["processing_time_ms"]
+            if "initial_processing_time_ms" in analysis_result:
+                response["initial_processing_time_ms"] = analysis_result["initial_processing_time_ms"]
             if "quality_reanalysis" in analysis_result:
                 response["quality_reanalysis"] = analysis_result["quality_reanalysis"]
 

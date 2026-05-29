@@ -173,7 +173,8 @@ CREATE TABLE IF NOT EXISTS public."Reports" (
     log_id integer NOT NULL,
     threat_type_id integer NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    severity_level_id integer NOT NULL
+    severity_level_id integer NOT NULL,
+    processing_time_ms double precision
 );
 
 
