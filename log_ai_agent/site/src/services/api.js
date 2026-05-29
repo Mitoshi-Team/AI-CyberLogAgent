@@ -166,16 +166,16 @@ export const configRules = {
     apiClient.delete(`/config/yara/files/${encodeURIComponent(filename)}`),
   getPendingYaraRules: (reportId) =>
     apiClient.get('/config/yara/pending', { params: { report_id: reportId } }),
-  acceptPendingYaraRule: (pendingRuleId, ruleName, ruleContent) =>
+  acceptPendingYaraRule: (userId, pendingRuleId, ruleName, ruleContent) =>
     apiClient.post('/config/yara/pending/accept', {
       pending_rule_id: pendingRuleId,
       rule_name: ruleName,
       rule_content: ruleContent,
-    }),
-  rejectPendingYaraRule: (pendingRuleId) =>
+    }, { params: { user_id: userId } }),
+  rejectPendingYaraRule: (userId, pendingRuleId) =>
     apiClient.post('/config/yara/pending/reject', {
       pending_rule_id: pendingRuleId,
-    }),
+    }, { params: { user_id: userId } }),
 }
 
 export default apiClient

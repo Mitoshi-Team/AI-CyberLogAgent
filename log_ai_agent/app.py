@@ -1525,7 +1525,7 @@ async def get_pending_yara_rules(report_id: int | None = None):
 
 
 @app.post("/api/config/yara/pending/accept")
-async def accept_pending_yara_rule(request: AcceptYaraRuleRequest):
+async def accept_pending_yara_rule(request: AcceptYaraRuleRequest, user_id: int = 0):
     """Accept a pending YARA rule: save to YaraRules and remove from pending."""
     try:
         with get_sync_session() as session:
@@ -1549,7 +1549,11 @@ async def accept_pending_yara_rule(request: AcceptYaraRuleRequest):
             session.commit()
 
         await reload_yara_rules()
-        logger.info(f"YARA rule '{request.rule_name}' accepted and saved")
+
+        user_data = commands.get_user_by_id(user_id) if user_id else None
+        login = user_data["login"] if user_data else f"id={user_id}"
+        logger.info(f"User '{login}' accepted YARA rule: {request.rule_name}")
+
         return {"success": True, "message": "Правило принято и добавлено в базу"}
     except HTTPException:
         raise
@@ -1559,7 +1563,7 @@ async def accept_pending_yara_rule(request: AcceptYaraRuleRequest):
 
 
 @app.post("/api/config/yara/pending/reject")
-async def reject_pending_yara_rule(request: RejectYaraRuleRequest):
+async def reject_pending_yara_rule(request: RejectYaraRuleRequest, user_id: int = 0):
     """Reject a pending YARA rule: mark as rejected."""
     try:
         with get_sync_session() as session:
@@ -1572,6 +1576,10 @@ async def reject_pending_yara_rule(request: RejectYaraRuleRequest):
 
             if pending.status != "pending":
                 raise HTTPException(status_code=409, detail="Правило уже обработано")
+
+            user_data = commands.get_user_by_id(user_id) if user_id else None
+            login = user_data["login"] if user_data else f"id={user_id}"
+            logger.info(f"User '{login}' rejected YARA rule: {pending.rule_name}")
 
             pending.status = "rejected"
             session.commit()

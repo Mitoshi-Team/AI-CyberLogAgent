@@ -57,7 +57,10 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useAppStore } from '@/stores/app'
 import { configRules } from '../services/api.js'
+
+const appStore = useAppStore()
 
 const props = defineProps({
   rule: {
@@ -75,6 +78,7 @@ async function accept() {
   errorMsg.value = ''
   try {
     await configRules.acceptPendingYaraRule(
+      appStore.currentUser?.id,
       props.rule.pending_rule_id,
       props.rule.rule_name,
       props.rule.rule_content,
@@ -91,7 +95,10 @@ async function reject() {
   loading.value = true
   errorMsg.value = ''
   try {
-    await configRules.rejectPendingYaraRule(props.rule.pending_rule_id)
+    await configRules.rejectPendingYaraRule(
+      appStore.currentUser?.id,
+      props.rule.pending_rule_id,
+    )
     status.value = 'rejected'
   } catch (err) {
     errorMsg.value = err.response?.data?.detail || 'Ошибка при отклонении правила'

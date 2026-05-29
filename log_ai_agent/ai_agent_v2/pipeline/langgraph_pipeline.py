@@ -49,6 +49,7 @@ from ..chains.llm import create_llm
 from ..engines import SigmaEngine, YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
 from ..knowledge_base.mitre_loader import initialize_mitre_knowledge_base
+from ..metrics.metrics_logger import log_incident
 from ..models_types import AnalysisState
 
 logger = logging.getLogger(__name__)
@@ -332,6 +333,13 @@ class LogAnalysisPipeline:
             results["threat_type_id"] = final_state.get("threat_type_id", 11)
             results["mitre_techniques"] = final_state.get("mitre_techniques_final", [])
             results["events_found"] = final_state.get("events_found", 0)
+
+            # Log detection metrics if events were found
+            if results.get("events_found", 0) > 0:
+                log_incident(
+                    Path(__file__).parent.parent / "metrics" / "pipeline_metrics.log",
+                    results["stages"],
+                )
 
             logger.info(
                 f"LangGraph pipeline complete in {elapsed:.1f}s: "
