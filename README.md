@@ -375,6 +375,37 @@ AI-CyberLogAgent/
 - created_at: timestamp with time zone (Дата и время создания правила)
 - updated_at: timestamp with time zone (Дата и время последнего обновления правила)
 
+## Changelog (ветка krandev)
+
+### 2026-05-29 — Сессия #1
+
+**Добавлено:**
+- `model_name` — колонка в `Reports`, сохраняет название модели для каждого отчёта, отображается в HistoryPage
+- `pipeline_breakdown` — JSON-раскладка времени по стадиям пайплайна (agent1, agent2, agent3, yara, sigma...) от каждой ноды LangGraph
+- `_timed_node` wrapper — per-node замер времени в LangGraph pipeline
+- `processing_time_ms` теперь считает end-to-end время (от старта `analyze_log_v2()` до создания отчёта)
+- Миграции: `migrations/001_add_model_name.sql`, `migrations/002_add_pipeline_breakdown.sql`
+
+**Исправлено:**
+- `_timed_node` wrapper — читал `result["node_times"]` вместо `state["node_times"]`, из-за чего `pipeline_breakdown` был пустым
+- Ошибка `UndefinedColumnError: column "model_name" does not exist` — применены миграции
+- `processing_time_ms` путался с quality reanalysis (`initial_processing_time_ms` vs финальный)
+
+**Известные проблемы:**
+- Таймер Analyzing... может сбрасываться при переключении вкладок — требуется проверка/доработка
+
+### 2026-05-28 — Сессия #0
+
+**Добавлено:**
+- AITunnel провайдер (`aitunnel.py`) на базе langchain ChatOpenAI
+- Runtime переключение модели без перезапуска контейнера
+- `processing_time_ms` в чате и отчётах
+- Quality re-analysis (если анализ <30s при >=50 строках)
+- DeepSeek-стиль таймер Analyzing... с тысячными
+- nginx proxy таймауты подняты до 86400s
+- Backend hot-reload через volume mount + uvicorn reload
+- Влиты изменения из `origin/axstiz` (metrics, mitre_log_simulator)
+
 ### Таблица SigmaRules
 
 - sigma_rule_id (Уникальный идентификатор sigma правила, автоинкремент)

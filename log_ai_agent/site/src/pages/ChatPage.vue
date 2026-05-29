@@ -523,6 +523,7 @@ onMounted(async () => {
 
   if (isLoading.value) {
     shouldSyncAfterBackgroundCompletion.value = true
+    startThinkingTimer()
   }
   
   // Загружаем историю чата из БД

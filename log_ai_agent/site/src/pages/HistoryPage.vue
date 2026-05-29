@@ -60,6 +60,7 @@
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Тип угрозы</th>
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Уровень серьезности</th>
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Время анализа</th>
+              <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Модель</th>
               <th class="text-right py-3 px-4 font-semibold text-[#949daf]">Действия</th>
             </tr>
           </thead>
@@ -77,6 +78,7 @@
                 </span>
               </td>
               <td class="py-3 px-4 text-sm font-mono text-[#858ea1]">{{ formatProcessingTime(report.processing_time_ms) }}</td>
+              <td class="py-3 px-4 text-sm text-[#858ea1]">{{ report.model_name || '—' }}</td>
               <td class="py-3 px-4 text-right">
                 <button
                   @click="viewDetails(report.id)"
@@ -183,6 +185,12 @@
           <div>
             <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Время анализа</h3>
             <p class="text-white font-mono">{{ formatProcessingTime(selectedReport.processing_time_ms) }}</p>
+          </div>
+
+          <!-- Модель -->
+          <div>
+            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Модель</h3>
+            <p class="text-white font-mono">{{ selectedReport.model_name || '—' }}</p>
           </div>
 
           <!-- Описание -->

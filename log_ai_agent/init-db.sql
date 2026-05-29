@@ -174,7 +174,9 @@ CREATE TABLE IF NOT EXISTS public."Reports" (
     threat_type_id integer NOT NULL,
     created_at timestamp with time zone NOT NULL,
     severity_level_id integer NOT NULL,
-    processing_time_ms double precision
+    processing_time_ms double precision,
+    model_name varchar(128),
+    pipeline_breakdown text
 );
 
 

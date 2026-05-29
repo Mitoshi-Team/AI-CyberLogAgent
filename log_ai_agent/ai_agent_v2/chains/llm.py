@@ -28,6 +28,21 @@ def get_active_model() -> str | None:
     return _active_model
 
 
+def get_effective_model() -> str:
+    """Return the model name that will be used by the LLM.
+
+    Priority: runtime override > env var > config default.
+
+    """
+    runtime = get_active_model()
+    if runtime:
+        return runtime
+    cfg = AgentConfig.from_env()
+    if cfg.detected_provider == LLMProvider.AITUNNEL:
+        return cfg.aitunnel_model
+    return cfg.ollama_model
+
+
 def create_llm(
     provider: LLMProvider | None = None,
     temperature: float | None = None,

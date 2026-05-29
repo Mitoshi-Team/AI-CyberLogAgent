@@ -76,6 +76,8 @@ class Report(Base):
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     processing_time_ms = Column(Float, nullable=True)
+    model_name = Column(String(128), nullable=True)
+    pipeline_breakdown = Column(Text, nullable=True)
     log = relationship("Log")
     severity = relationship("SeverityLevel")
     threat = relationship("ThreatType")

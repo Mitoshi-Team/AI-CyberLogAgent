@@ -6,7 +6,7 @@ from log_ai_agent.db.session import get_async_session
 from log_ai_agent.db.models import Message, Report
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from .chains.llm import create_llm
+from .chains.llm import create_llm, get_effective_model
 
 logger = logging.getLogger(__name__)
 
@@ -138,4 +138,9 @@ async def process_chat_message(
         session.add(agent_msg)
         await session.commit()
 
-        return {"response": response, "mode": mode, "processing_time_ms": elapsed * 1000}
+        return {
+            "response": response,
+            "mode": mode,
+            "processing_time_ms": elapsed * 1000,
+            "model_name": get_effective_model(),
+        }

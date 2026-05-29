@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .callbacks import get_callback_config
 from .chains.yara_generator import YaraGenerator
+from .chains.llm import get_effective_model
 from .config import AgentConfig
 from .pipeline import LogAnalysisPipeline, create_pipeline
 from log_ai_agent.db.session import get_sync_session
@@ -14,11 +15,23 @@ from log_ai_agent.db.models import YaraRule, SigmaRule
 
 logger = logging.getLogger(__name__)
 
-# Global pipeline instance
-_pipeline: LogAnalysisPipeline | None = None
-_analyze_lock = asyncio.Lock()
 _MAX_ANALYSIS_LOG_CHARS = int(os.getenv("AI_V2_MAX_ANALYSIS_LOG_CHARS", "25000"))
+_analyze_lock = asyncio.Lock()
+
+_pipeline: LogAnalysisPipeline | None = None
 _agent_config: AgentConfig | None = None
+
+
+def _build_pipeline_breakdown(results: dict) -> dict:
+    """Build a structured timing breakdown from pipeline results."""
+    stages = {}
+    for name, stage in results.get("stages", {}).items():
+        if "time_ms" in stage:
+            stages[name] = {"time_ms": stage["time_ms"]}
+    return {
+        "total_time_ms": results.get("total_time_sec", 0) * 1000,
+        "stages": stages,
+    }
 
 
 def _resolve_rules_path(relative_path: str) -> str | None:
@@ -194,6 +207,8 @@ async def analyze_log_v2(log_content: str) -> dict:
             "mitre_techniques": agent3.get("mitre_techniques", []),
             "events_found": agent1.get("events_found", 0),
             "processing_time_ms": processing_time_ms,
+            "pipeline_breakdown": _build_pipeline_breakdown(results),
+            "model_name": get_effective_model(),
         }
 
         # Quality check: if log has >= 50 lines but was analyzed suspiciously fast (<30s),
@@ -224,6 +239,14 @@ async def analyze_log_v2(log_content: str) -> dict:
                     "processing_time_ms": retry_time_ms,
                     "initial_processing_time_ms": processing_time_ms,
                     "quality_reanalysis": True,
+                    "pipeline_breakdown": {
+                        "total_time_ms": retry_time_ms,
+                        "analyses": [
+                            {"type": "initial", **_build_pipeline_breakdown(results)},
+                            {"type": "quality_reanalysis", **_build_pipeline_breakdown(retry_results)},
+                        ],
+                    },
+                    "model_name": get_effective_model(),
                 }
                 logger.info(
                     "Quality re-analysis complete in %.0fms (was: %.0fms)",

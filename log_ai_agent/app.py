@@ -1790,6 +1790,8 @@ async def get_reports_history(
                     Report.description,
                     Report.created_at,
                     Report.processing_time_ms,
+                    Report.model_name,
+                    Report.pipeline_breakdown,
                     SeverityLevel.severity_level_id,
                     SeverityLevel.name.label("severity_name"),
                     ThreatType.threat_type_id,
@@ -1831,10 +1833,12 @@ async def get_reports_history(
                     "description": r[1],
                     "created_at": r[2].isoformat() if r[2] else None,
                     "processing_time_ms": r[3],
-                    "severity_level_id": r[4],
-                    "severity_name": r[5],
-                    "threat_type_id": r[6],
-                    "threat_name": r[7],
+                    "model_name": r[4],
+                    "pipeline_breakdown": json.loads(r[5]) if r[5] else None,
+                    "severity_level_id": r[6],
+                    "severity_name": r[7],
+                    "threat_type_id": r[8],
+                    "threat_name": r[9],
                 }
                 for r in records
             ]
@@ -1882,6 +1886,8 @@ async def get_report_details(report_id: int):
                     Report.description,
                     Report.created_at,
                     Report.processing_time_ms,
+                    Report.model_name,
+                    Report.pipeline_breakdown,
                     Report.log_id,
                     SeverityLevel.name.label("severity_name"),
                     ThreatType.name.label("threat_name"),
@@ -1903,6 +1909,8 @@ async def get_report_details(report_id: int):
             "description": row["description"],
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             "processing_time_ms": row["processing_time_ms"],
+            "model_name": row["model_name"] or None,
+            "pipeline_breakdown": json.loads(row["pipeline_breakdown"]) if row["pipeline_breakdown"] else None,
             "severity_name": row["severity_name"] or None,
             "threat_name": row["threat_name"] or None,
             "file_content": row["file_content"] or "Логи отсутствуют",
@@ -2000,6 +2008,7 @@ class ChatSendResponse(BaseModel):
     mode: str | None = None
     message: str | None = None
     processing_time_ms: float | None = None
+    model_name: str | None = None
 
 
 class ModelSettingsRequest(BaseModel):
@@ -2079,6 +2088,7 @@ async def send_chat_message(request: ChatSendRequest):
             mode=result["mode"],
             message="Сообщение успешно обработано",
             processing_time_ms=result.get("processing_time_ms"),
+            model_name=result.get("model_name"),
         )
 
     except HTTPException:
@@ -2302,6 +2312,7 @@ async def upload_log_file(
                 AGENT_ACTION_ANALYZE_LOGS,
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
+            upload_start_time = time.time()
             analyze_task = asyncio.create_task(analyze_log_v2(content_str))
             cancel_wait_task = asyncio.create_task(cancel_event.wait())
             done, pending = await asyncio.wait(
@@ -2367,12 +2378,17 @@ async def upload_log_file(
                 log_id = log.log_id
                 _raise_if_log_upload_canceled(cancel_event)
 
+                total_time_ms = (time.time() - upload_start_time) * 1000
+                analysis_result["processing_time_ms"] = total_time_ms
+
                 report = Report(
                     log_id=log_id,
                     severity_level_id=analysis_result.get("severity_level_id"),
                     threat_type_id=analysis_result.get("threat_type_id"),
                     description=analysis_result.get("description"),
                     processing_time_ms=analysis_result.get("processing_time_ms"),
+                    model_name=analysis_result.get("model_name"),
+                    pipeline_breakdown=json.dumps(analysis_result.get("pipeline_breakdown"), ensure_ascii=False, default=str) if analysis_result.get("pipeline_breakdown") else None,
                 )
                 session.add(report)
                 await session.flush()
@@ -2408,6 +2424,10 @@ async def upload_log_file(
                 response["initial_processing_time_ms"] = analysis_result["initial_processing_time_ms"]
             if "quality_reanalysis" in analysis_result:
                 response["quality_reanalysis"] = analysis_result["quality_reanalysis"]
+            if "model_name" in analysis_result:
+                response["model_name"] = analysis_result["model_name"]
+            if "pipeline_breakdown" in analysis_result:
+                response["pipeline_breakdown"] = analysis_result["pipeline_breakdown"]
 
             # Save generated YARA rules as pending if any
             generated_rules = analysis_result.get("generated_yara_rules", [])

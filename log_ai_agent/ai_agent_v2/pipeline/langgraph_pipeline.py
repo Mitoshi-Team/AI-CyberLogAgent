@@ -37,6 +37,7 @@ Flow:
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,26 @@ from ..models_types import AnalysisState
 logger = logging.getLogger(__name__)
 
 
+def _timed_node(node_fn: Callable, name: str) -> Callable:
+    """Wrap a LangGraph node to capture per-node wall-clock timing.
+
+    The elapsed time (in ms) is stored in the graph state under
+    ``node_times`` so it can be extracted after the run completes.
+
+    """
+    async def wrapper(state: dict) -> dict:
+        start = time.time()
+        result = await node_fn(state)
+        elapsed_ms = (time.time() - start) * 1000
+        if not isinstance(result, dict):
+            result = {}
+        existing = dict(state.get("node_times", {}))
+        existing[name] = round(elapsed_ms, 1)
+        result["node_times"] = existing
+        return result
+    return wrapper
+
+
 def build_analysis_graph(
     nodes: PipelineNodes,
 ) -> Any:
@@ -71,14 +92,14 @@ def build_analysis_graph(
 
     workflow = StateGraph(AnalysisState)
 
-    workflow.add_node("prefilter", nodes.prefilter_node)
-    workflow.add_node("agent1", nodes.agent1_node)
-    workflow.add_node("description_agent", nodes.description_agent_node)
-    workflow.add_node("parse_logs", nodes.parse_logs_node)
-    workflow.add_node("agent2", nodes.agent2_node)
-    workflow.add_node("yara_scan", nodes.yara_scan_node)
-    workflow.add_node("sigma_scan", nodes.sigma_scan_node)
-    workflow.add_node("agent3", nodes.agent3_node)
+    workflow.add_node("prefilter", _timed_node(nodes.prefilter_node, "prefilter"))
+    workflow.add_node("agent1", _timed_node(nodes.agent1_node, "agent1"))
+    workflow.add_node("description_agent", _timed_node(nodes.description_agent_node, "description_agent"))
+    workflow.add_node("parse_logs", _timed_node(nodes.parse_logs_node, "parse_logs"))
+    workflow.add_node("agent2", _timed_node(nodes.agent2_node, "agent2"))
+    workflow.add_node("yara_scan", _timed_node(nodes.yara_scan_node, "yara_scan"))
+    workflow.add_node("sigma_scan", _timed_node(nodes.sigma_scan_node, "sigma_scan"))
+    workflow.add_node("agent3", _timed_node(nodes.agent3_node, "agent3"))
 
     workflow.add_edge("prefilter", "agent1")
     workflow.add_edge("agent1", "description_agent")
@@ -326,6 +347,15 @@ class LogAnalysisPipeline:
                 "sigma_rules": final_state.get("sigma_rules_matched", []),
             }
 
+            # Inject per-node timing into each stage
+            node_times: dict[str, float] = final_state.get("node_times", {})
+            for stage_name in list(results["stages"].keys()):
+                stage = results["stages"][stage_name]
+                node_key = stage_name
+                if node_key in node_times:
+                    stage["time_ms"] = node_times[node_key]
+
+            results["node_times"] = node_times
             results["success"] = True
             results["total_time_sec"] = elapsed
             results["final_report"] = final_state.get("final_report", "")
