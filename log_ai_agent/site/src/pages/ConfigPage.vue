@@ -9,13 +9,23 @@
       <div class="mb-8 rounded-xl border border-[#2d313d] bg-[#252525] p-6">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-xl font-bold text-white">Sigma правила</h2>
-          <button
-            @click="createSigmaFile"
-            class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
-            title="Добавить файл Sigma"
-          >
-            <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
-          </button>
+            <div class="flex items-center gap-2">
+              <button
+                @click="createSigmaFile"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Добавить файл Sigma"
+              >
+                <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
+              </button>
+              <button
+                @click="triggerSigmaUpload"
+                :disabled="sigmaUploading"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Загрузить Sigma файл(ы)"
+              >
+                <img src="/upload_icon.svg" alt="upload" class="w-4 h-4" />
+              </button>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -74,13 +84,23 @@
       <div class="rounded-xl border border-[#2d313d] bg-[#252525] p-6">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-xl font-bold text-white">Yara правила</h2>
-          <button
-            @click="createYaraFile"
-            class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
-            title="Добавить файл Yara"
-          >
-            <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
-          </button>
+            <div class="flex items-center gap-2">
+              <button
+                @click="createYaraFile"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Добавить файл Yara"
+              >
+                <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
+              </button>
+              <button
+                @click="triggerYaraUpload"
+                :disabled="yaraUploading"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Загрузить Yara файл(ы)"
+              >
+                <img src="/upload_icon.svg" alt="upload" class="w-4 h-4" />
+              </button>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -239,6 +259,9 @@
         </div>
       </div>
     </div>
+    <!-- hidden file inputs for uploads -->
+    <input ref="sigmaUploadInput" type="file" class="hidden" multiple accept=".yml,.yaml" @change="handleSigmaFiles" />
+    <input ref="yaraUploadInput" type="file" class="hidden" multiple accept=".yar,.yara" @change="handleYaraFiles" />
   </div>
 </template>
 
@@ -260,6 +283,89 @@ const selectedYaraFile = ref('')
 const yaraEditorContent = ref('')
 const yaraSaving = ref(false)
 const yaraDeleting = ref(false)
+
+// Upload helpers
+const sigmaUploadInput = ref(null)
+const yaraUploadInput = ref(null)
+const sigmaUploading = ref(false)
+const yaraUploading = ref(false)
+
+const readFileContent = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+}
+
+const triggerSigmaUpload = () => {
+  sigmaUploadInput.value && sigmaUploadInput.value.click()
+}
+
+const triggerYaraUpload = () => {
+  yaraUploadInput.value && yaraUploadInput.value.click()
+}
+
+const handleSigmaFiles = async (event) => {
+  const files = Array.from(event.target.files || [])
+  if (!files.length) return
+  sigmaUploading.value = true
+  try {
+    for (const file of files) {
+      const content = await readFileContent(file)
+      const filename = file.name
+      try {
+        const createRes = await configRules.createSigmaFile(filename)
+        const createdName = createRes?.data?.filename || filename
+        await configRules.saveSigmaFile(createdName, content)
+      } catch (err) {
+        // Если создание не удалось (файл, возможно, уже есть) — пробуем просто сохранить
+        try {
+          await configRules.saveSigmaFile(filename, content)
+        } catch (saveErr) {
+          console.error('Ошибка загрузки Sigma файла:', saveErr)
+          appStore.addNotification(saveErr?.response?.data?.detail || `Ошибка загрузки ${filename}`, 'error')
+        }
+      }
+    }
+    await loadSigmaFiles()
+    appStore.addNotification('Файлы Sigma загружены', 'success')
+  } finally {
+    sigmaUploading.value = false
+    // очистим input чтобы при выборе тех же файлов событие сработало
+    if (sigmaUploadInput.value) sigmaUploadInput.value.value = null
+  }
+}
+
+const handleYaraFiles = async (event) => {
+  const files = Array.from(event.target.files || [])
+  if (!files.length) return
+  yaraUploading.value = true
+  try {
+    for (const file of files) {
+      const content = await readFileContent(file)
+      const filename = file.name
+      try {
+        const createRes = await configRules.createYaraFile(filename)
+        const createdName = createRes?.data?.filename || filename
+        await configRules.saveYaraFile(createdName, content)
+      } catch (err) {
+        try {
+          await configRules.saveYaraFile(filename, content)
+        } catch (saveErr) {
+          console.error('Ошибка загрузки Yara файла:', saveErr)
+          appStore.addNotification(saveErr?.response?.data?.detail || `Ошибка загрузки ${filename}`, 'error')
+        }
+      }
+    }
+    await loadYaraFiles()
+    appStore.addNotification('Файлы Yara загружены', 'success')
+  } finally {
+    yaraUploading.value = false
+    if (yaraUploadInput.value) yaraUploadInput.value.value = null
+  }
+}
 
 // Модальное окно для создания файла
 const showCreateFileModal = ref(false)
