@@ -1576,14 +1576,15 @@ async def reject_pending_yara_rule(request: RejectYaraRuleRequest, user_id: int 
             if pending.status != "pending":
                 raise HTTPException(status_code=409, detail="Правило уже обработано")
 
+            rule_name = pending.rule_name
             user_data = commands.get_user_by_id(user_id) if user_id else None
             login = user_data["login"] if user_data else f"id={user_id}"
-            logger.info(f"User '{login}' rejected YARA rule: {pending.rule_name}")
+            logger.info(f"User '{login}' rejected YARA rule: {rule_name}")
 
             pending.status = "rejected"
             session.commit()
 
-        logger.info(f"YARA rule '{pending.rule_name}' rejected by user")
+        logger.info(f"YARA rule '{rule_name}' rejected by user")
         return {"success": True, "message": "Правило отклонено"}
     except HTTPException:
         raise
