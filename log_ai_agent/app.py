@@ -1782,6 +1782,17 @@ async def get_reports_history(
 ):
     """Получение истории отчетов с фильтрацией и пагинацией"""
     try:
+        # helper: parse ISO string (possibly with Z) to naive UTC datetime
+        def _parse_to_naive_utc(s: str):
+            if not s:
+                return None
+            # support Z suffix
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                # convert to UTC and drop tzinfo to match DB naive timestamps
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
         async with get_async_session() as session:
             # Build base query
             base = (
@@ -1800,9 +1811,13 @@ async def get_reports_history(
 
             filters = []
             if date_from:
-                filters.append(Report.created_at >= datetime.fromisoformat(date_from.replace("Z", "+00:00")))
+                parsed_from = _parse_to_naive_utc(date_from)
+                if parsed_from:
+                    filters.append(Report.created_at >= parsed_from)
             if date_to:
-                filters.append(Report.created_at <= datetime.fromisoformat(date_to.replace("Z", "+00:00")))
+                parsed_to = _parse_to_naive_utc(date_to)
+                if parsed_to:
+                    filters.append(Report.created_at <= parsed_to)
             if severity_level_id:
                 filters.append(Report.severity_level_id == severity_level_id)
             if threat_type_id:
