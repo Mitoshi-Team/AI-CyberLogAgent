@@ -54,3 +54,4 @@ data/
 /log_ai_agent/ai_agent_v2/knowledge_base/enterprise-attack.json
 /.opencode/
 /.sisyphus/
+.vscode/

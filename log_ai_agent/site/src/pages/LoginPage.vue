@@ -22,7 +22,7 @@
       <header class="brand-block">
         <img
           class="brand-logo"
-          src="/wavescan_logo.svg"
+          src="/wavescan_new_logo.svg"
           alt="Wavescan"
           width="380"
           height="186"

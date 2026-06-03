@@ -34,7 +34,11 @@ RUN go install github.com/mingrammer/flog@latest
 
 ENV PATH="/root/go/bin:${PATH}"
 
-RUN pwsh -NoLogo -NoProfile -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module -Name powershell-yaml -Scope AllUsers -Force -AllowClobber; Install-Module -Name Invoke-AtomicRedTeam -Scope AllUsers -Force -AllowClobber" \
+ENV PSModulePath="/opt/ps-modules:/root/.local/share/powershell/Modules:/usr/local/share/powershell/Modules:/usr/share/powershell/Modules"
+
+RUN mkdir -p /opt/ps-modules \
+    && git clone --depth 1 https://github.com/cloudbase/powershell-yaml.git /opt/ps-modules/powershell-yaml \
+    && git clone --depth 1 https://github.com/redcanaryco/invoke-atomicredteam.git /opt/ps-modules/Invoke-AtomicRedTeam \
     && git clone --depth 1 https://github.com/redcanaryco/atomic-red-team.git /opt/atomic-red-team \
     && pwsh -NoLogo -NoProfile -Command "Import-Module Invoke-AtomicRedTeam -Force; Get-Command Invoke-AtomicTest | Out-Null"
 

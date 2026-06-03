@@ -1,21 +1,19 @@
 <template>
-  <div class="yara-rule-suggestion card mt-3">
-    <div class="flex items-center gap-2 mb-2">
-      <span class="badge badge-info">🆕 YARA-правило</span>
-      <span class="text-sm text-dark-400">
-        {{ rule.technique_id }} {{ rule.technique_name }}
-      </span>
+  <div class="yara-rule-suggestion mt-3 bg-[#252525]">
+    <div class="flex items-center gap-2 mb-2 text-sm text-dark-300">
+      <span class="font-medium text-dark-100">Предложенное YARA-правило</span>
+      <span class="text-[#9CA3AF]">{{ rule.technique_id }} {{ rule.technique_name }}</span>
     </div>
 
-    <div class="text-xs text-dark-400 mb-1 font-mono">
+    <div class="text-xs text-dark-400 mb-2 font-mono">
       {{ rule.rule_name }}
     </div>
 
-    <pre class="bg-dark-950/80 border border-dark-800 rounded-lg p-3 overflow-x-auto text-xs font-mono text-dark-200 leading-relaxed max-h-48 overflow-y-auto mb-3"><code>{{ rule.rule_content }}</code></pre>
+    <pre class="yara-rule-content mb-3 bg-[#1A1A1A]"><code>{{ rule.rule_content }}</code></pre>
 
     <div v-if="status === 'pending'" class="flex gap-2">
       <button
-        class="btn btn-sm btn-primary flex items-center gap-1"
+        class="btn btn-sm flex items-center gap-1 bg-[#6C70F3]"
         :disabled="loading"
         @click="accept"
       >
@@ -26,7 +24,7 @@
         Принять
       </button>
       <button
-        class="btn btn-sm btn-secondary flex items-center gap-1"
+        class="btn btn-sm flex items-center gap-1 bg-[#414141]"
         :disabled="loading"
         @click="reject"
       >
@@ -37,7 +35,7 @@
       </button>
     </div>
 
-    <div v-else-if="status === 'accepted'" class="flex items-center gap-2 text-sm text-green-400">
+    <div v-else-if="status === 'accepted'" class="flex items-center gap-2 text-sm text-dark-300">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
       </svg>
@@ -51,7 +49,7 @@
       Правило отклонено
     </div>
 
-    <div v-if="errorMsg" class="mt-2 text-xs text-red-400">{{ errorMsg }}</div>
+    <div v-if="errorMsg" class="mt-2 text-xs text-dark-300">{{ errorMsg }}</div>
   </div>
 </template>
 
@@ -107,3 +105,32 @@ async function reject() {
   }
 }
 </script>
+
+<style scoped>
+.yara-rule-suggestion {
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: none;
+}
+
+.yara-rule-content {
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: rgb(229 231 235);
+  line-height: 1.625;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.yara-rule-suggestion button {
+  box-shadow: none;
+}
+
+.yara-rule-suggestion button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style>

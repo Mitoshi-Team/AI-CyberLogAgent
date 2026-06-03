@@ -638,6 +638,8 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             return
 
         events_found = analysis_result.get("events_found", 0)
+        generated_yara_rules = analysis_result.get("generated_yara_rules", [])
+
         if events_found <= 0:
             logger.info(
                 "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
@@ -700,6 +702,20 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             user_ids = result.scalars().all()
             messages_to_add = [Message(user_id=uid, role="agent", content=chat_message) for uid in user_ids]
             session.add_all(messages_to_add)
+
+            if generated_yara_rules:
+                for rule_data in generated_yara_rules:
+                    session.add(
+                        PendingYaraRule(
+                            rule_name=rule_data.get("rule_name", ""),
+                            rule_content=rule_data.get("rule_content", ""),
+                            technique_id=rule_data.get("technique_id", ""),
+                            technique_name=rule_data.get("technique_name", ""),
+                            report_id=report_id,
+                            status="pending",
+                        )
+                    )
+
             await session.commit()
 
             await _try_insert_agent_log(
@@ -726,6 +742,14 @@ async def _process_kafka_log_batch(payload: dict) -> None:
                     response_text=chat_message,
                     mode="auto_report",
                 )
+
+            if generated_yara_rules:
+                for uid in user_ids:
+                    await _broadcast_yara_rules_suggestion(
+                        user_id=uid,
+                        report_id=report_id,
+                        rules=generated_yara_rules,
+                    )
 
         await _broadcast_incident_event(
             title=f"Инцидент из Kafka потока ({source_label})",
@@ -1577,14 +1601,15 @@ async def reject_pending_yara_rule(request: RejectYaraRuleRequest, user_id: int 
             if pending.status != "pending":
                 raise HTTPException(status_code=409, detail="Правило уже обработано")
 
+            rule_name = pending.rule_name
             user_data = commands.get_user_by_id(user_id) if user_id else None
             login = user_data["login"] if user_data else f"id={user_id}"
-            logger.info(f"User '{login}' rejected YARA rule: {pending.rule_name}")
+            logger.info(f"User '{login}' rejected YARA rule: {rule_name}")
 
             pending.status = "rejected"
             session.commit()
 
-        logger.info(f"YARA rule '{pending.rule_name}' rejected by user")
+        logger.info(f"YARA rule '{rule_name}' rejected by user")
         return {"success": True, "message": "Правило отклонено"}
     except HTTPException:
         raise
@@ -1782,6 +1807,17 @@ async def get_reports_history(
 ):
     """Получение истории отчетов с фильтрацией и пагинацией"""
     try:
+        # helper: parse ISO string (possibly with Z) to naive UTC datetime
+        def _parse_to_naive_utc(s: str):
+            if not s:
+                return None
+            # support Z suffix
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                # convert to UTC and drop tzinfo to match DB naive timestamps
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
         async with get_async_session() as session:
             # Build base query
             base = (
@@ -1803,9 +1839,13 @@ async def get_reports_history(
 
             filters = []
             if date_from:
-                filters.append(Report.created_at >= datetime.fromisoformat(date_from.replace("Z", "+00:00")))
+                parsed_from = _parse_to_naive_utc(date_from)
+                if parsed_from:
+                    filters.append(Report.created_at >= parsed_from)
             if date_to:
-                filters.append(Report.created_at <= datetime.fromisoformat(date_to.replace("Z", "+00:00")))
+                parsed_to = _parse_to_naive_utc(date_to)
+                if parsed_to:
+                    filters.append(Report.created_at <= parsed_to)
             if severity_level_id:
                 filters.append(Report.severity_level_id == severity_level_id)
             if threat_type_id:

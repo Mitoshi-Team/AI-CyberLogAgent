@@ -55,10 +55,7 @@ def make_group(
         log_lines = ["line one", "line two"]
     return EventGroup(
         group_id=group_id,
-        events=[
-            {"log_line": line, "description": f"desc: {line}"}
-            for line in log_lines
-        ],
+        log_lines=log_lines,
     )
 
 

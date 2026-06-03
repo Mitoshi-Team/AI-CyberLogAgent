@@ -14,7 +14,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 SEPARATOR = "-----------------\n"
-ENTRY_FIELDS = ["timestamp_start", "timestamp_end", "RAG", "YARA", "SIGMA"]
+ENTRY_FIELDS = ["timestamp_start", "timestamp_end", "AGENT1", "RAG", "YARA", "SIGMA"]
 
 
 def _now_iso() -> str:
@@ -37,6 +37,14 @@ def _extract_timestamp_range(stages: dict[str, Any]) -> tuple[str, str]:
     start = min(starts) if starts else "N/A"
     end = max(ends) if ends else "N/A"
     return start, end
+
+
+def _extract_agent1_events(stages: dict[str, Any]) -> list[str]:
+    """Extract mini-report from Agent 1 (primary analysis summary)."""
+    mini_report = stages.get("agent1", {}).get("mini_report", "")
+    if mini_report:
+        return [mini_report.strip()]
+    return []
 
 
 def _extract_rag_techniques(stages: dict[str, Any]) -> list[str]:
@@ -68,6 +76,7 @@ def log_incident(filepath: str | Path, stages: dict[str, Any]) -> None:
     path = Path(filepath)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    agent1 = _extract_agent1_events(stages)
     rag = _extract_rag_techniques(stages)
     yara = _extract_yara_rules(stages)
     sigma = _extract_sigma_rules(stages)
@@ -79,6 +88,7 @@ def log_incident(filepath: str | Path, stages: dict[str, Any]) -> None:
         SEPARATOR,
         f"timestamp_start: {start}",
         f"timestamp_end: {end}",
+        f"AGENT1: {_format_list(agent1)}",
         f"RAG: {_format_list(rag)}",
         f"YARA: {_format_list(yara)}",
         f"SIGMA: {_format_list(sigma)}",
@@ -89,6 +99,6 @@ def log_incident(filepath: str | Path, stages: dict[str, Any]) -> None:
     try:
         with path.open("a", encoding="utf-8") as f:
             f.write(text)
-        logger.info(f"Metrics: logged incident (RAG={len(rag)}, YARA={len(yara)}, SIGMA={len(sigma)})")
+        logger.info(f"Metrics: logged incident (AGENT1={len(agent1)}, RAG={len(rag)}, YARA={len(yara)}, SIGMA={len(sigma)})")
     except OSError as e:
         logger.warning(f"Metrics: failed to write {path}: {e}")

@@ -208,12 +208,9 @@ class YaraGenerator:
 
         # Collect log lines from the group
         log_lines: list[str] = []
-        if group and group.get("events"):
-            for event in group["events"]:
-                line = event.get("log_line", "") or event.get("description", "")
-                if line:
-                    log_lines.append(line)
-        elif parsed_logs:
+        if group:
+            log_lines = group.get("log_lines", [])
+        if not log_lines and parsed_logs:
             for pl in parsed_logs:
                 raw = pl.get("raw", "")
                 if raw:
