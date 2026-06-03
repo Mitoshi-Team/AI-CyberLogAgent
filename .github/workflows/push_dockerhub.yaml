@@ -2,30 +2,31 @@ name: Build and Push to Docker Hub
 
 on:
   push:
-    branches: [main]
+    tags:
+      - '*'
 
 jobs:
   build_push:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate Semantic Version
+      - name: Extract Version From Git Tag
         id: version
         run: |
-          git fetch --tags
-          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "v13.0.0")
-          echo "Latest tag: $LATEST_TAG"
-          VERSION=${LATEST_TAG#v}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          PATCH=${PATCH:-0}
-          PATCH=$((PATCH + 1))
-          echo "new_tag=$MAJOR.$MINOR.$PATCH" >> "$GITHUB_OUTPUT"
+          TAG=${GITHUB_REF_NAME}
+          VERSION=$TAG
+
+          echo "Git tag: $TAG"
+          echo "Version: $VERSION"
+
+          echo "new_tag=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -36,6 +37,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # ---------------- BACKEND ----------------
       - name: Build and push wavescan-backend
         uses: docker/build-push-action@v5
         with:
@@ -46,6 +48,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-backend:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-backend:${{ steps.version.outputs.new_tag }}
 
+      # ---------------- FRONTEND ----------------
       - name: Build and push wavescan-frontend
         uses: docker/build-push-action@v5
         with:
@@ -58,6 +61,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
+      # ---------------- VECTOR ----------------
       - name: Build and push wavescan-vector
         uses: docker/build-push-action@v5
         with:
@@ -70,6 +74,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
+      # ---------------- POSTGRES ----------------
       - name: Build and push wavescan-postgres
         uses: docker/build-push-action@v5
         with:
@@ -81,13 +86,3 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/wavescan-postgres:${{ steps.version.outputs.new_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=min
-
-      - name: Push new Git tag via API
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api repos/${{ github.repository }}/git/refs \
-            -X POST \
-            -f ref="refs/tags/v${{ steps.version.outputs.new_tag }}" \
-            -f sha="${{ github.sha }}"
