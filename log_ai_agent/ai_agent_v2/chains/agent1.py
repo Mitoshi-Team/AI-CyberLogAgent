@@ -174,11 +174,9 @@ def parse_groups_from_response(response: str) -> list[EventGroup]:
     for group in groups_data:
         event_group: EventGroup = {
             "group_id": group.get("group_id", f"g{len(groups) + 1}"),
-            "events": group.get("events", []),
+            "log_lines": group.get("log_lines", []),
             "first_seen": group.get("first_seen", ""),
             "last_seen": group.get("last_seen", ""),
-            "keywords": group.get("keywords", group.get("keywords_ru", [])),
-            "description": group.get("description", ""),
         }
         groups.append(event_group)
 
@@ -199,12 +197,12 @@ def parse_events_from_response(response: str) -> list[SuspiciousEvent]:
     events = []
     groups = parse_groups_from_response(response)
     for group in groups:
-        for event in group.get("events", []):
+        for log_line in group.get("log_lines", []):
             events.append(
                 SuspiciousEvent(
-                    description=event.get("description", ""),
-                    timestamp=event.get("timestamp"),
-                    log_line=event.get("log_line", ""),
+                    description=log_line,
+                    timestamp=None,
+                    log_line=log_line,
                 )
             )
     return events
@@ -269,7 +267,7 @@ async def analyze_logs_primary(
     mini_report = extract_mini_report(result)
     groups = parse_groups_from_response(result)
 
-    events_found = sum(len(g.get("events", [])) for g in groups)
+    events_found = sum(len(g.get("log_lines", [])) for g in groups)
 
     if not groups:
         logger.warning(

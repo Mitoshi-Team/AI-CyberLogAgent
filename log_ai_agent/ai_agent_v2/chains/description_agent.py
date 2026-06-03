@@ -18,51 +18,77 @@ from ..models_types import EventGroup, GroupDescription
 
 logger = logging.getLogger(__name__)
 
-DESCRIPTION_AGENT_SYSTEM_PROMPT = """Ты — эксперт по анализу событий безопасности.
-Твоя задача — генерировать связные описания для групп подозрительных событий.
+DESCRIPTION_AGENT_SYSTEM_PROMPT = """Ты — эксперт по анализу событий безопасности с фокусом на техники MITRE ATT&CK.
 
-Для каждой группы создай ОДНО описание, которое:
-- Объединяет все события в группе
-- Указывает характер угрозы (брутфорс, SQL-инъекция и т.д.)
-- Включает ключевые индикаторы (IP, пользователь, путь и т.д.)
-- Сохраняет временные рамки
+Твоя задача — генерировать точные, детализированные описания для групп подозрительных событий.
 
-Примеры:
-- "Серия из 15 неудачных попыток SSH-аутентификации для пользователя admin с IP 89.23.74.19"
-- "Подозрительные POST-запросы к /admin/login с паттернами SQL-инъекции"
-- "Множественные попытки доступа к конфиденциальным файлам с IP 192.168.1.50"
+ВАЖНО: Твои описания должны помогать идентифицировать следующие категории атак:
 
-Будь конкретным и информативным. Описание должно помочь в поиске MITRE ATT&CK."""
+1. ВЫПОЛНЕНИЕ КОДА (Execution):
+   - PowerShell / cmd / bash / wmic / mshta
+   - Запуск скриптов, скачивание и выполнение
+   - Использование WMI, планировщика задач
 
+2. ПЕРСИСТЕНЦИЯ (Persistence):
+   - Создание служб (sc.exe, new-service)
+   - Изменение автозагрузки (Run, RunOnce, Startup folder)
+   - Планировщик задач (schtasks)
 
-DESCRIPTION_AGENT_USER_PROMPT = """Сгенерируй связное описание и ключевые слова для группы событий.
+3. ПОВЫШЕНИЕ ПРИВИЛЕГИЙ (Privilege Escalation):
+   - BypassUAC, использование уязвимостей
+   - Перехват токенов, sudo
+
+4. ОБХОД ЗАЩИТЫ (Defense Evasion):
+   - Отключение AV/EDR, изменение политик
+   - Инжекция в процессы (CreateRemoteThread, QueueUserAPC)
+   - Обфускация, исполнение из памяти
+
+5. ДОСТУП К УЧЁТНЫМ ДАННЫМ (Credential Access):
+   - Дамп LSASS (MiniDump, procdump)
+   - Выгрузка SAM/ntds.dit
+   - Mimikatz, ключевые API вызовы
+
+ЧЕГО ИЗБЕГАТЬ:
+- Общих фраз: "подозрительная активность", "аномальное поведение"
+- Сведения всего к "сканированию", "разведке" или "DoS"
+- Если в логах есть конкретные команды или API-вызовы — описывай ИХ, а не гипотетические угрозы
+
+Примеры КАЧЕСТВЕННЫХ описаний:
+- "Обнаружено создание службы 'UpdateService' через sc.exe с последующим запуском PowerShell с закодированной командой"
+- "Зафиксирована модификация реестра в HKCU\Software\Microsoft\Windows\CurrentVersion\Run для персистенции"
+- "Выявлен дамп LSASS с помощью comsvcs.dll: rundll32.exe C:\Windows\System32\comsvcs.dll MiniDump <PID> lsass.dmp"
+- "Обнаружена загрузка и выполнение PowerShell-скрипта из внешнего домена через IEX (New-Object Net.WebClient).DownloadString()"
+- "Зафиксирован процесс инжекции в svchost.exe через OpenProcess → VirtualAllocEx → CreateRemoteThread"
+"""
+
+DESCRIPTION_AGENT_USER_PROMPT = """Сгенерируй связное описание и ключевые слова для группы подозрительных строк логов.
 
 ГРУППА:
 - ID: {group_id}
 - Время: {first_seen} - {last_seen}
-- Событий в группе: {events_count}
+- Строк логов в группе: {log_lines_count}
 
-СОБЫТИЯ:
-{events}
+СТРОКИ ЛОГОВ:
+{log_lines}
 
 ЗАДАЧА:
-Создай одно связное описание и список ключевых слов для RAG-поиска.
+Создай одно связное описание и список ключевых слов (ТОЛЬКО НА АНГЛИЙСКОМ) для RAG-поиска в MITRE ATT&CK.
 
-ОПИСАНИЕ:
-- Объедини все события в группе
-- Включи характер активности (брутфорс, инъекция и т.д.)
-- Добавь ключевые индикаторы (IP, пользователь, путь и т.д.)
-- Укажи масштаб и временные рамки
-- Стиль: "Обнаружено...", "Зафиксировано..." (минимум 100 символов)
+ОПИСАНИЕ (мин. 150 символов):
+- Объедини все строки логов в единое описание атаки
+- Укажи конкретные команды, пути, процессы, аргументы
+- Отрази технику из MITRE ATT&CK (если очевидно: PowerShell → T1059.001, создание службы → T1543.003)
+- Не пиши просто "подозрительная активность" — детализируй
+- Стиль: "Обнаружено...", "Зафиксировано..."
 
-КЛЮЧЕВЫЕ СЛОВА:
-- 5-10 терминов для поиска в MITRE ATT&CK
-- Включи: тип атаки, инструменты, техники, индикаторы, команды, имена файлов/процессов
-- На русском языке
+КЛЮЧЕВЫЕ СЛОВА (ТОЛЬКО НА АНГЛИЙСКОМ):
+- 5-10 терминов
+- Включи: MITRE technique ID (если есть), tactic, процессы, API-вызовы, команды
+- Пример: ["powershell", "download cradle", "T1059.001", "Execution", "IEX", "New-Object Net.WebClient"]
 
 ФОРМАТ ОТВЕТА:
 Верни ТОЛЬКО JSON:
-{{"description": "твоё подробное описание здесь (мин. 100 символов)", "keywords": ["слово1", "слово2", ...], "first_seen": "{first_seen}", "last_seen": "{last_seen}", "group_id": "{group_id}"}}
+{{"description": "твоё подробное описание здесь (мин. 150 символов)", "keywords": ["keyword1", "keyword2", ...], "first_seen": "{first_seen}", "last_seen": "{last_seen}", "group_id": "{group_id}"}}
 
 НЕ добавляй дополнительный текст."""
 
@@ -163,18 +189,15 @@ async def generate_group_descriptions(
 
     async def process_group(group: EventGroup) -> GroupDescription:
         async with semaphore:
-            events = group.get("events", [])
-            events_text = "\n".join([
-                f"- [{e.get('timestamp', 'N/A')}] {e.get('description', '')}"
-                for e in events
-            ])
+            log_lines = group.get("log_lines", [])
+            log_lines_text = "\n".join(log_lines)
 
             result = await chain.ainvoke({
                 "group_id": group.get("group_id", ""),
                 "first_seen": group.get("first_seen", ""),
                 "last_seen": group.get("last_seen", ""),
-                "events_count": len(events),
-                "events": events_text,
+                "log_lines_count": len(log_lines),
+                "log_lines": log_lines_text,
             })
 
             return parse_description_response(

@@ -45,10 +45,7 @@ async def test_generate_group_descriptions_basic():
     groups = [
         EventGroup(
             group_id="g1",
-            events=[
-                {"description": "Auth failed", "timestamp": "2025-12-17 13:00:00", "log_line": "line1"},
-                {"description": "Auth failed", "timestamp": "2025-12-17 13:01:00", "log_line": "line2"},
-            ],
+            log_lines=["line1", "line2"],
             first_seen="2025-12-17 13:00:00",
             last_seen="2025-12-17 13:01:00",
         )
@@ -81,17 +78,13 @@ async def test_generate_group_descriptions_multiple():
     groups = [
         EventGroup(
             group_id="g1",
-            events=[
-                {"description": "SSH auth failed", "timestamp": "2025-12-17 13:00:00", "log_line": "line1"},
-            ],
+            log_lines=["line1"],
             first_seen="2025-12-17 13:00:00",
             last_seen="2025-12-17 13:00:00",
         ),
         EventGroup(
             group_id="g2",
-            events=[
-                {"description": "SQL injection attempt", "timestamp": "2025-12-17 13:05:00", "log_line": "line2"},
-            ],
+            log_lines=["line2"],
             first_seen="2025-12-17 13:05:00",
             last_seen="2025-12-17 13:05:00",
         ),

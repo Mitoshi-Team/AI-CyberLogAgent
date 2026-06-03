@@ -19,18 +19,16 @@ class SuspiciousEvent(TypedDict, total=False):
 
 
 class EventGroup(TypedDict, total=False):
-    """Group of related events from Agent1.
+    """Group of related raw log lines from Agent1.
 
-    Agent1 groups events by possible connection (user, attack_pattern etc.),
-    but NOT by timestamp. One event can be in multiple groups.
+    Agent1 groups raw log lines by possible connection (user, attack_pattern etc.),
+    but NOT by timestamp. One log line can be in multiple groups.
     """
 
     group_id: str
-    events: list[dict]
+    log_lines: list[str]
     first_seen: str
     last_seen: str
-    keywords: list[str]
-    description: str
 
 
 class GroupDescription(TypedDict, total=False):
