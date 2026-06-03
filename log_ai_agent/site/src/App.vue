@@ -44,6 +44,18 @@ const handleWebsocketMessage = (data) => {
     return
   }
 
+  if (data.type === 'yara_rules_suggestion' && data.user_id === appStore.currentUser?.id) {
+    const ruleCount = data.rules?.length || 0
+    appStore.addNotification(
+      `Сгенерировано ${ruleCount} нов${ruleCount === 1 ? 'ое' : 'ых'} YARA-правил${ruleCount === 1 ? 'о' : 'а'} для проверки в чате`,
+      'info',
+      8000,
+      true,
+    )
+    appStore.notifyChatUpdated(data)
+    return
+  }
+
   if (data.type === 'chat_response' && data.user_id === appStore.currentUser?.id) {
     appStore.notifyChatUpdated(data)
 

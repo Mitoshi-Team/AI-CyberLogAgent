@@ -9,17 +9,27 @@
       <div class="mb-8 rounded-xl border border-[#2d313d] bg-[#252525] p-6">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-xl font-bold text-white">Sigma правила</h2>
-          <button
-            @click="createSigmaFile"
-            class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
-            title="Добавить файл Sigma"
-          >
-            <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
-          </button>
+            <div class="flex items-center gap-2">
+              <button
+                @click="createSigmaFile"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Добавить файл Sigma"
+              >
+                <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
+              </button>
+              <button
+                @click="triggerSigmaUpload"
+                :disabled="sigmaUploading"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Загрузить Sigma файл(ы)"
+              >
+                <img src="/upload_icon.svg" alt="upload" class="w-4 h-4" />
+              </button>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div class="rounded-lg border border-[#2d313d] bg-[#242424] p-3">
+          <div class="rounded-lg bg-[#222222] p-3">
             <p class="text-sm font-medium text-[#949daf] mb-3">Каталог файлов</p>
             <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1">
               <button
@@ -28,8 +38,8 @@
                 @click="selectSigmaFile(fileName)"
                 class="w-full text-left px-3 py-2 rounded-lg border transition-colors"
                 :class="selectedSigmaFile === fileName
-                  ? 'bg-[#2f2f2f] border-[#4a5070] text-white'
-                  : 'bg-[#252525] border-[#2d313d] text-[#c6cde0] hover:bg-[#2f2f2f]'"
+                  ? 'bg-[#2A2A2A] border-[#4a5070] text-white'
+                  : 'bg-[#202020] border-[#2d313d] text-[#c6cde0] hover:bg-[#262626]'"
               >
                 {{ fileName }}
               </button>
@@ -37,7 +47,7 @@
             </div>
           </div>
 
-          <div class="rounded-lg border border-[#2d313d] bg-[#242424] p-3">
+          <div class="rounded-lg bg-[#222222] p-3">
             <div class="flex items-center justify-between mb-3">
               <p class="text-sm font-medium text-[#949daf]">
                 Редактор: <span class="text-[#d8deec]">{{ selectedSigmaFile || '—' }}</span>
@@ -74,27 +84,189 @@
       <div class="rounded-xl border border-[#2d313d] bg-[#252525] p-6">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-xl font-bold text-white">Yara правила</h2>
-          <button
-            @click="saveYaraFile"
-            :disabled="yaraSaving"
-            class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            title="Сохранить Yara файл"
-          >
-            <img src="/save_icon.svg" alt="save" class="w-4 h-4" />
-          </button>
+            <div class="flex items-center gap-2">
+              <button
+                @click="createYaraFile"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Добавить файл Yara"
+              >
+                <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
+              </button>
+              <button
+                @click="triggerYaraUpload"
+                :disabled="yaraUploading"
+                class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
+                title="Загрузить Yara файл(ы)"
+              >
+                <img src="/upload_icon.svg" alt="upload" class="w-4 h-4" />
+              </button>
+            </div>
         </div>
-        <textarea
-          v-model="yaraEditorContent"
-          class="w-full h-[420px] resize-none rounded-lg border border-[#2d313d] bg-[#1A1A1A] p-3 text-[#d6dceb] font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent"
-          spellcheck="false"
-        />
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div class="rounded-lg bg-[#222222] p-3">
+            <p class="text-sm font-medium text-[#949daf] mb-3">Каталог файлов</p>
+            <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+              <button
+                v-for="fileName in yaraFiles"
+                :key="fileName"
+                @click="selectYaraFile(fileName)"
+                class="w-full text-left px-3 py-2 rounded-lg border transition-colors"
+                :class="selectedYaraFile === fileName
+                  ? 'bg-[#2A2A2A] border-[#4a5070] text-white'
+                  : 'bg-[#202020] border-[#2d313d] text-[#c6cde0] hover:bg-[#262626]'"
+              >
+                {{ fileName }}
+              </button>
+              <p v-if="!yaraFiles.length" class="text-sm text-[#7f8799]">Файлы не найдены</p>
+            </div>
+          </div>
+
+          <div class="rounded-lg bg-[#222222] p-3">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-sm font-medium text-[#949daf]">
+                Редактор: <span class="text-[#d8deec]">{{ selectedYaraFile || '—' }}</span>
+              </p>
+              <div class="flex items-center gap-2">
+                <button
+                  @click="deleteYaraFile"
+                  :disabled="!selectedYaraFile || yaraSaving || yaraDeleting"
+                  class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  title="Удалить Yara файл"
+                >
+                  <img src="/trash_icon.svg" alt="delete" class="w-4 h-4" />
+                </button>
+                <button
+                  @click="saveYaraFile"
+                  :disabled="!selectedYaraFile || yaraSaving || yaraDeleting"
+                  class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  title="Сохранить Yara файл"
+                >
+                  <img src="/save_icon.svg" alt="save" class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <textarea
+              v-model="yaraEditorContent"
+              class="w-full h-[420px] resize-none rounded-lg border border-[#2d313d] bg-[#1A1A1A] p-3 text-[#d6dceb] font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent"
+              spellcheck="false"
+              placeholder="Выберите файл Yara для редактирования"
+            />
+          </div>
+        </div>
       </div>
     </div>
+
+    <!-- Модальное окно создания файла -->
+    <div
+      v-if="showCreateFileModal"
+      class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      @click.self="closeCreateFileModal"
+    >
+      <div class="bg-[#252525] rounded-xl max-w-md w-full border border-[#3C3C3C]">
+        <!-- Заголовок модального окна -->
+        <div class="bg-[#252525] rounded-xl px-6 py-4 flex items-center justify-between">
+          <h2 class="text-xl font-bold text-white">Создание файла</h2>
+          <button
+            @click="closeCreateFileModal"
+            class="hover:text-white transition-colors p-1"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Содержимое модального окна -->
+        <div class="p-6">
+          <p class="mb-4 text-sm text-[#c6cde0]">
+            {{ createFileType === 'sigma' ? 'Введите название файла Sigma:' : 'Введите название файла Yara:' }}
+          </p>
+          <input
+            v-model="createFileInput"
+            type="text"
+            class="w-full px-3 py-2 rounded-lg border bg-[#1A1A1A] text-[#f0f2f9] focus:outline-none focus:ring-2 focus:border-transparent mb-2"
+            :class="createFileNameError ? 'border-[#b94a4a] focus:ring-[#b94a4a]' : 'border-[#3a3d46] focus:ring-[#7971F0]'"
+            :placeholder="createFileType === 'sigma' ? 'sigma_rule' : 'yara_rule'"
+            @keydown.enter="confirmCreateFile"
+          />
+          <p v-if="createFileNameError" class="mb-4 text-sm text-[#ff6b6b]">
+            {{ createFileNameError }}
+          </p>
+          <div v-else class="mb-4"></div>
+          <div class="flex gap-3 justify-end">
+            <button
+              @click="closeCreateFileModal"
+              class="px-4 py-2 bg-[#343434] hover:bg-[#444444] rounded-lg transition-colors text-[#c6cde0]"
+            >
+              Отмена
+            </button>
+            <button
+              @click="confirmCreateFile"
+              :disabled="!createFileInput.trim() || createFileLoading || !!createFileNameError"
+              class="px-4 py-2 bg-[#6675ff] hover:bg-[#7383ff] disabled:bg-[#4a4a4a] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2 justify-center"
+            >
+              <span v-if="createFileLoading" class="inline-block w-4 h-4 border-2 border-[#e0e0e0] border-t-transparent rounded-full animate-spin"></span>
+              {{ createFileLoading ? 'Создание...' : 'Создать' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно подтверждения удаления файла -->
+    <div
+      v-if="showDeleteFileModal"
+      class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      @click.self="closeDeleteFileModal"
+    >
+      <div class="bg-[#252525] rounded-xl max-w-md w-full border border-[#3C3C3C]">
+        <!-- Заголовок модального окна -->
+        <div class="bg-[#252525] rounded-xl px-6 py-4 flex items-center justify-between">
+          <h2 class="text-xl font-bold text-white">Подтверждение</h2>
+          <button
+            @click="closeDeleteFileModal"
+            class="hover:text-white transition-colors p-1"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Содержимое модального окна -->
+        <div class="p-6">
+          <p class="mb-6 text-[#c6cde0]">
+            Вы уверены, что хотите удалить файл <span class="font-semibold text-white">{{ deleteFileName }}</span>?
+          </p>
+          <div class="flex gap-3 justify-end">
+            <button
+              @click="closeDeleteFileModal"
+              :disabled="deleteFileLoading"
+              class="px-4 py-2 bg-[#343434] hover:bg-[#444444] disabled:bg-[#343434] disabled:cursor-not-allowed rounded-lg transition-colors text-[#c6cde0]"
+            >
+              Отмена
+            </button>
+            <button
+              @click="confirmDeleteFile"
+              :disabled="deleteFileLoading"
+              class="px-4 py-2 bg-[#9F2727] hover:bg-[#C22D2D] disabled:bg-[#6a1a1a] disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2 justify-center"
+            >
+              <span v-if="deleteFileLoading" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              {{ deleteFileLoading ? 'Удаление...' : 'Удалить' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- hidden file inputs for uploads -->
+    <input ref="sigmaUploadInput" type="file" class="hidden" multiple accept=".yml,.yaml" @change="handleSigmaFiles" />
+    <input ref="yaraUploadInput" type="file" class="hidden" multiple accept=".yar,.yara" @change="handleYaraFiles" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { configRules } from '@/services/api'
 import { useAppStore } from '@/stores/app'
 
@@ -106,8 +278,135 @@ const sigmaEditorContent = ref('')
 const sigmaSaving = ref(false)
 const sigmaDeleting = ref(false)
 
+const yaraFiles = ref([])
+const selectedYaraFile = ref('')
 const yaraEditorContent = ref('')
 const yaraSaving = ref(false)
+const yaraDeleting = ref(false)
+
+// Upload helpers
+const sigmaUploadInput = ref(null)
+const yaraUploadInput = ref(null)
+const sigmaUploading = ref(false)
+const yaraUploading = ref(false)
+
+const readFileContent = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+}
+
+const triggerSigmaUpload = () => {
+  sigmaUploadInput.value && sigmaUploadInput.value.click()
+}
+
+const triggerYaraUpload = () => {
+  yaraUploadInput.value && yaraUploadInput.value.click()
+}
+
+const handleSigmaFiles = async (event) => {
+  const files = Array.from(event.target.files || [])
+  if (!files.length) return
+  sigmaUploading.value = true
+  try {
+    for (const file of files) {
+      const content = await readFileContent(file)
+      const filename = file.name
+      try {
+        const createRes = await configRules.createSigmaFile(filename)
+        const createdName = createRes?.data?.filename || filename
+        await configRules.saveSigmaFile(createdName, content)
+      } catch (err) {
+        // Если создание не удалось (файл, возможно, уже есть) — пробуем просто сохранить
+        try {
+          await configRules.saveSigmaFile(filename, content)
+        } catch (saveErr) {
+          console.error('Ошибка загрузки Sigma файла:', saveErr)
+          appStore.addNotification(saveErr?.response?.data?.detail || `Ошибка загрузки ${filename}`, 'error')
+        }
+      }
+    }
+    await loadSigmaFiles()
+    appStore.addNotification('Файлы Sigma загружены', 'success')
+  } finally {
+    sigmaUploading.value = false
+    // очистим input чтобы при выборе тех же файлов событие сработало
+    if (sigmaUploadInput.value) sigmaUploadInput.value.value = null
+  }
+}
+
+const handleYaraFiles = async (event) => {
+  const files = Array.from(event.target.files || [])
+  if (!files.length) return
+  yaraUploading.value = true
+  try {
+    for (const file of files) {
+      const content = await readFileContent(file)
+      const filename = file.name
+      try {
+        const createRes = await configRules.createYaraFile(filename)
+        const createdName = createRes?.data?.filename || filename
+        await configRules.saveYaraFile(createdName, content)
+      } catch (err) {
+        try {
+          await configRules.saveYaraFile(filename, content)
+        } catch (saveErr) {
+          console.error('Ошибка загрузки Yara файла:', saveErr)
+          appStore.addNotification(saveErr?.response?.data?.detail || `Ошибка загрузки ${filename}`, 'error')
+        }
+      }
+    }
+    await loadYaraFiles()
+    appStore.addNotification('Файлы Yara загружены', 'success')
+  } finally {
+    yaraUploading.value = false
+    if (yaraUploadInput.value) yaraUploadInput.value.value = null
+  }
+}
+
+// Модальное окно для создания файла
+const showCreateFileModal = ref(false)
+const createFileInput = ref('')
+const createFileType = ref('')
+const createFileLoading = ref(false)
+
+const createFileBaseName = computed(() => {
+  const fileName = createFileInput.value.trim()
+  return fileName.replace(/\.(yml|yaml|yar|yara)$/i, '')
+})
+
+const createFileNameError = computed(() => {
+  const fileName = createFileInput.value.trim()
+  if (!fileName) {
+    return ''
+  }
+
+  return createFileBaseName.value.length > 32
+    ? 'Название файла больше 32 символов'
+    : ''
+})
+
+const buildCreateFileName = () => {
+  const baseName = createFileBaseName.value
+  if (createFileType.value === 'sigma') {
+    return `${baseName}.yml`
+  }
+
+  if (createFileType.value === 'yara') {
+    return `${baseName}.yar`
+  }
+
+  return baseName
+}
+
+// Модальное окно для удаления файла
+const showDeleteFileModal = ref(false)
+const deleteFileName = ref('')
+const deleteFileType = ref('')
+const deleteFileLoading = ref(false)
 
 const loadSigmaFiles = async () => {
   try {
@@ -133,21 +432,56 @@ const selectSigmaFile = async (fileName) => {
   }
 }
 
-const createSigmaFile = async () => {
-  const fileName = window.prompt('Введите имя нового файла (.yml или .yaml):')
-  if (!fileName) {
+const closeCreateFileModal = () => {
+  if (createFileLoading.value) return
+  showCreateFileModal.value = false
+  createFileInput.value = ''
+  createFileType.value = ''
+}
+
+const closeDeleteFileModal = () => {
+  if (deleteFileLoading.value) return
+  showDeleteFileModal.value = false
+  deleteFileName.value = ''
+  deleteFileType.value = ''
+}
+
+const createSigmaFile = () => {
+  createFileType.value = 'sigma'
+  createFileInput.value = ''
+  showCreateFileModal.value = true
+}
+
+const confirmCreateFile = async () => {
+  const fileName = createFileInput.value.trim()
+  if (!fileName || createFileLoading.value || createFileNameError.value) {
     return
   }
 
+  const normalizedFileName = buildCreateFileName()
+
+  createFileLoading.value = true
   try {
-    await configRules.createSigmaFile(fileName.trim())
-    await loadSigmaFiles()
-    await selectSigmaFile(fileName.trim())
+    if (createFileType.value === 'sigma') {
+      const response = await configRules.createSigmaFile(normalizedFileName)
+      await loadSigmaFiles()
+      await selectSigmaFile(response.data.filename || normalizedFileName)
+    } else if (createFileType.value === 'yara') {
+      const response = await configRules.createYaraFile(normalizedFileName)
+      await loadYaraFiles()
+      await selectYaraFile(response.data.filename || normalizedFileName)
+    }
     appStore.addNotification('Новый файл успешно создан', 'success')
   } catch (error) {
-    console.error('Ошибка создания Sigma файла:', error)
-    const message = error?.response?.data?.detail || 'Ошибка создания Sigma файла'
+    console.error(`Ошибка создания файла:`, error)
+    const fileType = createFileType.value === 'sigma' ? 'Sigma' : 'Yara'
+    const message = error?.response?.data?.detail || `Ошибка создания ${fileType} файла`
     appStore.addNotification(message, 'error')
+  } finally {
+    createFileLoading.value = false
+    showCreateFileModal.value = false
+    createFileInput.value = ''
+    createFileType.value = ''
   }
 }
 
@@ -169,48 +503,97 @@ const saveSigmaFile = async () => {
   }
 }
 
-const deleteSigmaFile = async () => {
+const showDeleteSigmaFileModal = () => {
   if (!selectedSigmaFile.value) {
     return
   }
+  deleteFileType.value = 'sigma'
+  deleteFileName.value = selectedSigmaFile.value
+  showDeleteFileModal.value = true
+}
 
-  const fileToDelete = selectedSigmaFile.value
-  const confirmed = window.confirm(`Удалить файл ${fileToDelete}?`)
-  if (!confirmed) {
+const showDeleteYaraFileModal = () => {
+  if (!selectedYaraFile.value) {
+    return
+  }
+  deleteFileType.value = 'yara'
+  deleteFileName.value = selectedYaraFile.value
+  showDeleteFileModal.value = true
+}
+
+const confirmDeleteFile = async () => {
+  if (!deleteFileName.value || deleteFileLoading.value) {
     return
   }
 
-  sigmaDeleting.value = true
+  deleteFileLoading.value = true
   try {
-    await configRules.deleteSigmaFile(fileToDelete)
-    const oldFiles = [...sigmaFiles.value]
-    await loadSigmaFiles()
+    if (deleteFileType.value === 'sigma') {
+      await configRules.deleteSigmaFile(deleteFileName.value)
+      const oldFiles = [...sigmaFiles.value]
+      await loadSigmaFiles()
 
-    const remainingFiles = sigmaFiles.value.filter((name) => name !== fileToDelete)
-    if (!remainingFiles.includes(selectedSigmaFile.value)) {
-      const oldIndex = oldFiles.indexOf(fileToDelete)
-      const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
-      if (nextFile) {
-        await selectSigmaFile(nextFile)
-      } else {
-        selectedSigmaFile.value = ''
-        sigmaEditorContent.value = ''
+      const remainingFiles = sigmaFiles.value.filter((name) => name !== deleteFileName.value)
+      if (!remainingFiles.includes(selectedSigmaFile.value)) {
+        const oldIndex = oldFiles.indexOf(deleteFileName.value)
+        const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
+        if (nextFile) {
+          await selectSigmaFile(nextFile)
+        } else {
+          selectedSigmaFile.value = ''
+          sigmaEditorContent.value = ''
+        }
+      }
+    } else if (deleteFileType.value === 'yara') {
+      await configRules.deleteYaraFile(deleteFileName.value)
+      const oldFiles = [...yaraFiles.value]
+      await loadYaraFiles()
+
+      const remainingFiles = yaraFiles.value.filter((name) => name !== deleteFileName.value)
+      if (!remainingFiles.includes(selectedYaraFile.value)) {
+        const oldIndex = oldFiles.indexOf(deleteFileName.value)
+        const nextFile = remainingFiles[Math.min(oldIndex, remainingFiles.length - 1)]
+        if (nextFile) {
+          await selectYaraFile(nextFile)
+        } else {
+          selectedYaraFile.value = ''
+          yaraEditorContent.value = ''
+        }
       }
     }
-
     appStore.addNotification('Файл успешно удален', 'success')
   } catch (error) {
-    console.error('Ошибка удаления Sigma файла:', error)
-    const message = error?.response?.data?.detail || 'Ошибка удаления Sigma файла'
+    console.error('Ошибка удаления файла:', error)
+    const fileType = deleteFileType.value === 'sigma' ? 'Sigma' : 'Yara'
+    const message = error?.response?.data?.detail || `Ошибка удаления ${fileType} файла`
     appStore.addNotification(message, 'error')
   } finally {
-    sigmaDeleting.value = false
+    deleteFileLoading.value = false
+    closeDeleteFileModal()
   }
 }
 
-const loadYaraFile = async () => {
+const deleteSigmaFile = () => {
+  showDeleteSigmaFileModal()
+}
+
+const loadYaraFiles = async () => {
   try {
-    const response = await configRules.getYaraFile()
+    const response = await configRules.listYaraFiles()
+    yaraFiles.value = response.data.files || []
+    if (!selectedYaraFile.value && yaraFiles.value.length > 0) {
+      await selectYaraFile(yaraFiles.value[0])
+    }
+  } catch (error) {
+    console.error('Ошибка загрузки Yara файлов:', error)
+    appStore.addNotification('Ошибка загрузки Yara файлов', 'error')
+  }
+}
+
+const selectYaraFile = async (fileName) => {
+  selectedYaraFile.value = fileName
+  try {
+    const response = await configRules.getYaraFile(fileName)
     yaraEditorContent.value = response.data.content || ''
   } catch (error) {
     console.error('Ошибка чтения Yara файла:', error)
@@ -218,10 +601,20 @@ const loadYaraFile = async () => {
   }
 }
 
+const createYaraFile = () => {
+  createFileType.value = 'yara'
+  createFileInput.value = ''
+  showCreateFileModal.value = true
+}
+
 const saveYaraFile = async () => {
+  if (!selectedYaraFile.value) {
+    return
+  }
+
   yaraSaving.value = true
   try {
-    await configRules.saveYaraFile(yaraEditorContent.value)
+    await configRules.saveYaraFile(selectedYaraFile.value, yaraEditorContent.value)
     appStore.addNotification('Файл успешно сохранен', 'success')
   } catch (error) {
     console.error('Ошибка сохранения Yara файла:', error)
@@ -232,7 +625,11 @@ const saveYaraFile = async () => {
   }
 }
 
+const deleteYaraFile = () => {
+  showDeleteYaraFileModal()
+}
+
 onMounted(async () => {
-  await Promise.all([loadSigmaFiles(), loadYaraFile()])
+  await Promise.all([loadSigmaFiles(), loadYaraFiles()])
 })
 </script>

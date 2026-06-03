@@ -1,4 +1,4 @@
-"""Agent 1: Primary log analysis chain."""
+"""Agent 1: Primary log analysis chain with event grouping."""
 
 import json
 import logging
@@ -14,7 +14,7 @@ from langchain_core.prompts import (
 )
 from langchain_core.runnables import RunnableSequence
 
-from ..models_types import SuspiciousEvent
+from ..models_types import EventGroup, SuspiciousEvent
 from ..parsers import parse_log_content
 from ..prompts import (
     PRIMARY_ANALYSIS_SYSTEM_PROMPT,
@@ -28,7 +28,7 @@ def create_agent1_chain(llm: BaseLanguageModel) -> RunnableSequence:
     """Create Agent 1 chain for primary log analysis.
 
     Args:
-        llm: LangChain language model (e.g., GigaChat)
+        llm: LangChain language model (e.g., Ollama)
 
     Returns:
         RunnableSequence for primary analysis
@@ -95,34 +95,118 @@ def build_log_line_mapping(log_content: str) -> dict[str, str]:
     return mapping
 
 
+def parse_groups_from_response(response: str) -> list[EventGroup]:
+
+    groups = []
+
+    start_marker = "---GROUPS---"
+    start_idx = response.find(start_marker)
+    if start_idx == -1:
+        logger.warning(
+            f"[Agent1/Parse] ---GROUPS--- marker not found "
+            f"(response length {len(response)}, first 300 chars: {response[:300]!r})"
+        )
+        return groups
+
+    logger.info(
+        f"[Agent1/Parse] Opening ---GROUPS--- at position {start_idx} "
+        f"(response length {len(response)})"
+    )
+
+    start_idx += len(start_marker)
+    end_idx = response.find(start_marker, start_idx)
+
+    groups_data: list | None = None
+    if end_idx != -1:
+        json_str = response[start_idx:end_idx].strip()
+        logger.info(
+            f"[Agent1/Parse] Closing marker found at {end_idx}, "
+            f"JSON region: {len(json_str)} chars"
+        )
+        if json_str:
+            try:
+                groups_data = json.loads(json_str)
+                logger.info(
+                    f"[Agent1/Parse] json.loads OK: {len(groups_data)} groups"
+                )
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"[Agent1/Parse] json.loads failed at char {e.pos}: {e}"
+                )
+                return groups
+    else:
+        logger.info(
+            "[Agent1/Parse] No closing marker, falling back to raw_decode"
+        )
+        search_idx = start_idx
+        while search_idx < len(response) and response[search_idx] not in "[{":
+            search_idx += 1
+        if search_idx < len(response):
+            decoder = json.JSONDecoder()
+            try:
+                parsed, end_pos = decoder.raw_decode(response, search_idx)
+                groups_data = parsed if isinstance(parsed, list) else [parsed]
+                json_len = end_pos - search_idx
+                logger.info(
+                    f"[Agent1/Parse] raw_decode OK: {len(groups_data)} groups, "
+                    f"{json_len} JSON chars (ends at {end_pos})"
+                )
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"[Agent1/Parse] raw_decode failed at char {e.pos}: {e}"
+                )
+                logger.warning(
+                    f"[Agent1/Parse] Context around error: "
+                    f"{response[max(0, e.pos - 100):e.pos + 100]!r}"
+                )
+                return groups
+        else:
+            logger.warning(
+                f"[Agent1/Parse] No JSON array/object found after marker "
+                f"(search_idx={search_idx}, response length {len(response)})"
+            )
+            return groups
+
+    if groups_data is None:
+        logger.warning("[Agent1/Parse] groups_data is None after extraction")
+        return groups
+
+    for group in groups_data:
+        event_group: EventGroup = {
+            "group_id": group.get("group_id", f"g{len(groups) + 1}"),
+            "events": group.get("events", []),
+            "first_seen": group.get("first_seen", ""),
+            "last_seen": group.get("last_seen", ""),
+            "keywords": group.get("keywords", group.get("keywords_ru", [])),
+            "description": group.get("description", ""),
+        }
+        groups.append(event_group)
+
+    logger.info(f"[Agent1/Parse] Returning {len(groups)} groups")
+    return groups
+
+
 def parse_events_from_response(response: str) -> list[SuspiciousEvent]:
-    """Parse suspicious events from Agent 1 response.
+    """Parse suspicious events from Agent 1 response (legacy compatibility).
 
     Args:
-        response: LLM response containing ---EVENTS--- section
+        response: LLM response containing ---GROUPS--- section
 
     Returns:
-        List of SuspiciousEvent dictionaries
+        List of SuspiciousEvent (flattened from groups)
 
     """
     events = []
-
-    events_match = re.search(r"---EVENTS---\s*(\[[\s\S]*?\])\s*---EVENTS---", response)
-
-    if events_match:
-        try:
-            events_data = json.loads(events_match.group(1))
-            for event in events_data:
-                events.append(
-                    SuspiciousEvent(
-                        description=event.get("description", ""),
-                        timestamp=event.get("timestamp"),
-                        log_line=event.get("log_line", ""),
-                    )
+    groups = parse_groups_from_response(response)
+    for group in groups:
+        for event in group.get("events", []):
+            events.append(
+                SuspiciousEvent(
+                    description=event.get("description", ""),
+                    timestamp=event.get("timestamp"),
+                    log_line=event.get("log_line", ""),
                 )
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse events JSON: {e}")
-
+            )
     return events
 
 
@@ -168,26 +252,44 @@ async def analyze_logs_primary(
         Dictionary with:
         - primary_analysis: full analysis text
         - mini_report: brief summary
-        - suspicious_events: list of SuspiciousEvent
-        - events_found: count of events
+        - groups: list of EventGroup with suspicious events
+        - events_found: count of events across all groups
 
     """
     chain = create_agent1_chain(llm)
 
-    logger.info("Running Agent 1 analysis...")
+    logger.info("[Agent1] Running Agent 1 analysis...")
     result = await chain.ainvoke({"log_content": log_content})
+    logger.info(f"[Agent1] LLM response received: {len(result)} chars")
+    logger.info(
+        f"[Agent1] ---GROUPS--- marker present: {'---GROUPS---' in result}"
+    )
 
     primary_analysis = result
     mini_report = extract_mini_report(result)
-    suspicious_events = parse_events_from_response(result)
+    groups = parse_groups_from_response(result)
 
-    events_found = len(suspicious_events)
+    events_found = sum(len(g.get("events", [])) for g in groups)
 
-    logger.info(f"Agent 1 complete: {events_found} suspicious events found")
+    if not groups:
+        logger.warning(
+            f"[Agent1] Parsed 0 groups. Response preview (first 500 chars): "
+            f"{result[:500]!r}"
+        )
+    else:
+        logger.info(f"[Agent1] Parsed {len(groups)} groups, {events_found} events")
+        for g in groups:
+            logger.info(
+                f"[Agent1]   Group {g['group_id']}: "
+                f"{len(g.get('events', []))} events, "
+                f"keywords={g.get('keywords', [])[:3]}..."
+            )
+
+    logger.info(f"[Agent1] Complete: {len(groups)} groups, {events_found} events found")
 
     return {
         "primary_analysis": primary_analysis,
         "mini_report": mini_report,
-        "suspicious_events": suspicious_events,
+        "groups": groups,
         "events_found": events_found,
     }

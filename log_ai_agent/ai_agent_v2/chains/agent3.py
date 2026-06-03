@@ -59,6 +59,8 @@ def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
     yara_rules = []
     sigma_rules = []
     events_found = 0
+    confidence_level = "medium"
+    unconfirmed_events_count = 0
 
     try:
         if "---META---" in report_text:
@@ -106,6 +108,18 @@ def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
                     except ValueError:
                         pass
 
+                elif key == "confidence_level":
+                    # Remove quotes if present
+                    clean_value = value.strip('"\'')
+                    if clean_value in ["high", "medium", "low"]:
+                        confidence_level = clean_value
+
+                elif key == "unconfirmed_events_count":
+                    try:
+                        unconfirmed_events_count = int(value)
+                    except ValueError:
+                        pass
+
             logger.debug(
                 f"Parsed Agent 3 metadata: severity={severity_id}, threat={threat_id}, "
                 f"mitre={mitre_techniques}, yara={yara_rules}, sigma={sigma_rules}"
@@ -121,6 +135,8 @@ def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
         "yara_rules": yara_rules,
         "sigma_rules": sigma_rules,
         "events_found": events_found,
+        "confidence_level": confidence_level,
+        "unconfirmed_events_count": unconfirmed_events_count,
     }
 
 

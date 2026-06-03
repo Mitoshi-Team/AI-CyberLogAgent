@@ -22,7 +22,6 @@ def create_llm(
 
     Auto-detects provider based on available environment variables:
     - If OLLAMA_URL is set → uses Ollama (on-premise)
-    - Otherwise → falls back to GigaChat (cloud)
 
     Args:
         provider: Force specific provider (optional)
@@ -56,27 +55,3 @@ def create_llm(
     )
 
 
-# Backward compatibility alias — old code imports create_gigachat_llm
-def create_gigachat_llm(
-    api_key: str | None = None,
-    model: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    timeout: int | None = None,
-    **kwargs: Any,
-) -> BaseChatModel:
-    """Create GigaChat LLM instance (backward compatibility).
-
-    Deprecated: Use create_llm() instead for provider-agnostic code.
-
-    """
-    from .providers.gigachat import create_gigachat_llm as _create_gigachat
-
-    return _create_gigachat(
-        api_key=api_key,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout,
-        **kwargs,
-    )

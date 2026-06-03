@@ -122,6 +122,23 @@ export const logs = {
 }
 
 /**
+ * Работа с голосовым вводом
+ */
+export const speech = {
+  validate: () => apiClient.get('/speech/validate'),
+  transcribe: (audioBlob) => {
+    const formData = new FormData()
+    formData.append('file', audioBlob, 'speech.webm')
+
+    return apiClient.post('/speech/transcribe', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+}
+
+/**
  * Работа с конфигурацией правил
  */
 export const configRules = {
@@ -132,8 +149,25 @@ export const configRules = {
     apiClient.put(`/config/sigma/files/${encodeURIComponent(filename)}`, { content }),
   deleteSigmaFile: (filename) =>
     apiClient.delete(`/config/sigma/files/${encodeURIComponent(filename)}`),
-  getYaraFile: () => apiClient.get('/config/yara'),
-  saveYaraFile: (content) => apiClient.put('/config/yara', { content }),
+  listYaraFiles: () => apiClient.get('/config/yara/files'),
+  createYaraFile: (filename) => apiClient.post('/config/yara/files', { filename }),
+  getYaraFile: (filename) => apiClient.get(`/config/yara/files/${encodeURIComponent(filename)}`),
+  saveYaraFile: (filename, content) =>
+    apiClient.put(`/config/yara/files/${encodeURIComponent(filename)}`, { content }),
+  deleteYaraFile: (filename) =>
+    apiClient.delete(`/config/yara/files/${encodeURIComponent(filename)}`),
+  getPendingYaraRules: (reportId) =>
+    apiClient.get('/config/yara/pending', { params: { report_id: reportId } }),
+  acceptPendingYaraRule: (userId, pendingRuleId, ruleName, ruleContent) =>
+    apiClient.post('/config/yara/pending/accept', {
+      pending_rule_id: pendingRuleId,
+      rule_name: ruleName,
+      rule_content: ruleContent,
+    }, { params: { user_id: userId } }),
+  rejectPendingYaraRule: (userId, pendingRuleId) =>
+    apiClient.post('/config/yara/pending/reject', {
+      pending_rule_id: pendingRuleId,
+    }, { params: { user_id: userId } }),
 }
 
 export default apiClient

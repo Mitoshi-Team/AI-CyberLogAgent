@@ -15,27 +15,24 @@ Architecture:
 ┌────▼────┐     │       ┌─────▼─────┐
 │ Agent 1 │     │       │  Sigma    │
 └────┬────┘     └───────┴────┬─────┘
-     │                       │
+     │                        │
      │            ┌──────────┴──────────┐
-     │                  │               │
-     ▼                  ▼               ▼
-┌─────────┐      ┌─────────────┐   ┌──────────┐
-│ Agent 2 │      │   Agent 3    │◄───│ Agent 3  │
-│ (RAG)   │─────▶│ (summarize) │   │          │
-└────┬────┘      └─────────────┘   └──────────┘
-     │
-     └──────────┬─────────────┘
-                │
-         ┌──────▼──────┐
-         │ END (report)│
-         └─────────────┘
+     ▼            │                     ▼
+┌──────────────────┴────┐      ┌──────────┐
+│  Description Agent   │      │ Agent 3  │
+└──────────────┬───────┘      └──────────┘
+               │
+┌──────────────▼───────┐
+│       Agent 2 (RAG)  │──────▶│ Agent 3 │
+└──────────────────────┘       └──────────┘
 ```
 
 Flow:
-- START → prefilter → Agent 1 (filtered logs for LLM)
+- START → prefilter → Agent 1 (groups of events)
 - START → parse_logs → YARA/Sigma (all logs, no filtering)
-- Agent2 (RAG) runs after Agent1
-- Agent3 waits for ALL branches to complete
+- Agent1 → Description Agent (generate group descriptions)
+- Description Agent → Agent2 (RAG search for each description)
+- All branches converge at Agent 3
 """
 
 import logging
@@ -52,6 +49,7 @@ from ..chains.llm import create_llm
 from ..engines import SigmaEngine, YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
 from ..knowledge_base.mitre_loader import initialize_mitre_knowledge_base
+from ..metrics.metrics_logger import log_incident
 from ..models_types import AnalysisState
 
 logger = logging.getLogger(__name__)
@@ -75,6 +73,7 @@ def build_analysis_graph(
 
     workflow.add_node("prefilter", nodes.prefilter_node)
     workflow.add_node("agent1", nodes.agent1_node)
+    workflow.add_node("description_agent", nodes.description_agent_node)
     workflow.add_node("parse_logs", nodes.parse_logs_node)
     workflow.add_node("agent2", nodes.agent2_node)
     workflow.add_node("yara_scan", nodes.yara_scan_node)
@@ -82,20 +81,21 @@ def build_analysis_graph(
     workflow.add_node("agent3", nodes.agent3_node)
 
     workflow.add_edge("prefilter", "agent1")
+    workflow.add_edge("agent1", "description_agent")
 
     # parse_logs runs on all logs (not filtered), for YARA/Sigma
     workflow.add_edge("parse_logs", "yara_scan")
     workflow.add_edge("parse_logs", "sigma_scan")
 
-    # Conditional edge: if no events found by agent1, skip agent2 (RAG) and go directly to agent3
-    def should_skip_agent2(state):
-        return state.get("events_found", 0) == 0
+    # Conditional edge: if no groups found by agent1, skip description_agent and agent2
+    def should_skip_description_agent(state):
+        return state.get("groups", []) == []
 
     workflow.add_conditional_edges(
-        "agent1",
-        should_skip_agent2,
+        "description_agent",
+        should_skip_description_agent,
         {
-            True: "agent3",  # Skip agent2
+            True: "agent3",
             False: "agent2",
         },
     )
@@ -134,6 +134,7 @@ class LogAnalysisPipeline:
         llm: BaseLanguageModel | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
+        rag_score_threshold: float = 0.7,
         yara_engine: Any | None = None,
         sigma_engine: Any | None = None,
     ):
@@ -144,6 +145,7 @@ class LogAnalysisPipeline:
             llm: Language model (creates default if None)
             use_rag: Whether to use RAG
             rag_top_k: Number of techniques to retrieve
+            rag_score_threshold: Minimum similarity threshold for RAG (0.0-1.0). Default: 0.7
             yara_engine: YARA engine instance (optional)
             sigma_engine: Sigma engine instance (optional)
 
@@ -151,9 +153,9 @@ class LogAnalysisPipeline:
         self.chroma_mgr = chroma_mgr
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
+        self.rag_score_threshold = rag_score_threshold
 
         self.llm = llm or create_llm()
-
         self._nodes = PipelineNodes(
             llm=self.llm,
             chroma_mgr=self.chroma_mgr,
@@ -161,14 +163,24 @@ class LogAnalysisPipeline:
             sigma_engine=sigma_engine,
             use_rag=self.use_rag,
             rag_top_k=self.rag_top_k,
+            rag_score_threshold=self.rag_score_threshold,
             rag_parallelism=8,  # Increased from default 3 for better parallelism
         )
         self._graph = build_analysis_graph(self._nodes)
 
         logger.info(
             f"LogAnalysisPipeline initialized, "
-            f"RAG={self.use_rag}, YARA={yara_engine is not None}, Sigma={sigma_engine is not None}"
+            f"RAG={self.use_rag}, rag_top_k={rag_top_k}, rag_score_threshold={rag_score_threshold}, "
+            f"YARA={yara_engine is not None}, Sigma={sigma_engine is not None}"
         )
+
+    def reload_yara_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of YARA rules without recreating the pipeline."""
+        self._nodes.reload_yara_rules(rules_list)
+
+    def reload_sigma_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of Sigma rules without recreating the pipeline."""
+        self._nodes.reload_sigma_rules(rules_list)
 
     async def analyze(
         self,
@@ -197,8 +209,9 @@ class LogAnalysisPipeline:
             "parsed_logs": [],
             "primary_analysis": "",
             "mini_report": "",
-            "suspicious_events": [],
+            "groups": [],
             "events_found": 0,
+            "group_descriptions": [],
             "mitre_context": "",
             "mitre_techniques": [],
             "technique_ids": [],
@@ -239,8 +252,15 @@ class LogAnalysisPipeline:
                 "success": True,
                 "primary_analysis": final_state.get("primary_analysis", ""),
                 "mini_report": final_state.get("mini_report", ""),
-                "suspicious_events": final_state.get("suspicious_events", []),
+                "groups": final_state.get("groups", []),
                 "events_found": final_state.get("events_found", 0),
+            }
+
+            # Description Agent stage
+            results["stages"]["description_agent"] = {
+                "success": True,
+                "group_descriptions": final_state.get("group_descriptions", []),
+                "descriptions_count": len(final_state.get("group_descriptions", [])),
             }
 
             # Agent 2 stage (contains RAG processing results + agent2 report)
@@ -290,6 +310,13 @@ class LogAnalysisPipeline:
             results["threat_type_id"] = final_state.get("threat_type_id", 11)
             results["mitre_techniques"] = final_state.get("mitre_techniques_final", [])
             results["events_found"] = final_state.get("events_found", 0)
+
+            # Log detection metrics if events were found
+            if results.get("events_found", 0) > 0:
+                log_incident(
+                    Path(__file__).parent.parent / "metrics" / "pipeline_metrics.log",
+                    results["stages"],
+                )
 
             logger.info(
                 f"LangGraph pipeline complete in {elapsed:.1f}s: "

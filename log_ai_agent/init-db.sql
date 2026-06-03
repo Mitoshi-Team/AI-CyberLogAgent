@@ -330,6 +330,7 @@ INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE 
 INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (8, 'Выход из системы');
 INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (9, 'Отправка логов');
 INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (10, 'Отправка сообщения');
+INSERT INTO public."ActionTypes" (action_type_id, name) OVERRIDING SYSTEM VALUE VALUES (11, 'Генерация YARA правил');
 
 
 --
@@ -636,6 +637,94 @@ ALTER TABLE ONLY public."UserLogs"
 
 
 -- Completed on 2026-03-21 11:14:00
+
+--
+-- YaraRules table
+--
+
+CREATE TABLE IF NOT EXISTS public."YaraRules" (
+    yara_rule_id integer NOT NULL,
+    name text NOT NULL,
+    content text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public."YaraRules" OWNER TO postgres;
+
+ALTER TABLE public."YaraRules" ALTER COLUMN yara_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public."YaraRules_yara_rule_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- SigmaRules table
+--
+
+CREATE TABLE IF NOT EXISTS public."SigmaRules" (
+    sigma_rule_id integer NOT NULL,
+    name text NOT NULL,
+    content text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public."SigmaRules" OWNER TO postgres;
+
+ALTER TABLE public."SigmaRules" ALTER COLUMN sigma_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public."SigmaRules_sigma_rule_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+ALTER TABLE ONLY public."YaraRules"
+    ADD CONSTRAINT "YaraRules_pkey" PRIMARY KEY (yara_rule_id);
+
+ALTER TABLE ONLY public."SigmaRules"
+    ADD CONSTRAINT "SigmaRules_pkey" PRIMARY KEY (sigma_rule_id);
+
+--
+-- PendingYaraRules table
+--
+
+CREATE TABLE IF NOT EXISTS public."PendingYaraRules" (
+    pending_rule_id integer NOT NULL,
+    rule_name text NOT NULL,
+    rule_content text NOT NULL,
+    technique_id text,
+    technique_name text,
+    report_id integer NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at timestamp with time zone NOT NULL
+);
+
+ALTER TABLE public."PendingYaraRules" OWNER TO postgres;
+
+ALTER TABLE public."PendingYaraRules" ALTER COLUMN pending_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public."PendingYaraRules_pending_rule_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+ALTER TABLE ONLY public."PendingYaraRules"
+    ADD CONSTRAINT "PendingYaraRules_pkey" PRIMARY KEY (pending_rule_id);
+
+ALTER TABLE ONLY public."PendingYaraRules"
+    ADD CONSTRAINT "FK_PendingYaraRule_Report" FOREIGN KEY (report_id) REFERENCES public."Reports"(report_id);
+
 
 --
 -- PostgreSQL database dump complete

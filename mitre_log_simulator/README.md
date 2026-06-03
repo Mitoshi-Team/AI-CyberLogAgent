@@ -1,248 +1,103 @@
-# MITRE Log Simulator Container
+# MITRE Log Simulator
 
-Автономный контейнер-симулятор для потоковой генерации шумных логов и безопасной имитации MITRE ATT&CK техник.
+Этот каталог содержит отдельный Docker-симулятор для генерации логов в двух слоях:
 
-## Что делает
+1. Фоновый шум на базе Flog в одном веб-формате.
+2. Слой атак Atomic Red Team через локальную копию `atomic-red-team` и PowerShell Core.
 
-- Генерирует шумовой поток логов в stdout:
-  - nginx access + error
-  - postgres connection + query
-  - syslog auth + cron + kernel
-  - app-логи в JSON (INFO/WARN/ERROR)
-- Периодически инжектит безопасные симуляции техник MITRE ATT&CK (10 техник).
-- После каждой атаки выполняет cleanup и пишет статус в stdout.
-- Ведет golden-журнал на volume хоста в файле /var/log/golden/attack_timeline.log.
-- Ведет единый append-only файл потока логов: /var/log/golden/simulator_stream.log.
-- Поддерживает детерминизм через RANDOM_SEED.
+Симулятор пишет данные одновременно в stdout контейнера и в файловый лог внутри внешнего volume. Дополнительно ведётся файл меток атак в формате CSV:
 
-## Структура
+- `timestamp_start`
+- `timestamp_end`
+- `technique`
 
-- Dockerfile
-- orchestrator.sh
-- docker-compose.yml
-- run.sh
-- run.ps1
-- golden_logs/
+## Что создается
 
-## Переменные окружения
+Внутри volume `shared_external_logs` будут появляться:
 
-| Переменная | По умолчанию | Описание |
-|---|---:|---|
-| ATTACK_MODE | random | Режим атак: random или fixed |
-| FIXED_TECHNIQUE | T1059 | Техника для fixed-режима |
-| ATTACK_INTERVAL | 90 | Интервал в сек для fixed-режима |
-| ATTACK_INTERVAL_MIN | 60 | Нижняя граница интервала random |
-| ATTACK_INTERVAL_MAX | 120 | Верхняя граница интервала random |
-| LOG_RATE | 200 | Базовая интенсивность логов, записей/сек (фактически ±10%) |
-| FLOG_RPS | 5 | Вклад фонового flog в общий поток (для точного rate-бюджета) |
-| MAX_LOG_LINES | 0 | Остановить симулятор после N строк логов (0 = без лимита) |
-| MAX_INCIDENTS | 0 | Остановить симулятор после N инцидентов (0 = без лимита) |
-| MIN_INCIDENTS | 0 | Гарантировать минимум N инцидентов до остановки по логам |
-| DISABLE_INCIDENTS | 0 | Отключить инциденты полностью (1 = выключить) |
-| RANDOM_SEED | 42 | Seed для детерминированной последовательности |
-| HOSTNAME_OVERRIDE | target-node-01 | Имя узла в логах |
+- `attack_timeline.log` — таймлайн атак в формате `timestamp_start|timestamp_end|technique`
+- `generated_logs.log` — все сгенерированные логи и вывод атак
+- `attack_markers.csv` — временные метки атак для сопоставления с анализом
 
-Если одновременно заданы MAX_LOG_LINES и MAX_INCIDENTS, симулятор выдаёт ровно N строк и M инцидентов (без сервисных строк старта/остановки). В этом режиме интервалы атак игнорируются. Минимум: MAX_LOG_LINES >= MAX_INCIDENTS * 4.
-Если задан MIN_INCIDENTS и MAX_LOG_LINES, генератор может превысить MAX_LOG_LINES, чтобы добрать минимум инцидентов, и остановится сразу после этого.
+Volume по умолчанию:
 
-## Поддерживаемые техники (безопасная симуляция)
+- `cyberlog_external_logs`
 
-- T1059
-- T1003
-- T1547
-- T1053
-- T1136
-- T1027
-- T1082
-- T1046
-- T1070
-- T1566
+## Требования
 
-## Быстрый запуск
+- Docker Desktop или Docker Engine с поддержкой `docker compose`
+- PowerShell 7 на хосте для запуска `run.ps1`
+- Доступ в интернет на этапе сборки образа, чтобы установить PowerShell-модуль Atomic Red Team и скачать `atomic-red-team`
 
-### 1) Одна команда (рекомендуется)
+## Запуск
 
-```bash
-chmod +x run.sh orchestrator.sh
-./run.sh
-```
-
-Windows PowerShell:
+Базовый старт без атак:
 
 ```powershell
-.\run.ps1
+.\run.ps1 start -NoAttacks
 ```
 
-Примеры удобного запуска:
-
-```bash
-# старт (случайные атаки)
-./run.sh start
-
-# fixed режим: одна техника каждые 60 сек
-./run.sh fixed T1059 60
-
-# random режим: интервал 30-45 сек, seed=123, без пересборки
-./run.sh --random --min 30 --max 45 --seed 123 --no-build
-
-# короткий smoke-тест: 250 логов и автоматическое завершение
-./run.sh fixed T1059 5 --max-logs 250
-
-# ограничить количество инцидентов
-./run.sh fixed T1059 5 --max-incidents 3
-
-# гарантировать минимум инцидентов
-./run.sh random --max-logs 250 --min-incidents 3
-
-# полностью отключить инциденты
-./run.sh --no-incidents
-
-# писать логи в корень репозитория
-./run.sh --output-root
-
-# посмотреть логи
-./run.sh logs
-
-# остановить контейнер
-./run.sh stop
-```
+Одна конкретная техника:
 
 ```powershell
-# старт (случайные атаки)
-.\run.ps1 start
+.\run.ps1 start -Technique T1059 -IntervalSeconds 10
+```
 
-# fixed режим: одна техника каждые 60 сек
-.\run.ps1 fixed T1059 60
+Рандомные атаки:
 
-# random режим: интервал 30-45 сек, seed=123, без пересборки
-.\run.ps1 random -MinInterval 30 -MaxInterval 45 -Seed 123 -NoBuild
+```powershell
+.\run.ps1 start -RandomAttacks -IntervalSeconds 15
+```
 
-# короткий smoke-тест: 250 логов и автоматическое завершение
-.\run.ps1 fixed T1059 5 -MaxLogs 250
+Остановка:
 
-# ограничить количество инцидентов
-.\run.ps1 fixed T1059 5 -MaxIncidents 3
-
-# гарантировать минимум инцидентов
-.\run.ps1 random -MaxLogs 250 -MinIncidents 3
-
-# полностью отключить инциденты
-.\run.ps1 -NoIncidents
-
-# писать логи в корень репозитория
-.\run.ps1 -OutputRoot
-
-# посмотреть логи
-.\run.ps1 logs
-
-# остановить контейнер
+```powershell
 .\run.ps1 stop
 ```
 
-### 2) Случайные атаки (docker run)
+Просмотр логов отдельно:
 
-```bash
-docker build -t my_image .
-docker run --rm -v ./golden_logs:/var/log/golden my_image
+```powershell
+.\run.ps1 logs
 ```
 
-Для авто-перезапуска при падении лучше использовать:
+## Флаги `start`
 
-```bash
-docker run --restart unless-stopped -v ./golden_logs:/var/log/golden my_image
-```
+- `-Technique <T####>` — запуск одной конкретной атаки Atomic Red Team.
+- `-RandomAttacks` — случайный выбор техники на каждом цикле.
+- `-NoAttacks` — только фоновые логи, без атак.
+- `-IntervalSeconds <N>` — пауза между циклами генерации и атаками; если не указать, выбирается случайно от 10 до 30 секунд.
+- `-NoiseBatchSize <N>` — размер пакета фоновых логов за цикл; если не указать, выбирается случайно от 30 до 100.
+- `-Detached` — запуск контейнера в фоне.
 
-### 3) Фиксированная техника T1059 каждые 60 секунд
+Только один режим атак может быть активен одновременно: `-Technique`, `-RandomAttacks` или `-NoAttacks`.
 
-```bash
-docker run --rm \
-  -e ATTACK_MODE=fixed \
-  -e FIXED_TECHNIQUE=T1059 \
-  -e ATTACK_INTERVAL=60 \
-  -v ./golden_logs:/var/log/golden \
-  my_image
-```
+## Как это работает
 
-### 4) Детерминированный seed
+Контейнер собран на полном Ubuntu-образе, а не на slim-версии, чтобы внутри были стандартные утилиты, полезные для имитации поведения атакующего:
 
-```bash
-docker run --rm -e RANDOM_SEED=123 -v ./golden_logs:/var/log/golden my_image
-```
+- `tar`
+- `base64`
+- `nc`
+- `curl`
+- `git`
 
-## Формат логов
+Внутри образа установлены:
 
-- Общий поток: mixed plain text
-- app-лог: JSON
+- PowerShell Core
+- Flog
+- `Invoke-AtomicRedTeam`
+- локальная копия `redcanaryco/atomic-red-team` с atomics
 
-Примеры:
+## Volume / папка логов на хосте
 
-```text
-2025-04-03T10:00:01Z app {"user":"admin","action":"login","status":200}
-2025-04-03T10:00:02Z nginx_access 192.168.1.7 - - "GET /api/v1/items/42 HTTP/1.1" 200 512
-2025-04-03T10:00:03Z [TEST_START] Running T1003
-2025-04-03T10:00:04Z [T1003] Simulated execution: read fake credential material from /tmp/fake_credential_dump_...txt marker=/tmp/attack_T1003_...
-2025-04-03T10:00:05Z [CLEANUP_OK] All simulated artifacts removed
-```
+По умолчанию `run.ps1 start` создаёт в корне проекта папку `shared_external_logs` и монтирует её в контейнер как bind-mount. В этой папке вы увидите те же файлы, что и в внутреннем каталоге контейнера:
 
-## Golden log
+- `attack_timeline.log` — таймлайн атак в формате `timestamp_start|timestamp_end|technique`
+- `generated_logs.log` — все сгенерированные логи и вывод атак
+- `attack_markers.csv` — временные метки атак для сопоставления с анализом
 
-Файл: /var/log/golden/attack_timeline.log
+## Примечания
 
-Потоковый лог:
-
-```text
-/var/log/golden/simulator_stream.log
-```
-
-Формат строки:
-
-```text
-TIMESTAMP|TECHNIQUE|START|END|CLEANUP_STATUS
-```
-
-Пример:
-
-```text
-2026-04-03T12:35:00Z|T1059|2026-04-03T12:34:59Z|2026-04-03T12:35:00Z|CLEANUP_OK
-```
-
-## Healthcheck
-
-Контейнер считается healthy, если:
-
-- жив процесс orchestrator.sh
-- есть минимум одна запись в stdout за последние 60 секунд
-- нет флага /tmp/unhealthy
-
-Параметры:
-
-- interval=30s
-- timeout=10s
-- retries=3
-
-## Сценарии проверки
-
-### Проверка меток атак
-
-```bash
-docker logs -f mitre-log-simulator | grep "TEST_START\|TEST_END\|CLEANUP_"
-```
-
-### Проверка golden-журнала
-
-```bash
-tail -f ./golden_logs/attack_timeline.log
-```
-
-### Проверка health
-
-```bash
-docker inspect --format='{{json .State.Health}}' mitre-log-simulator
-```
-
-## Ограничения безопасности
-
-- Только симуляция поведения и лог-следов.
-- Никаких реальных деструктивных действий.
-- Никаких изменений системных файлов вне /tmp.
-- Для T1046 выполняются только локальные эхо-пробы 127.0.0.1.
+- Если выбранная техника не поддерживается на Linux, Atomic Red Team может пропустить тест или вывести ошибку, но генератор продолжит работу.
+- По умолчанию контейнер работает до остановки вручную.

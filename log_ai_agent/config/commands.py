@@ -2,60 +2,46 @@ import os
 import re
 
 import bcrypt
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from sqlalchemy import inspect
+from log_ai_agent.db.session import get_sync_engine
+from sqlalchemy import select
+from log_ai_agent.db.session import get_sync_session
+from log_ai_agent.db.models import User
 
 SALT = bcrypt.gensalt(rounds=12)
 
 
 def get_db_connection():
-    """Создать подключение к PostgreSQL базе данных.
-
-    Returns:
-        psycopg2.connection: Подключение к базе данных.
-
-    Raises:
-        Exception: Если не удалось подключиться к БД.
-
+    """Legacy connection method - use get_sync_session() instead.
+    
+    Kept for backward compatibility but deprecated.
     """
     try:
-        # Получаем параметры подключения из переменных окружения
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=os.getenv("POSTGRES_PORT", "5432"),
-            database=os.getenv("POSTGRES_DB", "cyberlog_db"),
-            user=os.getenv("POSTGRES_USER", "cyberlog_user"),
-            password=os.getenv("POSTGRES_PASSWORD", "cyberlog_password"),
-        )
-        _ensure_admin_column(conn)
-        return conn
+        engine = get_sync_engine()
+        return engine.raw_connection()
     except Exception as e:
         print(f"❌ Ошибка подключения к базе данных: {e}")
         raise
 
 
-def _ensure_admin_column(conn) -> None:
+def _ensure_admin_column(conn=None) -> None:
     """Ensure Users table has is_admin column for admin features."""
-    cursor = conn.cursor()
+    # Use SQLAlchemy inspector to check schema
     try:
-        cursor.execute(
-            """
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = 'Users'
-              AND column_name = 'is_admin'
-            """
-        )
-        exists = cursor.fetchone()
-        if exists is None:
-            cursor.execute(
-                'ALTER TABLE public."Users" '
-                "ADD COLUMN is_admin boolean NOT NULL DEFAULT false"
-            )
-            conn.commit()
-    finally:
-        cursor.close()
+        engine = get_sync_engine()
+        inspector = inspect(engine)
+        cols = inspector.get_columns("Users", schema="public")
+        if not any(c["name"] == "is_admin" for c in cols):
+            # Use raw connection from engine to execute ALTER
+            with engine.raw_connection() as raw_conn:
+                with raw_conn.cursor() as cursor:
+                    cursor.execute(
+                        'ALTER TABLE public."Users" ADD COLUMN is_admin boolean NOT NULL DEFAULT false'
+                    )
+                    raw_conn.commit()
+    except Exception:
+        # If fails, leave as-is and let DB handle or caller manage
+        return
 
 
 def validate_login(login: str) -> tuple[bool, str]:
@@ -138,43 +124,33 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        with get_sync_session() as session:
+            stmt = select(User).where(User.login == login)
+            user_obj = session.execute(stmt).scalar_one_or_none()
 
-        # Получаем пользователя из БД
-        cursor.execute(
-            'SELECT user_id, login, password_hash, is_admin FROM public."Users" WHERE login = %s',
-            (login,),
-        )
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
+            if not user_obj:
+                print(f"Пользователь {login} не найден")
+                return False, None
 
-        if not user:
-            print(f"Пользователь {login} не найден")
+            # Проверяем пароль
+            password_bytes = password.encode("utf-8")
+            stored_hash = user_obj.password_hash
+
+            if isinstance(stored_hash, str):
+                stored_hash_bytes = stored_hash.encode("utf-8")
+            else:
+                stored_hash_bytes = stored_hash
+
+            if bcrypt.checkpw(password_bytes, stored_hash_bytes):
+                print(f"Успешная авторизация для {login}")
+                return True, {
+                    "user_id": user_obj.user_id,
+                    "login": user_obj.login,
+                    "is_admin": bool(user_obj.is_admin),
+                }
+
+            print(f"Неверный пароль для {login}")
             return False, None
-
-        # Проверяем пароль
-        password_bytes = password.encode("utf-8")
-        stored_hash = user["password_hash"]
-
-        # Если хеш хранится как строка, конвертируем в bytes
-        if isinstance(stored_hash, str):
-            stored_hash_bytes = stored_hash.encode("utf-8")
-        else:
-            stored_hash_bytes = stored_hash
-
-        if bcrypt.checkpw(password_bytes, stored_hash_bytes):
-            print(f"Успешная авторизация для {login}")
-            return True, {
-                "user_id": user["user_id"],
-                "login": user["login"],
-                "is_admin": bool(user.get("is_admin", False)),
-            }
-
-        print(f"Неверный пароль для {login}")
-        return False, None
-
     except Exception as e:
         print(f"Ошибка при проверке учетных данных: {e}")
         import traceback
@@ -185,24 +161,19 @@ def verify_user_credentials(login: str, password: str) -> tuple[bool, dict | Non
 
 def get_user_by_id(user_id: int) -> dict | None:
     """Fetch user by ID for session refresh."""
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute(
-            'SELECT user_id, login, is_admin FROM public."Users" WHERE user_id = %s',
-            (user_id,),
-        )
-        user = cursor.fetchone()
-        if not user:
-            return None
-        return {
-            "user_id": user["user_id"],
-            "login": user["login"],
-            "is_admin": bool(user.get("is_admin", False)),
-        }
-    finally:
-        cursor.close()
-        conn.close()
+        with get_sync_session() as session:
+            stmt = select(User).where(User.user_id == user_id)
+            user_obj = session.execute(stmt).scalar_one_or_none()
+            if not user_obj:
+                return None
+            return {
+                "user_id": user_obj.user_id,
+                "login": user_obj.login,
+                "is_admin": bool(user_obj.is_admin),
+            }
+    except Exception:
+        return None
 
 
 def register():
@@ -238,18 +209,12 @@ def register():
 
         # Проверяем, существует ли пользователь в БД
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute(
-                'SELECT user_id FROM public."Users" WHERE login = %s', (login,)
-            )
-            existing_user = cursor.fetchone()
-            cursor.close()
-            conn.close()
-
-            if existing_user:
-                print(f"❌ Пользователь с логином '{login}' уже существует\n")
-                continue
+            with get_sync_session() as session:
+                stmt = select(User).where(User.login == login)
+                existing_user = session.execute(stmt).scalar_one_or_none()
+                if existing_user:
+                    print(f"❌ Пользователь с логином '{login}' уже существует\n")
+                    continue
         except Exception as e:
             print(f"❌ Ошибка при проверке пользователя: {e}\n")
             continue
@@ -280,82 +245,54 @@ def register():
         return
 
     try:
-        # Подключаемся к БД
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Хешируем пароль
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12))
 
-        # Хешируем пароль с использованием соли из переменной окружения
-        salt_bytes = password_salt.encode("utf-8")
-        password_hash = bcrypt.hashpw(
-            password.encode("utf-8"), bcrypt.gensalt(rounds=12)
-        )
+        with get_sync_session() as session:
+            # Проверяем на существование (повторная проверка для safety)
+            stmt = select(User).where(User.login == login)
+            existing = session.execute(stmt).scalar_one_or_none()
+            if existing:
+                print(f"❌ Пользователь с логином '{login}' уже существует (race)")
+                return
 
-        # Вставляем нового пользователя в БД
-        cursor.execute(
-            'INSERT INTO public."Users" (login, password_hash, is_admin) VALUES (%s, %s, %s) RETURNING user_id',
-            (login, password_hash.decode("utf-8"), False),
-        )
-        user_id = cursor.fetchone()["user_id"]
+            new_user = User(login=login, password_hash=password_hash.decode("utf-8"), is_admin=False)
+            session.add(new_user)
+            session.commit()
 
-        # Сохраняем изменения
-        conn.commit()
-
-        print(f"✅ Пользователь '{login}' успешно зарегистрирован (ID: {user_id})")
-
-        cursor.close()
-        conn.close()
+            print(f"✅ Пользователь '{login}' успешно зарегистрирован (ID: {new_user.user_id})")
 
     except Exception as e:
         print(f"❌ Ошибка при регистрации пользователя: {e}")
-        if "conn" in locals():
-            conn.rollback()
-            conn.close()
 
 
 def list_users_admin_status() -> list[dict]:
     """Return all users with admin flag."""
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute(
-            """
-            SELECT user_id, login, is_admin
-            FROM public."Users"
-            ORDER BY login ASC
-            """
-        )
-        rows = cursor.fetchall() or []
-        return [dict(row) for row in rows]
-    finally:
-        cursor.close()
-        conn.close()
+        with get_sync_session() as session:
+            stmt = select(User).order_by(User.login.asc())
+            users = session.execute(stmt).scalars().all()
+            return [
+                {"user_id": u.user_id, "login": u.login, "is_admin": bool(u.is_admin)}
+                for u in users
+            ]
+    except Exception:
+        return []
 
 
 def set_user_admin_status(login: str, is_admin: bool) -> tuple[bool, str]:
     """Grant or revoke admin flag for user by login."""
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute(
-            """
-            UPDATE public."Users"
-            SET is_admin = %s
-            WHERE login = %s
-            RETURNING user_id, login, is_admin
-            """,
-            (is_admin, login),
-        )
-        row = cursor.fetchone()
-        if not row:
-            conn.rollback()
-            return False, f"Пользователь '{login}' не найден"
+        with get_sync_session() as session:
+            stmt = select(User).where(User.login == login)
+            user_obj = session.execute(stmt).scalar_one_or_none()
+            if not user_obj:
+                return False, f"Пользователь '{login}' не найден"
 
-        conn.commit()
-        status_text = "администратор" if row["is_admin"] else "обычный пользователь"
-        return True, f"Пользователь '{row['login']}' обновлен: {status_text}"
+            user_obj.is_admin = bool(is_admin)
+            session.add(user_obj)
+            session.commit()
+            status_text = "администратор" if user_obj.is_admin else "обычный пользователь"
+            return True, f"Пользователь '{user_obj.login}' обновлен: {status_text}"
     except Exception:
-        conn.rollback()
         raise
-    finally:
-        cursor.close()
-        conn.close()

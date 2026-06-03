@@ -3,24 +3,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mitre-log-simulator:latest
-    container_name: mitre-log-simulator
-    restart: ${RESTART_POLICY:-unless-stopped}
+    image: ai-cyberlogagent-mitre-simulator:latest
+    container_name: ai-cyberlogagent-mitre-simulator
+    init: true
     environment:
-      ATTACK_MODE: ${ATTACK_MODE:-random}
-      FIXED_TECHNIQUE: ${FIXED_TECHNIQUE:-T1059}
-      ATTACK_INTERVAL: ${ATTACK_INTERVAL:-90}
-      ATTACK_INTERVAL_MIN: ${ATTACK_INTERVAL_MIN:-60}
-      ATTACK_INTERVAL_MAX: ${ATTACK_INTERVAL_MAX:-120}
-      LOG_RATE: ${LOG_RATE:-200}
-      MAX_LOG_LINES: ${MAX_LOG_LINES:-0}
-      MAX_INCIDENTS: ${MAX_INCIDENTS:-0}
-      MIN_INCIDENTS: ${MIN_INCIDENTS:-0}
-      DISABLE_INCIDENTS: ${DISABLE_INCIDENTS:-0}
-      RANDOM_SEED: ${RANDOM_SEED:-42}
-      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-target-node-01}
+      SIM_TECHNIQUE: ${SIM_TECHNIQUE:-}
+      SIM_RANDOM_ATTACKS: ${SIM_RANDOM_ATTACKS:-false}
+      SIM_NO_ATTACKS: ${SIM_NO_ATTACKS:-false}
+      SIM_INTERVAL_SECONDS: ${SIM_INTERVAL_SECONDS:-30}
+      SIM_NOISE_BATCH_SIZE: ${SIM_NOISE_BATCH_SIZE:-24}
+      SIM_OUTPUT_DIR: /app/output
+      SIM_LOG_FILE: /app/output/generated_logs.log
+      SIM_TIMELINE_FILE: /app/output/attack_timeline.log
+      SIM_MARKERS_FILE: /app/output/attack_markers.csv
+      SIM_ATOMICS_FOLDER: /opt/atomic-red-team/atomics
+      SIM_HOST_OUTPUT_DIR: /host_output
     volumes:
-      - ${LOG_OUTPUT_DIR:-shared_external_logs}:/var/log/golden
+      - shared_external_logs:/app/output
+      - ${SHARED_EXTERNAL_LOGS_BIND:-./shared_external_logs}:/host_output
 
 volumes:
   shared_external_logs:

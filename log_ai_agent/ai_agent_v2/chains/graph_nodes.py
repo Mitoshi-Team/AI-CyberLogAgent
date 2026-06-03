@@ -13,9 +13,10 @@ from langchain_core.language_models import BaseLanguageModel
 from ..engines.sigma_engine import SigmaEngine
 from ..engines.yara_engine import YaraEngine
 from ..knowledge_base.manager import ChromaDBManager
-from ..models_types import AnalysisState, MITRETechnique, SuspiciousEvent
+from ..models_types import AnalysisState, EventGroup, GroupDescription, MITRETechnique, SuspiciousEvent
 from ..parsers.apache_parser import ApacheLogParser
 from .agent1 import analyze_logs_primary, create_agent1_chain
+from .description_agent import generate_group_descriptions
 from .prefilter import prefilter_logs
 from .rag_chain import rag_search_single_event
 
@@ -40,6 +41,7 @@ class PipelineNodes:
         sigma_engine: SigmaEngine | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
+        rag_score_threshold: float = 0.7,
         rag_parallelism: int = 5,
     ):
         self.llm = llm
@@ -48,9 +50,20 @@ class PipelineNodes:
         self.sigma_engine = sigma_engine
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
+        self.rag_score_threshold = rag_score_threshold
 
-        self._agent1_chain = create_agent1_chain(llm)
         self._rag_semaphore = asyncio.Semaphore(rag_parallelism)
+        self._agent1_chain = create_agent1_chain(llm)
+
+    def reload_yara_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of YARA rules without recreating the pipeline."""
+        if self.yara_engine is not None:
+            self.yara_engine.reload(rules_list)
+
+    def reload_sigma_rules(self, rules_list: list | None = None) -> None:
+        """Light reload of Sigma rules without recreating the pipeline."""
+        if self.sigma_engine is not None:
+            self.sigma_engine.reload(rules_list)
 
     async def prefilter_node(self, state: AnalysisState) -> dict:
         """Node: Pre-filter logs to reduce volume before expensive processing.
@@ -86,10 +99,10 @@ class PipelineNodes:
             }
 
     async def agent1_node(self, state: AnalysisState) -> dict:
-        """Node: Agent 1 — Primary log analysis.
+        """Node: Agent 1 — Primary log analysis with grouping.
 
         Reads: log_content
-        Writes: primary_analysis, mini_report, suspicious_events, events_found
+        Writes: primary_analysis, mini_report, groups, events_found
         """
         logger.info("[Node] Agent 1: Primary log analysis")
         start = time.time()
@@ -101,13 +114,13 @@ class PipelineNodes:
             )
 
             logger.info(
-                f"[Node] Agent 1 complete: {result['events_found']} events "
+                f"[Node] Agent 1 complete: {len(result['groups'])} groups, {result['events_found']} events "
                 f"in {time.time() - start:.1f}s"
             )
             return {
                 "primary_analysis": result["primary_analysis"],
                 "mini_report": result["mini_report"],
-                "suspicious_events": result["suspicious_events"],
+                "groups": result["groups"],
                 "events_found": result["events_found"],
             }
 
@@ -116,9 +129,40 @@ class PipelineNodes:
             return {
                 "primary_analysis": f"Error: {e}",
                 "mini_report": "Analysis failed",
-                "suspicious_events": [],
+                "groups": [],
                 "events_found": 0,
             }
+
+    async def description_agent_node(self, state: AnalysisState) -> dict:
+        """Node: Description Agent — Generate descriptions for event groups.
+
+        Reads: groups
+        Writes: group_descriptions
+        """
+        logger.info("[Node] Description Agent: Generating group descriptions")
+        start = time.time()
+
+        try:
+            groups = state.get("groups", [])
+
+            if not groups:
+                logger.info("[Node] Description Agent: No groups to process")
+                return {"group_descriptions": []}
+
+            descriptions = await generate_group_descriptions(
+                llm=self.llm,
+                groups=groups,
+            )
+
+            logger.info(
+                f"[Node] Description Agent complete: {len(descriptions)} descriptions "
+                f"in {time.time() - start:.1f}s"
+            )
+            return {"group_descriptions": descriptions}
+
+        except Exception as e:
+            logger.exception(f"[Node] Description Agent failed: {e}")
+            return {"group_descriptions": []}
 
     async def parse_logs_node(self, state: AnalysisState) -> dict:
         """Node: Parse logs — Parse raw log content for YARA/Sigma scanning.
@@ -148,21 +192,21 @@ class PipelineNodes:
             }
 
     async def agent2_node(self, state: AnalysisState) -> dict:
-        """Node: Agent 2 — RAG search for each suspicious event + final report.
+        """Node: Agent 2 — RAG search for each group description + final report.
 
         This node:
-        1. Loops through suspicious_events from Agent1
-        2. For each event, does RAG search (without timestamp)
+        1. Loops through group_descriptions from Description Agent
+        2. For each description, does RAG search (without timestamp)
         3. Accumulates matched MITRE techniques
         4. Generates final report with all data
 
-        Reads: primary_analysis, suspicious_events, mitre_context
+        Reads: primary_analysis, group_descriptions, mitre_context
         Writes: mitre_context, mitre_techniques_final, agent2_report
         """
         logger.info("[Node] Agent 2: RAG search + report generation")
         start = time.time()
 
-        suspicious_events = state.get("suspicious_events", [])
+        group_descriptions = state.get("group_descriptions", [])
 
         if not self.use_rag or not self.chroma_mgr:
             logger.warning("[Node] Agent 2: RAG disabled or unavailable")
@@ -173,13 +217,13 @@ class PipelineNodes:
             }
 
         logger.info(
-            f"[Node] Agent 2: Processing {len(suspicious_events)} events in parallel"
+            f"[Node] Agent 2: Processing {len(group_descriptions)} group descriptions in parallel"
         )
 
-        async def process_event(
-            i: int, event: SuspiciousEvent
+        async def process_description(
+            i: int, desc: GroupDescription
         ) -> tuple[int, MITRETechnique | None]:
-            description = event.get("description", "")
+            description = desc.get("description", "")
 
             if not description:
                 return i, None
@@ -190,36 +234,39 @@ class PipelineNodes:
                         llm=self.llm,
                         chroma_mgr=self.chroma_mgr,
                         description=description,
+                        keywords=desc.get("keywords_ru"),
                         k=self.rag_top_k,
+                        score_threshold=self.rag_score_threshold,
                     )
 
                     if rag_result.get("has_match"):
                         technique: MITRETechnique = {
                             "technique_id": rag_result.get("technique_id", ""),
                             "name": rag_result.get("name", ""),
-                            "timestamp": event.get("timestamp"),
+                            "timestamp": desc.get("first_seen"),
                             "event": description,
-                            "log_line": event.get("log_line", ""),
+                            "log_line": f"Group: {desc.get('group_id', '')}",
+                            "group_id": desc.get("group_id", ""),
                         }
                         logger.info(
-                            f"[Node] Agent 2: Event {i + 1}/{len(suspicious_events)} "
+                            f"[Node] Agent 2: Group {i + 1}/{len(group_descriptions)} "
                             f"matched {technique['technique_id']}"
                         )
                         return i, technique
                     else:
                         logger.debug(
-                            f"[Node] Agent 2: Event {i + 1}/{len(suspicious_events)} "
+                            f"[Node] Agent 2: Group {i + 1}/{len(group_descriptions)} "
                             f"no MITRE match"
                         )
                         return i, None
 
                 except Exception as e:
                     logger.warning(
-                        f"[Node] Agent 2: RAG search failed for event {i}: {e}"
+                        f"[Node] Agent 2: RAG search failed for group {i}: {e}"
                     )
                     return i, None
 
-        tasks = [process_event(i, event) for i, event in enumerate(suspicious_events)]
+        tasks = [process_description(i, desc) for i, desc in enumerate(group_descriptions)]
         results = await asyncio.gather(*tasks)
 
         mitre_techniques_final: list[MITRETechnique] = []
@@ -236,7 +283,7 @@ class PipelineNodes:
         mitre_context = (
             "Found MITRE techniques:\n" + "\n".join(mitre_context_parts)
             if mitre_context_parts
-            else "No MITRE techniques found for suspicious events."
+            else "No MITRE techniques found for group descriptions."
         )
 
         technique_ids = [
@@ -244,7 +291,7 @@ class PipelineNodes:
         ]
         logger.info(
             f"[Node] Agent 2 RAG complete: {len(mitre_techniques_final)} techniques "
-            f"from {len(suspicious_events)} events in {time.time() - start:.1f}s"
+            f"from {len(group_descriptions)} descriptions in {time.time() - start:.1f}s"
         )
 
         return {
@@ -392,6 +439,8 @@ class PipelineNodes:
                 "yara_rules_matched": agent3_result.get("yara_rules", []),
                 "sigma_rules_matched": agent3_result.get("sigma_rules", []),
                 "events_found": agent3_result.get("events_found", 0),
+                "confidence_level": agent3_result.get("confidence_level", "medium"),
+                "unconfirmed_events_count": agent3_result.get("unconfirmed_events_count", 0),
             }
 
         except Exception as e:

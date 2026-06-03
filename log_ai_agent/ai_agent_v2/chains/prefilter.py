@@ -1,12 +1,27 @@
 """Lightweight pre-filtering for log analysis pipeline.
-
+ 
 This module provides fast, lightweight filtering to reduce log volume
 before expensive LLM/YARA/Sigma processing while preserving security-relevant logs.
 """
 
 import re
+import time
+import os
 
 from ..parsers.apache_parser import ParsedLog
+
+
+# Sampling rate for non-security logs (default 40%)
+_SAMPLING_RATE_STR = os.getenv("AI_V2_SAMPLING_RATE", "0.4")
+try:
+    SAMPLING_RATE = float(_SAMPLING_RATE_STR)
+    if SAMPLING_RATE < 0.0 or SAMPLING_RATE > 1.0:
+        raise ValueError("Sampling rate must be between 0.0 and 1.0")
+except (ValueError, TypeError):
+    SAMPLING_RATE = 0.4  # Default 40%
+
+# Convert to threshold for line_index % 10 comparison
+_SAMPLING_THRESHOLD = int(SAMPLING_RATE * 10)  # 0.4 -> 4 (keep 40%)
 
 # Compiled regex patterns for fast matching
 SECURITY_KEYWORDS = re.compile(
@@ -37,6 +52,16 @@ PATH_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+# Suspicious patterns that might indicate unknown attacks
+SUSPICIOUS_KEYWORDS = re.compile(
+    r"\b(?:unusual|unexpected|abnormal|suspicious|"
+    r"anomaly|timeout|refused|blocked|"
+    r"overflow|injection|traversal|"
+    r"unauthorized|breach|exploit|malware|"
+    r"ransomware|trojan|virus)\b",
+    re.IGNORECASE,
+)
+
 # Common safe patterns that can be sampled more aggressively
 SAFE_PATTERNS = [
     re.compile(r"\b(?:heartbeat|keepalive|ping|pong)\b", re.IGNORECASE),
@@ -51,9 +76,9 @@ def is_security_relevant(log_entry: ParsedLog) -> bool:
     Returns True for logs that should definitely be processed,
     False for logs that can be safely filtered/sampled.
     """
-    message = log_entry.get("message", "").lower()
-    raw = log_entry.get("raw", "").lower()
-    uri = log_entry.get("uri", "").lower()
+    message = (log_entry.get("message") or "").lower()
+    raw = (log_entry.get("raw") or "").lower()
+    uri = (log_entry.get("uri") or "").lower()
 
     # Check combined text for security indicators
     combined_text = f"{message} {raw} {uri}"
@@ -71,6 +96,10 @@ def is_security_relevant(log_entry: ParsedLog) -> bool:
     if PATH_KEYWORDS.search(combined_text):
         return True
 
+    # Check for suspicious patterns (potential unknown attacks)
+    if SUSPICIOUS_KEYWORDS.search(combined_text):
+        return True
+
     # Check log level if available
     level = log_entry.get("level", "").lower()
     if level in ("warning", "warn", "error", "critical", "alert", "emergency"):
@@ -79,10 +108,16 @@ def is_security_relevant(log_entry: ParsedLog) -> bool:
     return False
 
 
-def should_sample_log(log_entry: ParsedLog, recent_failed_attempts: dict) -> bool:
+def should_sample_log(log_entry: ParsedLog, recent_failed_attempts: dict, line_index: int = 0) -> bool:
     """Determine if a log should be sampled (kept) or filtered out.
 
-    Returns True if log should be kept, False if it can be filtered out.
+    Args:
+        log_entry: Parsed log entry
+        recent_failed_attempts: Dict tracking failed attempts with TTL
+        line_index: Line index for unique sampling across identical messages
+
+    Returns:
+        True if log should be kept, False if it can be filtered out.
     """
     # Always keep security-relevant logs
     if is_security_relevant(log_entry):
@@ -92,30 +127,45 @@ def should_sample_log(log_entry: ParsedLog, recent_failed_attempts: dict) -> boo
     client_ip = log_entry.get("client_ip")
     user = log_entry.get("user") or log_entry.get("ident")
 
+    # Check for expired entries first (TTL: 24 hours)
+    current_time = time.time()
+    for key in list(recent_failed_attempts.keys()):
+        if key in recent_failed_attempts:
+            data = recent_failed_attempts[key]
+            if current_time - data["last_seen"] > 24 * 3600:
+                del recent_failed_attempts[key]
+
     # Keep logs from entities with recent failed attempts
     if client_ip and client_ip in recent_failed_attempts:
-        if recent_failed_attempts[client_ip] > 0:
+        if recent_failed_attempts[client_ip]["count"] > 0:
             return True
 
     if user and user in recent_failed_attempts:
-        if recent_failed_attempts[user] > 0:
+        if recent_failed_attempts[user]["count"] > 0:
             return True
 
     # Check for safe patterns that can be sampled more aggressively
     message = log_entry.get("message", "").lower()
     for pattern in SAFE_PATTERNS:
         if pattern.search(message):
-            # Sample 10% of safe, repetitive logs
-            return hash(message) % 10 == 0  # Deterministic sampling
+            # Deterministic 10% sampling using line_index
+            return line_index % 10 == 0  # Keep every 10th log
 
-    # Default: keep 30% of remaining logs to preserve context
-    # Using hash for deterministic sampling across runs
-    combined_id = f"{client_ip or ''}{user or ''}{log_entry.get('raw', '')[:50]}"
-    return hash(combined_id) % 10 < 3  # Keep 30%
+    # Default: keep configurable % of remaining logs to preserve context
+    # Using line_index for simple deterministic sampling
+    client_ip = log_entry.get("client_ip")
+    user = log_entry.get("user") or log_entry.get("ident")
+    raw = (log_entry.get("raw") or "")[:50]
+    combined_id = f"{client_ip or ''}{user or ''}{raw}"
+    return line_index % 10 < _SAMPLING_THRESHOLD  # Keep ~40% by default
 
 
 def update_failed_attempts_tracking(log_entry: ParsedLog, tracking_dict: dict):
-    """Update tracking of failed authentication attempts for context-aware filtering."""
+    """Update tracking of failed authentication attempts for context-aware filtering.
+
+    Uses hybrid approach: track count + timestamp for TTL-based expiration.
+    Does NOT reset on successful login to preserve attack context.
+    """
     message = log_entry.get("message", "").lower()
     raw = log_entry.get("raw", "").lower()
     combined = f"{message} {raw}"
@@ -137,37 +187,25 @@ def update_failed_attempts_tracking(log_entry: ParsedLog, tracking_dict: dict):
     )
 
     if is_failed_attempt:
-        # Track failed attempts by IP and user
+        # Track failed attempts by IP and user with timestamp
         client_ip = log_entry.get("client_ip")
         user = log_entry.get("user") or log_entry.get("ident")
+        current_time = time.time()
 
         if client_ip:
-            tracking_dict[client_ip] = tracking_dict.get(client_ip, 0) + 1
+            if client_ip not in tracking_dict:
+                tracking_dict[client_ip] = {"count": 0, "last_seen": current_time}
+            tracking_dict[client_ip]["count"] += 1
+            tracking_dict[client_ip]["last_seen"] = current_time
+
         if user:
-            tracking_dict[user] = tracking_dict.get(user, 0) + 1
-    else:
-        # Detect successful logins to reset counters
-        success_indicators = [
-            r"successful.*login",
-            r"login.*successful",
-            r"accepted.*password",
-            r"password.*accepted",
-            r"session.*opened",
-            r"login.*session",
-        ]
+            if user not in tracking_dict:
+                tracking_dict[user] = {"count": 0, "last_seen": current_time}
+            tracking_dict[user]["count"] += 1
+            tracking_dict[user]["last_seen"] = current_time
 
-        is_success = any(re.search(pattern, combined) for pattern in success_indicators)
-
-        if is_success:
-            # Reset counters on successful login (but keep some history)
-            client_ip = log_entry.get("client_ip")
-            user = log_entry.get("user") or log_entry.get("ident")
-
-            if client_ip in tracking_dict:
-                # Reduce but don't zero out to maintain some context
-                tracking_dict[client_ip] = max(0, tracking_dict[client_ip] - 1)
-            if user in tracking_dict:
-                tracking_dict[user] = max(0, tracking_dict[user] - 1)
+    # NOTE: We do NOT reset on successful login - preserve attack context!
+    # The TTL mechanism in should_sample_log() will expire old entries.
 
 
 def prefilter_logs(log_content: str) -> tuple[str, dict]:
@@ -194,7 +232,7 @@ def prefilter_logs(log_content: str) -> tuple[str, dict]:
     kept_lines = []
     filtered_count = 0
 
-    for line in lines:
+    for idx, line in enumerate(lines):
         if not line.strip():
             # Keep empty lines for formatting
             kept_lines.append(line)
@@ -209,8 +247,8 @@ def prefilter_logs(log_content: str) -> tuple[str, dict]:
             # Update tracking based on this log
             update_failed_attempts_tracking(parsed_log, failed_attempts_tracking)
 
-            # Decide whether to keep this log
-            if should_sample_log(parsed_log, failed_attempts_tracking):
+            # Decide whether to keep this log (pass line index for sampling)
+            if should_sample_log(parsed_log, failed_attempts_tracking, idx):
                 kept_lines.append(line)
             else:
                 filtered_count += 1

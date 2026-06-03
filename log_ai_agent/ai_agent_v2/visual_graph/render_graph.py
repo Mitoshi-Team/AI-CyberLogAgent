@@ -56,7 +56,7 @@ async def main():
     # Save to file
     output_path = Path(__file__).parent / "pipeline_graph.mmd"
     output_path.write_text(mermaid, encoding="utf-8")
-    print(f"\n✓ Saved Mermaid diagram to: {output_path}")
+    print(f"\n[Saved] Mermaid diagram to: {output_path}")
 
     # --- Graph info ---
     g = graph.get_graph()

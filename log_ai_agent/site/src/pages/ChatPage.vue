@@ -73,6 +73,13 @@
                 class="markdown-content text-base leading-relaxed text-dark-200 text-left break-words"
                 v-html="renderMarkdown(msg.text)"
               ></div>
+              <template v-if="msg.yaraRules && msg.yaraRules.length > 0">
+                <YaraRuleSuggestion
+                  v-for="rule in msg.yaraRules"
+                  :key="rule.pending_rule_id"
+                  :rule="rule"
+                />
+              </template>
               <div class="mt-2 inline-flex items-center gap-2 mb-7">
                 <p class="text-xs text-[#ABABBF] text-left">Wavescan assistant</p>
                 <button
@@ -129,10 +136,10 @@
       <div
         :class="[
           'mx-auto w-full max-w-3xl pb-6 shrink-0 transform',
-          messages.length ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
+          (messages.length > 0 || isLoading) ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >
-        <div v-if="isHistoryLoaded && messages.length === 0" class="mb-1 text-center select-none">
+        <div v-if="isHistoryLoaded && messages.length === 0 && !isLoading" class="mb-1 text-center select-none">
           <img
             src="/wavescan_chat_logo.svg"
             alt="wavescan agent"
@@ -219,12 +226,23 @@
                 </div>
 
                 <button
-                  :disabled="isSecondaryControlsBlocked || !isVoiceInputEnabled"
+                  :disabled="!canUseVoiceControl"
                   class="w-9 h-9 rounded-xl bg-[#2a2d36] border border-[#363a46] text-[#bcc1cf] hover:text-white hover:border-[#5566ff] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#bcc1cf] disabled:hover:border-[#363a46] transition-colors"
                   type="button"
-                  title="Голосовой ввод скоро"
+                  :title="voiceControlTitle"
+                  @click="handleVoiceControlClick"
                 >
-                  <img src="/micro_icon.svg" alt="voice" class="w-4 h-4 mx-auto" />
+                  <svg
+                    v-if="isVoiceRecording"
+                    class="w-4 h-4 mx-auto"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  <img v-else src="/micro_icon.svg" alt="voice" class="w-4 h-4 mx-auto" />
                 </button>
 
                 <button
@@ -243,6 +261,16 @@
                   >
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
+                  <svg
+                    v-else-if="isVoiceRecording"
+                    class="w-4 h-4 mx-auto"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                  </svg>
                   <img v-else src="/send_icon.svg" alt="send" class="w-4 h-4 mx-auto" />
                 </button>
               </div>
@@ -250,7 +278,7 @@
           </div>
         </div>
 
-        <div v-if="messages.length === 0" class="flex flex-wrap justify-center gap-3 mt-5">
+        <div v-if="messages.length === 0 && (!isHistoryLoaded || !isLoading)" class="flex flex-wrap justify-center gap-3 mt-5">
           <button
             @click="selectQuickQuestion('Какие рекомендации для предотвращения атак?')"
             :disabled="isQuickQuestionBlocked"
@@ -327,9 +355,10 @@
 import { ref, nextTick, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useRoute } from 'vue-router'
-import { chat, logs } from '@/services/api'
+import { chat, logs, speech, configRules } from '@/services/api'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import YaraRuleSuggestion from '@/components/YaraRuleSuggestion.vue'
 
 // Настройка marked для безопасного рендеринга
 marked.setOptions({
@@ -388,6 +417,26 @@ const SCROLLBAR_EDGE_GAP = 96
 const messages = ref([])
 const shouldSyncAfterBackgroundCompletion = ref(false)
 
+const validateSberSpeechKey = async () => {
+  isVoiceKeyCheckInProgress.value = true
+  try {
+    const response = await speech.validate()
+    const isValid = Boolean(response?.data?.success)
+
+    isVoiceKeyValid.value = isValid
+    voiceKeyError.value = response?.data?.reason || ''
+    if (!isValid) {
+      console.warn('SaluteSpeech key validation failed:', response?.data)
+    }
+  } catch (error) {
+    console.warn('SaluteSpeech key validation error:', error)
+    isVoiceKeyValid.value = false
+    voiceKeyError.value = 'request_failed'
+  } finally {
+    isVoiceKeyCheckInProgress.value = false
+  }
+}
+
 // Загрузка истории чата при монтировании
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -395,6 +444,8 @@ onMounted(async () => {
   // Очищаем с задержкой при монтировании компонента
   clearNotifications(false)
   adjustTextareaHeight()
+
+  await validateSberSpeechKey()
 
   if (isLoading.value) {
     shouldSyncAfterBackgroundCompletion.value = true
@@ -425,6 +476,20 @@ const loadChatHistory = async () => {
         text: msg.content,
         isNew: false,
       }))
+
+      // Прикрепляем ожидающие YARA правила к AI сообщениям
+      try {
+        const rulesRes = await configRules.getPendingYaraRules()
+        const pendingRules = rulesRes.data?.rules
+        if (pendingRules && pendingRules.length > 0) {
+          const lastAiMsg = [...messages.value].reverse().find(m => m.role === 'ai')
+          if (lastAiMsg) {
+            lastAiMsg.yaraRules = pendingRules
+          }
+        }
+      } catch (e) {
+        console.error('Error loading pending YARA rules:', e)
+      }
 
       // При открытии чата прокручиваем к последнему сообщению пользователя,
       // используя ту же логику top-align, что и при отправке сообщения.
@@ -497,9 +562,16 @@ const clearNotifications = (immediate = false) => {
 // Очистка счетчика непрочитанных при открытии/переходе на страницу чата
 watch(() => route.path, (newPath) => {
   if (newPath === '/chat') {
-    // Очищаем с задержкой, чтобы пользователь увидел выделенные сообщения
-    clearNotifications(false)
-    nextTick(() => updateCustomScrollbar())
+    // Перезагружаем историю чата при возврате на страницу
+    isHistoryLoaded.value = false
+    loadChatHistory().then(() => {
+      isHistoryLoaded.value = true
+      clearNotifications(false)
+      nextTick(() => updateCustomScrollbar())
+    }).catch((error) => {
+      console.error('Error reloading chat history:', error)
+      isHistoryLoaded.value = true
+    })
   }
 }, { immediate: true })
 
@@ -565,6 +637,7 @@ const canSendMessage = computed(() => {
 
 // Сообщение о причине блокировки
 const getRateLimitMessage = computed(() => {
+  if (isVoiceRecording.value) return 'Остановить запись и распознать'
   if (isLogAnalysisInProgress.value) return 'Отменить анализ лога'
   if (isLoading.value) return 'Ожидание ответа агента...'
   if (isRateLimited.value) return 'Подождите 2 секунды перед следующим сообщением'
@@ -575,6 +648,7 @@ const getRateLimitMessage = computed(() => {
 
 const canUseSendControl = computed(() => {
   if (isLogAnalysisInProgress.value) return true
+  if (isVoiceRecording.value) return true
   return canSendMessage.value
 })
 
@@ -582,7 +656,17 @@ const isSecondaryControlsBlocked = computed(() => {
   return isLoading.value || isRateLimited.value || isLogAnalysisInProgress.value
 })
 
-const isVoiceInputEnabled = false
+const isVoiceKeyValid = ref(false)
+const isVoiceKeyCheckInProgress = ref(false)
+const voiceKeyError = ref('')
+const isVoiceInputEnabled = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)
+const isVoiceRecording = ref(false)
+const isVoiceTranscribing = ref(false)
+const shouldTranscribeOnStop = ref(false)
+let voiceMediaRecorder = null
+let voiceStream = null
+let voiceChunks = []
+let voiceStopTimer = null
 
 const isQuickQuestionBlocked = computed(() => {
   return isLoading.value || isRateLimited.value || isLogAnalysisInProgress.value
@@ -590,6 +674,27 @@ const isQuickQuestionBlocked = computed(() => {
 
 const isInputBlocked = computed(() => {
   return isLoading.value || isRateLimited.value
+})
+
+const canUseVoiceControl = computed(() => {
+  if (isVoiceRecording.value) return true
+  return !isSecondaryControlsBlocked.value
+    && isVoiceInputEnabled
+    && isVoiceKeyValid.value
+    && !isVoiceKeyCheckInProgress.value
+    && !isVoiceTranscribing.value
+})
+
+const voiceControlTitle = computed(() => {
+  if (!isVoiceInputEnabled) return 'Голосовой ввод недоступен'
+  if (isVoiceKeyCheckInProgress.value) return 'Проверка ключа...'
+  if (!isVoiceKeyValid.value) {
+    if (voiceKeyError.value === 'missing_key') return 'Ключ SaluteSpeech API не настроен'
+    return 'Ключ недействителен'
+  }
+  if (isVoiceRecording.value) return 'Остановить запись'
+  if (isVoiceTranscribing.value) return 'Распознавание речи...'
+  return 'Голосовой ввод'
 })
 
 const scrollToBottom = () => {
@@ -760,11 +865,178 @@ const adjustTextareaHeight = () => {
   })
 }
 
+const getRecorderMimeType = () => {
+  if (typeof MediaRecorder === 'undefined') return ''
+
+  const candidates = [
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ]
+
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
+}
+
+const stopVoiceRecording = (reason = 'manual', transcribe = false) => {
+  if (voiceStopTimer) {
+    clearTimeout(voiceStopTimer)
+    voiceStopTimer = null
+  }
+
+  shouldTranscribeOnStop.value = transcribe
+
+  if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+    voiceMediaRecorder.stop()
+  }
+
+  if (voiceStream) {
+    voiceStream.getTracks().forEach((track) => track.stop())
+    voiceStream = null
+  }
+
+  if (reason === 'timeout') {
+    appStore.addNotification('Запись остановлена: лимит 30 секунд', 'info')
+  }
+}
+
+const applyTranscriptionToInput = (text) => {
+  const normalized = trimBoundaryEmptyLines(text || '')
+  if (!normalized) return
+
+  const current = inputMessage.value || ''
+  const availableSpace = MAX_MESSAGE_LENGTH - current.length
+
+  if (availableSpace <= 0) {
+    appStore.addNotification('Достигнут лимит 500 символов', 'warning')
+    return
+  }
+
+  const snippet = normalized.slice(0, availableSpace)
+  const nextValue = current ? `${current} ${snippet}` : snippet
+
+  if (normalized.length > snippet.length) {
+    appStore.addNotification('Текст сокращен до 500 символов', 'warning')
+  }
+
+  inputMessage.value = nextValue
+  adjustTextareaHeight()
+}
+
+const extractTranscript = (payload) => {
+  if (!payload) return ''
+  if (typeof payload === 'string') return payload
+  if (payload.result) return payload.result
+  if (payload.text) return payload.text
+  if (payload.transcript) return payload.transcript
+  const alt = payload.results?.[0]?.alternatives?.[0]?.transcript
+  return alt || ''
+}
+
+const transcribeVoiceBlob = async (audioBlob) => {
+  if (!audioBlob) return
+
+  isVoiceTranscribing.value = true
+  try {
+    const response = await speech.transcribe(audioBlob)
+    const data = response?.data
+    const transcript = extractTranscript(data)
+
+    if (!transcript) {
+      throw new Error('Ответ распознавания пустой')
+    }
+
+    applyTranscriptionToInput(transcript)
+  } catch (error) {
+    console.error('Voice transcription failed:', error)
+    appStore.addNotification('Не удалось распознать речь', 'error')
+  } finally {
+    isVoiceTranscribing.value = false
+  }
+}
+
+const startVoiceRecording = async () => {
+  if (!isVoiceInputEnabled || isVoiceRecording.value) return
+
+  if (!isVoiceKeyValid.value) {
+    appStore.addNotification('Ключ SaluteSpeech API недействителен', 'error')
+    return
+  }
+
+  try {
+    if (typeof MediaRecorder === 'undefined') {
+      appStore.addNotification('Браузер не поддерживает запись аудио', 'error')
+      return
+    }
+
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const mimeType = getRecorderMimeType()
+    if (!mimeType) {
+      appStore.addNotification('Браузер не поддерживает формат аудио для SaluteSpeech', 'error')
+      stopVoiceRecording('manual', false)
+      return
+    }
+    voiceChunks = []
+    voiceMediaRecorder = new MediaRecorder(voiceStream, mimeType ? { mimeType } : undefined)
+
+    voiceMediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        voiceChunks.push(event.data)
+      }
+    }
+
+    voiceMediaRecorder.onstop = async () => {
+      isVoiceRecording.value = false
+
+      const blobType = voiceMediaRecorder?.mimeType || mimeType || 'audio/ogg;codecs=opus'
+      const audioBlob = new Blob(voiceChunks, { type: blobType })
+      voiceChunks = []
+
+      if (!shouldTranscribeOnStop.value) {
+        shouldTranscribeOnStop.value = false
+        return
+      }
+
+      if (audioBlob.size === 0) {
+        appStore.addNotification('Запись пуста', 'warning')
+        shouldTranscribeOnStop.value = false
+        return
+      }
+
+      await transcribeVoiceBlob(audioBlob)
+      shouldTranscribeOnStop.value = false
+    }
+
+    voiceMediaRecorder.start()
+    isVoiceRecording.value = true
+    shouldTranscribeOnStop.value = false
+
+    voiceStopTimer = setTimeout(() => {
+      stopVoiceRecording('timeout', true)
+    }, 30000)
+  } catch (error) {
+    console.error('Failed to start voice recording:', error)
+    appStore.addNotification('Не удалось получить доступ к микрофону', 'error')
+    stopVoiceRecording()
+  }
+}
+
+const handleVoiceControlClick = async () => {
+  if (isVoiceRecording.value) {
+    stopVoiceRecording('manual', false)
+    return
+  }
+
+  await startVoiceRecording()
+}
+
 const normalizeMessageText = (value) => {
-  if (!value) return ''
+  if (value === null || value === undefined) return ''
+
+  const rawValue = typeof value === 'string' ? value : String(value)
 
   // Нормализуем переносы и удаляем ведущие переносы, если нет текста перед ними
-  let normalized = value.replace(/\r\n/g, '\n').replace(/^\n+/, '')
+  let normalized = rawValue.replace(/\r\n/g, '\n').replace(/^\n+/, '')
 
   // Между текстовыми фрагментами разрешаем максимум два переноса строки
   normalized = normalized.replace(/\n{3,}/g, '\n\n')
@@ -773,9 +1045,11 @@ const normalizeMessageText = (value) => {
 }
 
 const trimBoundaryEmptyLines = (value) => {
-  if (!value) return ''
+  if (value === null || value === undefined) return ''
 
-  return value
+  const rawValue = typeof value === 'string' ? value : String(value)
+
+  return rawValue
     .replace(/\r\n/g, '\n')
     .replace(/^(?:[\t ]*\n)+/, '')
     .replace(/(?:\n[\t ]*)+$/, '')
@@ -885,6 +1159,10 @@ const sendMessage = async () => {
   })
   const newUserMessageIndex = messages.value.length - 1
 
+  // Сохраняем сообщение пользователя сразу, чтобы оно было видно при возврате в чат,
+  // даже если ответ ассистента еще не пришел.
+  await saveChatMessage('user', userMessage)
+
   inputMessage.value = ''
   isLoading.value = true
   
@@ -910,7 +1188,7 @@ const sendMessage = async () => {
     const responseMode = response.data.mode || 'UNKNOWN'
     
     // Выводим режим работы в консоль браузера
-    console.log(`🤖 GigaChat Mode: ${responseMode}`)
+    console.log(`🤖 AI Mode: ${responseMode}`)
     console.log(`📝 Response length: ${aiResponse.length} characters`)
     console.log(`💬 Message: "${userMessage}"`)
     console.log('---')
@@ -958,6 +1236,11 @@ const cancelLogAnalysis = async () => {
 const handleSendControlClick = async () => {
   if (isLogAnalysisInProgress.value) {
     await cancelLogAnalysis()
+    return
+  }
+
+  if (isVoiceRecording.value) {
+    stopVoiceRecording('confirm', true)
     return
   }
 
@@ -1020,18 +1303,27 @@ const handleFileUpload = async (event) => {
     })
     
     if (response.data.success) {
-      // Показываем только анализ от GigaChat
-      const analysisMsg = response.data.gigachat_analysis
+      // Показываем только AI-анализ
+      const analysisMsg = response.data.ai_analysis
       
+      const yaraRules = response.data.generated_yara_rules || []
       messages.value.push({
         role: 'ai',
         text: analysisMsg,
         isNew: false,
+        yaraRules: yaraRules.length > 0 ? yaraRules : undefined,
       })
       await reduceTopAlignSpacerByLastAssistantMessage()
       
       // Сохраняем ответ в БД
       await saveChatMessage('agent', analysisMsg)
+      
+      // Явно обновляем историю отчетов, чтобы новый отчет появился в вкладке "История"
+      appStore.notifyReportsUpdated()
+      
+      // Также явно обновляем чат, чтобы убедиться что сообщение отображается
+      // (это гарантирует что сообщение синхронизировано после сохранения в БД)
+      await syncChatHistoryIfVisible()
     } else {
       throw new Error(response.data.message || 'Ошибка при анализе файла')
     }
@@ -1089,6 +1381,10 @@ onUnmounted(() => {
     clearTimeout(copyResetTimer)
     copyResetTimer = null
   }
+
+  if (isVoiceRecording.value) {
+    stopVoiceRecording('manual')
+  }
 })
 
 const confirmNewChat = async () => {
@@ -1103,7 +1399,7 @@ const confirmNewChat = async () => {
     isLoading.value = true
     showNewChatModal.value = false
 
-    // Очищаем сообщения в БД и контекст GigaChat
+    // Очищаем сообщения в БД и контекст AI
     await chat.clearMessages(userId)
 
     // Очищаем локальный массив сообщений

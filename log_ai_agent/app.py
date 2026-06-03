@@ -6,13 +6,32 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
+import uuid
+import urllib.parse
+import ssl
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
-import asyncpg
+from sqlalchemy import select, func, text, case
+from log_ai_agent.db.session import get_async_session, get_sync_session
+from log_ai_agent.db.models import (
+    User,
+    AgentLog,
+    ActionType,
+    UserLog,
+    Log,
+    Report,
+    Message,
+    SeverityLevel,
+    ThreatType,
+    YaraRule,
+    SigmaRule,
+    PendingYaraRule,
+)
 from dotenv import load_dotenv
 from fastapi import (
     FastAPI,
@@ -34,6 +53,8 @@ except ImportError:  # pragma: no cover - environment dependent
 from log_ai_agent.ai_agent_v2.app_integration import (
     analyze_log_v2,
     close_pipeline,
+    reload_sigma_rules,
+    reload_yara_rules,
     warmup_pipeline,
 )
 from log_ai_agent.ai_agent_v2.chat_integration import (
@@ -74,6 +95,22 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
 CLI_TZ_OFFSET_HOURS = int(os.getenv("CLI_TZ_OFFSET_HOURS", "5"))
 CLI_TZ = timezone(timedelta(hours=CLI_TZ_OFFSET_HOURS))
+SBER_SPEECH_AUTH_KEY = os.getenv("VITE_SBER_SPEECH_API_KEY")
+SBER_SPEECH_API_URL = os.getenv(
+    "VITE_SBER_SPEECH_API_URL", "https://smartspeech.sber.ru/rest/v1/speech:recognize"
+)
+SBER_SPEECH_VALIDATE_URL = os.getenv(
+    "VITE_SBER_SPEECH_VALIDATE_URL", "https://smartspeech.sber.ru/rest/v1/text:synthesize"
+)
+SBER_SPEECH_OAUTH_URL = os.getenv(
+    "VITE_SBER_SPEECH_OAUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+)
+SBER_SPEECH_SCOPE = os.getenv("VITE_SBER_SPEECH_SCOPE", "SALUTE_SPEECH_PERS")
+
+_sber_token_cache: dict[str, object] = {
+    "access_token": None,
+    "expires_at": 0.0,
+}
 APP_DIR = Path(__file__).parent.resolve()
 AI_AGENT_RULES_DIR = APP_DIR / "ai_agent_v2" / "rules"
 SIGMA_RULES_DIR = AI_AGENT_RULES_DIR / "sigma"
@@ -93,6 +130,8 @@ AGENT_ACTION_MATCH_THREATS = 3
 AGENT_ACTION_BUILD_REPORT = 4
 AGENT_ACTION_SAVE_REPORT = 5
 AGENT_ACTION_RESPOND = 6
+
+AGENT_ACTION_GENERATE_YARA = 11
 
 USER_ACTION_LOGIN = 7
 USER_ACTION_LOGOUT = 8
@@ -139,6 +178,119 @@ def _read_analysis_marker(marker_file: Path) -> int | None:
         return marker if marker >= 0 else 0
     except Exception:
         return None
+
+
+def _build_sber_speech_request(
+    url: str,
+    method: str,
+    payload: bytes | None = None,
+    content_type: str | None = None,
+    access_token: str | None = None,
+) -> urllib.request.Request:
+    headers = {
+        "Accept": "application/json",
+    }
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if content_type:
+        headers["Content-Type"] = content_type
+
+    request = urllib.request.Request(
+        url=url,
+        data=payload,
+        headers=headers,
+        method=method,
+    )
+    return request
+
+
+def _perform_sber_speech_request(
+    url: str,
+    method: str,
+    payload: bytes | None = None,
+    content_type: str | None = None,
+    access_token: str | None = None,
+) -> tuple[int, str]:
+    request = _build_sber_speech_request(
+        url, method, payload, content_type, access_token=access_token
+    )
+    try:
+        ssl_context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:
+            body = response.read().decode("utf-8")
+            return response.status, body
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8") if error.fp else ""
+        return error.code, body
+    except urllib.error.URLError as error:
+        return 0, str(error)
+
+
+def _parse_sber_token_response(payload: dict) -> tuple[str | None, float]:
+    access_token = payload.get("access_token")
+    if not access_token:
+        return None, 0.0
+
+    now = time.time()
+    expires_in = payload.get("expires_in")
+    expires_at = payload.get("expires_at")
+
+    if isinstance(expires_at, (int, float)):
+        if expires_at > now * 10:
+            expires_at = expires_at / 1000
+        return access_token, float(expires_at)
+
+    if isinstance(expires_in, (int, float)):
+        return access_token, now + float(expires_in)
+
+    return access_token, now + 60 * 25
+
+
+def _get_sber_access_token() -> tuple[str | None, str | None]:
+    if not SBER_SPEECH_AUTH_KEY:
+        return None, "missing_key"
+
+    now = time.time()
+    cached_token = _sber_token_cache.get("access_token")
+    cached_expiry = float(_sber_token_cache.get("expires_at") or 0)
+    if cached_token and now < cached_expiry - 15:
+        return str(cached_token), None
+
+    payload = urllib.parse.urlencode({"scope": SBER_SPEECH_SCOPE}).encode("utf-8")
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "RqUID": str(uuid.uuid4()),
+        "Authorization": f"Basic {SBER_SPEECH_AUTH_KEY}",
+    }
+
+    request = urllib.request.Request(
+        url=SBER_SPEECH_OAUTH_URL,
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        ssl_context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=15, context=ssl_context) as response:
+            body = response.read().decode("utf-8")
+        data = json.loads(body) if body else {}
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8") if error.fp else ""
+        return None, body or f"OAuth error {error.code}"
+    except urllib.error.URLError as error:
+        return None, str(error)
+    except json.JSONDecodeError:
+        return None, "Invalid OAuth response"
+
+    access_token, expires_at = _parse_sber_token_response(data)
+    if not access_token:
+        return None, "Missing access_token in response"
+
+    _sber_token_cache["access_token"] = access_token
+    _sber_token_cache["expires_at"] = expires_at
+    return access_token, None
 
 
 def _write_analysis_marker(marker_file: Path, marker_line: int) -> bool:
@@ -337,6 +489,26 @@ async def _broadcast_report_created_event(
         logger.warning("Failed to broadcast report_created event: %s", error)
 
 
+async def _broadcast_yara_rules_suggestion(
+    user_id: int,
+    report_id: int,
+    rules: list[dict],
+) -> None:
+    """Notify frontend about new YARA rule suggestions for user decision."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "yara_rules_suggestion",
+                "user_id": user_id,
+                "report_id": report_id,
+                "rules": rules,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast yara_rules_suggestion: %s", error)
+
+
 def _schedule_background_task(coro, task_name: str) -> None:
     """Run a coroutine in background and log failures without blocking request flow."""
     task = asyncio.create_task(coro)
@@ -351,29 +523,27 @@ def _schedule_background_task(coro, task_name: str) -> None:
 
 
 async def _insert_agent_log(
-    conn: asyncpg.Connection,
     action_type_id: int,
     description: str,
 ) -> None:
     """Persist a short agent action log into AgentLogs table."""
-    await conn.execute(
-        """
-        INSERT INTO public."AgentLogs" (action_type_id, description, date)
-        VALUES ($1, $2, NOW())
-        """,
-        action_type_id,
-        description,
-    )
+    try:
+        async with get_async_session() as session:
+            log = AgentLog(action_type_id=action_type_id, description=description)
+            session.add(log)
+            await session.commit()
+    except Exception:
+        # Swallow to keep best-effort behaviour
+        return
 
 
 async def _try_insert_agent_log(
-    conn: asyncpg.Connection,
     action_type_id: int,
     description: str,
 ) -> None:
     """Best-effort wrapper for AgentLogs writes to avoid breaking main flow."""
     try:
-        await _insert_agent_log(conn, action_type_id, description)
+        await _insert_agent_log(action_type_id, description)
     except Exception as error:
         logger.warning(
             "Failed to write AgentLogs entry (action_type_id=%s): %s",
@@ -383,32 +553,28 @@ async def _try_insert_agent_log(
 
 
 async def _insert_user_log(
-    conn: asyncpg.Connection,
     user_id: int,
     action_type_id: int,
     description: str,
 ) -> None:
     """Persist a short user action log into UserLogs table."""
-    await conn.execute(
-        """
-        INSERT INTO public."UserLogs" (user_id, action_type_id, description, date)
-        VALUES ($1, $2, $3, NOW())
-        """,
-        user_id,
-        action_type_id,
-        description,
-    )
+    try:
+        async with get_async_session() as session:
+            log = UserLog(user_id=user_id, action_type_id=action_type_id, description=description)
+            session.add(log)
+            await session.commit()
+    except Exception:
+        return
 
 
 async def _try_insert_user_log(
-    conn: asyncpg.Connection,
     user_id: int,
     action_type_id: int,
     description: str,
 ) -> None:
     """Best-effort wrapper for UserLogs writes to avoid breaking main flow."""
     try:
-        await _insert_user_log(conn, user_id, action_type_id, description)
+        await _insert_user_log(user_id, action_type_id, description)
     except Exception as error:
         logger.warning(
             "Failed to write UserLogs entry (user_id=%s, action_type_id=%s): %s",
@@ -488,77 +654,54 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             f"\n{analysis_result['description']}"
         )
 
-        conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-        try:
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_RECEIVE_LOGS,
-                f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
-            )
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_ANALYZE_LOGS,
-                "Анализ логов через AI Agent v2 (Kafka batch)",
-            )
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_MATCH_THREATS,
-                "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
-            )
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_BUILD_REPORT,
-                "Формирование итогового отчета по Kafka batch",
-            )
+        await _try_insert_agent_log(
+            AGENT_ACTION_RECEIVE_LOGS,
+            f"Получение логов из Kafka: источник={source_label}, записей={len(messages)}",
+        )
+        await _try_insert_agent_log(
+            AGENT_ACTION_ANALYZE_LOGS,
+            "Анализ логов через AI Agent v2 (Kafka batch)",
+        )
+        await _try_insert_agent_log(
+            AGENT_ACTION_MATCH_THREATS,
+            "Сопоставление событий с базой угроз/MITRE (Kafka batch)",
+        )
+        await _try_insert_agent_log(
+            AGENT_ACTION_BUILD_REPORT,
+            "Формирование итогового отчета по Kafka batch",
+        )
 
-            log_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Logs" (file_content, date)
-                VALUES ($1, NOW())
-                RETURNING log_id
-                """,
-                log_content,
-            )
-            log_id = log_row["log_id"]
+        async with get_async_session() as session:
+            log = Log(file_content=log_content)
+            session.add(log)
+            await session.flush()
+            log_id = log.log_id
 
-            report_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Reports" (
-                    log_id,
-                    severity_level_id,
-                    threat_type_id,
-                    description,
-                    created_at
-                )
-                VALUES ($1, $2, $3, $4, NOW())
-                RETURNING report_id
-                """,
-                log_id,
-                analysis_result["severity_level_id"],
-                analysis_result["threat_type_id"],
-                report_description,
+            report = Report(
+                log_id=log_id,
+                severity_level_id=analysis_result.get("severity_level_id"),
+                threat_type_id=analysis_result.get("threat_type_id"),
+                description=report_description,
             )
-            report_id = report_row["report_id"]
+            session.add(report)
+            await session.flush()
+            report_id = report.report_id
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_SAVE_REPORT,
                 f"Сохранение отчета по Kafka batch: log_id={log_id}, report_id={report_id}",
             )
 
             chat_message = f"# Автоотчет по входящим логам\n\n{report_description}\n\n"
-            inserted_messages = await conn.fetch(
-                """
-                INSERT INTO public."Messages" (user_id, role, content, created_at)
-                SELECT user_id, 'agent', $1, NOW()
-                FROM public."Users"
-                RETURNING user_id
-                """,
-                chat_message,
-            )
+
+            # Post a message for every user
+            result = await session.execute(select(User.user_id))
+            user_ids = result.scalars().all()
+            messages_to_add = [Message(user_id=uid, role="agent", content=chat_message) for uid in user_ids]
+            session.add_all(messages_to_add)
+            await session.commit()
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_RESPOND,
                 "Отправка автоотчета пользователям через чат",
             )
@@ -573,30 +716,28 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             )
             logger.info(
                 "Kafka report auto-posted to chat for users: %s",
-                len(inserted_messages),
+                len(user_ids),
             )
 
-            for row in inserted_messages:
+            for uid in user_ids:
                 await _broadcast_chat_response_event(
-                    user_id=row["user_id"],
+                    user_id=uid,
                     response_text=chat_message,
                     mode="auto_report",
                 )
 
-            await _broadcast_incident_event(
-                title=f"Инцидент из Kafka потока ({source_label})",
-                description=report_description,
-                severity_level_id=analysis_result.get("severity_level_id"),
-                source="Kafka Pipeline",
-            )
-            await _broadcast_report_created_event(
-                report_id=report_id,
-                source="Kafka Pipeline",
-                severity_level_id=analysis_result.get("severity_level_id"),
-            )
-            analysis_completed = True
-        finally:
-            await conn.close()
+        await _broadcast_incident_event(
+            title=f"Инцидент из Kafka потока ({source_label})",
+            description=report_description,
+            severity_level_id=analysis_result.get("severity_level_id"),
+            source="Kafka Pipeline",
+        )
+        await _broadcast_report_created_event(
+            report_id=report_id,
+            source="Kafka Pipeline",
+            severity_level_id=analysis_result.get("severity_level_id"),
+        )
+        analysis_completed = True
     except Exception as error:
         runtime_error = str(error)
         raise
@@ -711,6 +852,10 @@ class SigmaFileCreateRequest(BaseModel):
     filename: str
 
 
+class YaraFileCreateRequest(BaseModel):
+    filename: str
+
+
 @app.get("/")
 async def root():
     """Главная страница API"""
@@ -777,16 +922,11 @@ async def login(request: LoginRequest):
             AUTH_TOKENS[token] = user_data["user_id"]
 
             if DATABASE_URL and user_data and user_data.get("user_id"):
-                conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-                try:
-                    await _try_insert_user_log(
-                        conn,
-                        user_data["user_id"],
-                        USER_ACTION_LOGIN,
-                        f"Вход в систему: login={user_data.get('login', request.username)}",
-                    )
-                finally:
-                    await conn.close()
+                await _try_insert_user_log(
+                    user_data["user_id"],
+                    USER_ACTION_LOGIN,
+                    f"Вход в систему: login={user_data.get('login', request.username)}",
+                )
 
             return LoginResponse(
                 success=True,
@@ -833,16 +973,11 @@ async def logout(user_id: int, request: Request):
             AUTH_TOKENS.pop(token, None)
 
         if DATABASE_URL:
-            conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-            try:
-                await _try_insert_user_log(
-                    conn,
-                    user_id,
-                    USER_ACTION_LOGOUT,
-                    "Выход из системы",
-                )
-            finally:
-                await conn.close()
+            await _try_insert_user_log(
+                user_id,
+                USER_ACTION_LOGOUT,
+                "Выход из системы",
+            )
 
         return {
             "success": True,
@@ -862,9 +997,8 @@ async def health_check():
     # Проверка подключения к базе данных
     if DATABASE_URL:
         try:
-            conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-            await conn.execute("SELECT 1")
-            await conn.close()
+            async with get_async_session() as session:
+                await session.execute(text("SELECT 1"))
             db_status = "connected"
         except Exception as e:
             db_error = str(e)
@@ -887,6 +1021,81 @@ async def get_system_status():
     }
 
 
+@app.get("/api/speech/validate")
+async def validate_sber_speech_key():
+    if not SBER_SPEECH_AUTH_KEY:
+        return {
+            "success": False,
+            "reason": "missing_key",
+            "message": "SaluteSpeech API key is not configured",
+        }
+
+    access_token, token_error = await asyncio.to_thread(_get_sber_access_token)
+    if not access_token:
+        return {
+            "success": False,
+            "reason": "token_error",
+            "message": token_error or "Failed to получить access token",
+        }
+
+    return {"success": True}
+
+
+@app.post("/api/speech/transcribe")
+async def transcribe_sber_speech(file: UploadFile = File(...)):
+    if not SBER_SPEECH_AUTH_KEY:
+        raise HTTPException(status_code=400, detail="SaluteSpeech API key is not configured")
+
+    if not SBER_SPEECH_API_URL:
+        raise HTTPException(status_code=400, detail="SaluteSpeech API URL is not configured")
+
+    allowed_content_types = {
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+    }
+
+    if file.content_type not in allowed_content_types:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Unsupported audio content type",
+                "received": file.content_type,
+                "allowed": sorted(allowed_content_types),
+            },
+        )
+
+    access_token, token_error = await asyncio.to_thread(_get_sber_access_token)
+    if not access_token:
+        raise HTTPException(status_code=502, detail=token_error or "Failed to получить access token")
+
+    payload = await file.read()
+    content_type = file.content_type or "audio/ogg;codecs=opus"
+
+    status_code, body = await asyncio.to_thread(
+        _perform_sber_speech_request,
+        SBER_SPEECH_API_URL,
+        "POST",
+        payload,
+        content_type,
+        access_token,
+    )
+
+    if 200 <= status_code < 300:
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=502, detail="Invalid SaluteSpeech response")
+
+    logger.warning("SaluteSpeech transcribe failed: status=%s body=%s", status_code, body)
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "upstream_status": status_code,
+            "upstream_body": body or "",
+        },
+    )
+
+
 def _resolve_sigma_file_path(filename: str) -> Path:
     """Validate sigma filename and return normalized file path."""
     if not filename:
@@ -906,10 +1115,23 @@ def _resolve_sigma_file_path(filename: str) -> Path:
     return (SIGMA_RULES_DIR / normalized_name).resolve()
 
 
-async def _reload_detection_pipeline() -> None:
-    """Reload AI pipeline to pick up updated YARA/Sigma rules."""
-    await close_pipeline()
-    await warmup_pipeline()
+def _resolve_yara_file_path(filename: str) -> Path:
+    """Validate Yara filename and return normalized file path."""
+    if not filename:
+        raise HTTPException(status_code=400, detail="Имя файла обязательно")
+
+    normalized_name = Path(filename).name
+    if normalized_name != filename:
+        raise HTTPException(status_code=400, detail="Некорректное имя файла")
+
+    suffix = Path(normalized_name).suffix.lower()
+    if suffix not in {".yar", ".yara"}:
+        raise HTTPException(status_code=400, detail="Допустимы только .yar или .yara")
+
+    if any(char in normalized_name for char in ("\\", "/", ":")):
+        raise HTTPException(status_code=400, detail="Некорректное имя файла")
+
+    return (YARA_RULES_DIR / normalized_name).resolve()
 
 
 def _sync_rule_change_to_docker_container(
@@ -1010,12 +1232,9 @@ def _sync_rule_change_to_docker_container(
 async def list_sigma_rule_files():
     """Get list of Sigma rule files from rules directory."""
     try:
-        SIGMA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        files = sorted(
-            file.name
-            for file in SIGMA_RULES_DIR.iterdir()
-            if file.is_file() and file.suffix.lower() in {".yml", ".yaml"}
-        )
+        with get_sync_session() as session:
+            rows = session.query(SigmaRule).order_by(SigmaRule.name.asc()).all()
+            files = [r.name for r in rows]
         return {"files": files}
     except Exception as e:
         logger.error(f"Error listing Sigma files: {e}")
@@ -1028,29 +1247,30 @@ async def list_sigma_rule_files():
 async def create_sigma_rule_file(request: SigmaFileCreateRequest):
     """Create empty Sigma rule file."""
     try:
-        SIGMA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        file_path = _resolve_sigma_file_path(request.filename)
+        file_name = request.filename
+        with get_sync_session() as session:
+            existing = session.query(SigmaRule).filter(SigmaRule.name == file_name).one_or_none()
+            if existing:
+                raise HTTPException(status_code=409, detail="Файл уже существует")
 
-        if file_path.exists():
-            raise HTTPException(status_code=409, detail="Файл уже существует")
-
-        initial_content = (
-            "title: New Sigma Rule\n"
-            "id: \n"
-            "status: experimental\n"
-            "description: \n"
-            "logsource:\n"
-            "  category: webserver\n"
-            "detection:\n"
-            "  selection:\n"
-            '    raw|contains: ""\n'
-            "  condition: selection\n"
-            "level: medium\n"
-        )
-        file_path.write_text(initial_content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(file_path)
-        await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+            initial_content = (
+                "title: New Sigma Rule\n"
+                "id: \n"
+                "status: experimental\n"
+                "description: \n"
+                "logsource:\n"
+                "  category: webserver\n"
+                "detection:\n"
+                "  selection:\n"
+                '    raw|contains: ""\n'
+                "  condition: selection\n"
+                "level: medium\n"
+            )
+            new = SigmaRule(name=file_name, content=initial_content)
+            session.add(new)
+            session.commit()
+        await reload_sigma_rules()
+        return {"success": True, "filename": file_name}
     except HTTPException:
         raise
     except Exception as e:
@@ -1064,14 +1284,11 @@ async def create_sigma_rule_file(request: SigmaFileCreateRequest):
 async def get_sigma_rule_file_content(filename: str):
     """Get Sigma rule file content."""
     try:
-        file_path = _resolve_sigma_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        return {
-            "filename": file_path.name,
-            "content": file_path.read_text(encoding="utf-8"),
-        }
+        with get_sync_session() as session:
+            row = session.query(SigmaRule).filter(SigmaRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            return {"filename": row.name, "content": row.content}
     except HTTPException:
         raise
     except Exception as e:
@@ -1085,14 +1302,15 @@ async def update_sigma_rule_file_content(
 ):
     """Update Sigma rule file content and reload detection pipeline."""
     try:
-        file_path = _resolve_sigma_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        file_path.write_text(request.content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(file_path)
-        await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        with get_sync_session() as session:
+            row = session.query(SigmaRule).filter(SigmaRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            row.content = request.content
+            session.add(row)
+            session.commit()
+        await reload_sigma_rules()
+        return {"success": True, "filename": filename}
     except HTTPException:
         raise
     except Exception as e:
@@ -1106,14 +1324,14 @@ async def update_sigma_rule_file_content(
 async def delete_sigma_rule_file(filename: str):
     """Delete Sigma rule file and reload detection pipeline."""
     try:
-        file_path = _resolve_sigma_file_path(filename)
-        if not file_path.exists() or not file_path.is_file():
-            raise HTTPException(status_code=404, detail="Файл не найден")
-
-        file_path.unlink()
-        _sync_rule_change_to_docker_container(file_path, deleted=True)
-        await _reload_detection_pipeline()
-        return {"success": True, "filename": file_path.name}
+        with get_sync_session() as session:
+            row = session.query(SigmaRule).filter(SigmaRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            session.delete(row)
+            session.commit()
+        await reload_sigma_rules()
+        return {"success": True, "filename": filename}
     except HTTPException:
         raise
     except Exception as e:
@@ -1123,17 +1341,121 @@ async def delete_sigma_rule_file(filename: str):
         )
 
 
+@app.get("/api/config/yara/files")
+async def list_yara_rule_files():
+    """Get list of Yara rule files from rules directory."""
+    try:
+        with get_sync_session() as session:
+            rows = session.query(YaraRule).order_by(YaraRule.name.asc()).all()
+            files = [r.name for r in rows]
+        return {"files": files}
+    except Exception as e:
+        logger.error(f"Error listing Yara files: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка чтения каталога Yara правил")
+
+
+@app.post("/api/config/yara/files")
+async def create_yara_rule_file(request: YaraFileCreateRequest):
+    """Create empty Yara rule file."""
+    try:
+        file_name = request.filename
+        with get_sync_session() as session:
+            existing = session.query(YaraRule).filter(YaraRule.name == file_name).one_or_none()
+            if existing:
+                raise HTTPException(status_code=409, detail="Файл уже существует")
+
+            initial_content = (
+                "rule NewYaraRule\n"
+                "{\n"
+                "  meta:\n"
+                "    description = \"\"\n"
+                "    severity = \"medium\"\n"
+                "  strings:\n"
+                "    $s1 = \"example\"\n"
+                "  condition:\n"
+                "    $s1\n"
+                "}\n"
+            )
+            new = YaraRule(name=file_name, content=initial_content)
+            session.add(new)
+            session.commit()
+        await reload_yara_rules()
+        return {"success": True, "filename": file_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating Yara file: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка создания файла Yara правила")
+
+
+@app.get("/api/config/yara/files/{filename}")
+async def get_yara_rule_file_content_multi(filename: str):
+    """Get Yara rule file content."""
+    try:
+        with get_sync_session() as session:
+            row = session.query(YaraRule).filter(YaraRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            return {"filename": row.name, "content": row.content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reading Yara file '{filename}': {e}")
+        raise HTTPException(status_code=500, detail="Ошибка чтения файла Yara правила")
+
+
+@app.put("/api/config/yara/files/{filename}")
+async def update_yara_rule_file_content_multi(
+    filename: str, request: RuleContentUpdateRequest
+):
+    """Update Yara rule file content and reload detection pipeline."""
+    try:
+        with get_sync_session() as session:
+            row = session.query(YaraRule).filter(YaraRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            row.content = request.content
+            session.add(row)
+            session.commit()
+        await reload_yara_rules()
+        return {"success": True, "filename": filename}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating Yara file '{filename}': {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сохранения файла Yara правила")
+
+
+@app.delete("/api/config/yara/files/{filename}")
+async def delete_yara_rule_file(filename: str):
+    """Delete Yara rule file and reload detection pipeline."""
+    try:
+        with get_sync_session() as session:
+            row = session.query(YaraRule).filter(YaraRule.name == filename).one_or_none()
+            if not row:
+                raise HTTPException(status_code=404, detail="Файл не найден")
+            session.delete(row)
+            session.commit()
+        await reload_yara_rules()
+        return {"success": True, "filename": filename}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting Yara file '{filename}': {e}")
+        raise HTTPException(status_code=500, detail="Ошибка удаления файла Yara правила")
+
+
 @app.get("/api/config/yara")
 async def get_yara_rule_file_content():
     """Get single YARA rules file content."""
     try:
-        if not YARA_RULE_FILE.exists() or not YARA_RULE_FILE.is_file():
-            raise HTTPException(status_code=404, detail="Yara файл не найден")
-
-        return {
-            "filename": YARA_RULE_FILE.name,
-            "content": YARA_RULE_FILE.read_text(encoding="utf-8"),
-        }
+        # Return concatenated YARA rules from DB as a single combined file
+        with get_sync_session() as session:
+            rows = session.query(YaraRule).order_by(YaraRule.name.asc()).all()
+            if not rows:
+                raise HTTPException(status_code=404, detail="Yara файл не найден")
+            combined = "\n\n".join(r.content for r in rows)
+            return {"filename": "combined_yara_rules.yar", "content": combined}
     except HTTPException:
         raise
     except Exception as e:
@@ -1145,62 +1467,162 @@ async def get_yara_rule_file_content():
 async def update_yara_rule_file_content(request: RuleContentUpdateRequest):
     """Update YARA rules file content and reload detection pipeline."""
     try:
-        YARA_RULES_DIR.mkdir(parents=True, exist_ok=True)
-        YARA_RULE_FILE.write_text(request.content, encoding="utf-8")
-        _sync_rule_change_to_docker_container(YARA_RULE_FILE)
-        await _reload_detection_pipeline()
-        return {"success": True, "filename": YARA_RULE_FILE.name}
+        # Replace all YaraRule rows with a single combined rule entry
+        with get_sync_session() as session:
+            session.query(YaraRule).delete()
+            new = YaraRule(name="combined_yara_rules", content=request.content)
+            session.add(new)
+            session.commit()
+        await reload_yara_rules()
+        return {"success": True, "filename": "combined_yara_rules.yar"}
     except Exception as e:
         logger.error(f"Error updating Yara file: {e}")
         raise HTTPException(status_code=500, detail="Ошибка сохранения Yara файла")
+
+
+# --- YARA Rule generation / pending endpoints ---
+
+
+class AcceptYaraRuleRequest(BaseModel):
+    pending_rule_id: int
+    rule_name: str
+    rule_content: str
+
+
+class RejectYaraRuleRequest(BaseModel):
+    pending_rule_id: int
+
+
+@app.get("/api/config/yara/pending")
+async def get_pending_yara_rules(report_id: int | None = None):
+    """Get all pending YARA rules, optionally filtered by report_id."""
+    try:
+        with get_sync_session() as session:
+            query = session.query(PendingYaraRule).filter(
+                PendingYaraRule.status == "pending"
+            )
+            if report_id is not None:
+                query = query.filter(PendingYaraRule.report_id == report_id)
+            rows = query.order_by(PendingYaraRule.created_at.desc()).all()
+            return {
+                "rules": [
+                    {
+                        "pending_rule_id": r.pending_rule_id,
+                        "rule_name": r.rule_name,
+                        "rule_content": r.rule_content,
+                        "technique_id": r.technique_id,
+                        "technique_name": r.technique_name,
+                        "report_id": r.report_id,
+                        "created_at": r.created_at.isoformat() if r.created_at else None,
+                    }
+                    for r in rows
+                ]
+            }
+    except Exception as e:
+        logger.error(f"Error listing pending YARA rules: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения правил")
+
+
+@app.post("/api/config/yara/pending/accept")
+async def accept_pending_yara_rule(request: AcceptYaraRuleRequest, user_id: int = 0):
+    """Accept a pending YARA rule: save to YaraRules and remove from pending."""
+    try:
+        with get_sync_session() as session:
+            pending = session.query(PendingYaraRule).filter(
+                PendingYaraRule.pending_rule_id == request.pending_rule_id
+            ).one_or_none()
+
+            if not pending:
+                raise HTTPException(status_code=404, detail="Правило не найдено")
+
+            if pending.status != "pending":
+                raise HTTPException(status_code=409, detail="Правило уже обработано")
+
+            # Create YaraRule entry
+            new_rule = YaraRule(
+                name=request.rule_name,
+                content=request.rule_content,
+            )
+            session.add(new_rule)
+            pending.status = "accepted"
+            session.commit()
+
+        await reload_yara_rules()
+
+        user_data = commands.get_user_by_id(user_id) if user_id else None
+        login = user_data["login"] if user_data else f"id={user_id}"
+        logger.info(f"User '{login}' accepted YARA rule: {request.rule_name}")
+
+        return {"success": True, "message": "Правило принято и добавлено в базу"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error accepting YARA rule: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сохранения правила")
+
+
+@app.post("/api/config/yara/pending/reject")
+async def reject_pending_yara_rule(request: RejectYaraRuleRequest, user_id: int = 0):
+    """Reject a pending YARA rule: mark as rejected."""
+    try:
+        with get_sync_session() as session:
+            pending = session.query(PendingYaraRule).filter(
+                PendingYaraRule.pending_rule_id == request.pending_rule_id
+            ).one_or_none()
+
+            if not pending:
+                raise HTTPException(status_code=404, detail="Правило не найдено")
+
+            if pending.status != "pending":
+                raise HTTPException(status_code=409, detail="Правило уже обработано")
+
+            rule_name = pending.rule_name
+            user_data = commands.get_user_by_id(user_id) if user_id else None
+            login = user_data["login"] if user_data else f"id={user_id}"
+            logger.info(f"User '{login}' rejected YARA rule: {rule_name}")
+
+            pending.status = "rejected"
+            session.commit()
+
+        logger.info(f"YARA rule '{rule_name}' rejected by user")
+        return {"success": True, "message": "Правило отклонено"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting YARA rule: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка отклонения правила")
 
 
 @app.get("/api/statistics/severity")
 async def get_severity_statistics(start_date: str = None, end_date: str = None):
     """Получить статистику по уровням серьезности"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            # Формируем запрос с учетом фильтров по датам
+            if start_date and end_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
 
-        # Формируем запрос с учетом фильтров по датам
-        if start_date and end_date:
-            # Преобразуем строки в datetime
-            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                count_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
+                ).label("count")
+            else:
+                count_expr = func.count(Report.report_id).label("count")
 
-            rows = await conn.fetch(
-                """
-                SELECT 
-                    sl.severity_level_id,
-                    sl.name,
-                    COUNT(CASE WHEN r.created_at BETWEEN $1 AND $2 THEN r.report_id END) as count
-                FROM public."SeverityLevels" sl
-                LEFT JOIN public."Reports" r ON sl.severity_level_id = r.severity_level_id
-                GROUP BY sl.severity_level_id, sl.name
-                ORDER BY sl.severity_level_id
-            """,
-                start_dt,
-                end_dt,
+            stmt = (
+                select(SeverityLevel.severity_level_id, SeverityLevel.name, count_expr)
+                .outerjoin(Report, SeverityLevel.severity_level_id == Report.severity_level_id)
+                .group_by(SeverityLevel.severity_level_id, SeverityLevel.name)
+                .order_by(SeverityLevel.severity_level_id)
             )
-        else:
-            rows = await conn.fetch("""
-                SELECT 
-                    sl.severity_level_id,
-                    sl.name,
-                    COUNT(r.report_id) as count
-                FROM public."SeverityLevels" sl
-                LEFT JOIN public."Reports" r ON sl.severity_level_id = r.severity_level_id
-                GROUP BY sl.severity_level_id, sl.name
-                ORDER BY sl.severity_level_id
-            """)
 
-        await conn.close()
+            rows = await session.execute(stmt)
+            records = rows.all()
+            result = [
+                {"id": r[0], "name": r[1], "count": int(r[2] or 0)} for r in records
+            ]
 
-        result = [
-            {"id": row["severity_level_id"], "name": row["name"], "count": row["count"]}
-            for row in rows
-        ]
-
-        return {"data": result}
+            return {"data": result}
     except Exception as e:
         logger.error(f"Error getting severity statistics: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения статистики")
@@ -1210,48 +1632,34 @@ async def get_severity_statistics(start_date: str = None, end_date: str = None):
 async def get_threat_statistics(start_date: str = None, end_date: str = None):
     """Получить статистику по типам угроз"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            if start_date and end_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                count_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
+                ).label("count")
+                order_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
+                ).desc()
+            else:
+                count_expr = func.count(Report.report_id).label("count")
+                order_expr = func.count(Report.report_id).desc()
 
-        # Формируем запрос с учетом фильтров по датам
-        if start_date and end_date:
-            # Преобразуем строки в datetime
-            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-
-            rows = await conn.fetch(
-                """
-                SELECT 
-                    tt.threat_type_id,
-                    tt.name,
-                    COUNT(CASE WHEN r.created_at BETWEEN $1 AND $2 THEN r.report_id END) as count
-                FROM public."ThreatTypes" tt
-                LEFT JOIN public."Reports" r ON tt.threat_type_id = r.threat_type_id
-                GROUP BY tt.threat_type_id, tt.name
-                ORDER BY COUNT(CASE WHEN r.created_at BETWEEN $1 AND $2 THEN r.report_id END) DESC, tt.name
-            """,
-                start_dt,
-                end_dt,
+            stmt = (
+                select(ThreatType.threat_type_id, ThreatType.name, count_expr)
+                .outerjoin(Report, ThreatType.threat_type_id == Report.threat_type_id)
+                .group_by(ThreatType.threat_type_id, ThreatType.name)
+                .order_by(order_expr, ThreatType.name)
             )
-        else:
-            rows = await conn.fetch("""
-                SELECT 
-                    tt.threat_type_id,
-                    tt.name,
-                    COUNT(r.report_id) as count
-                FROM public."ThreatTypes" tt
-                LEFT JOIN public."Reports" r ON tt.threat_type_id = r.threat_type_id
-                GROUP BY tt.threat_type_id, tt.name
-                ORDER BY COUNT(r.report_id) DESC, tt.name
-            """)
 
-        await conn.close()
+            rows = await session.execute(stmt)
+            records = rows.all()
+            result = [
+                {"id": r[0], "name": r[1], "count": int(r[2] or 0)} for r in records
+            ]
 
-        result = [
-            {"id": row["threat_type_id"], "name": row["name"], "count": row["count"]}
-            for row in rows
-        ]
-
-        return {"data": result}
+            return {"data": result}
     except Exception as e:
         logger.error(f"Error getting threat statistics: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения статистики")
@@ -1270,8 +1678,6 @@ async def get_activity_statistics(
 
     """
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
-
         from datetime import datetime, timedelta
 
         if start_date and end_date:
@@ -1322,31 +1728,25 @@ async def get_activity_statistics(
                 end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         # Получаем количество отчетов по дням
-        rows = await conn.fetch(
-            """
-            SELECT 
-                DATE(created_at) as date,
-                COUNT(*) as count
-            FROM public."Reports"
-            WHERE created_at >= $1 AND created_at <= $2
-            GROUP BY DATE(created_at)
-            ORDER BY date
-        """,
-            start,
-            end,
-        )
-
-        await conn.close()
+        async with get_async_session() as session:
+            stmt = (
+                select(func.date(Report.created_at).label("date"), func.count().label("count"))
+                .where(Report.created_at >= start, Report.created_at <= end)
+                .group_by(func.date(Report.created_at))
+                .order_by(func.date(Report.created_at))
+            )
+            rows = await session.execute(stmt)
+            rows = rows.all()
 
         # Создаем полный список дней с нулями для дней без данных
         result = []
-        day_counts = {row["date"]: row["count"] for row in rows}
+        day_counts = {r[0]: int(r[1] or 0) for r in rows}
 
         # Вычисляем количество дней между start и end
         start_date_obj = start.date()
         end_date_obj = end.date()
 
-        # Рассчитываем количество дней (разница + 1 день, так как включаем оба конца)
+        # Рассчитываем количество дней (разница + 1 день, так как включаем оба концы)
         days_count = (end_date_obj - start_date_obj).days + 1
 
         # Генерируем даты: для недели будет 7 дней, для месяца - количество дней в месяце
@@ -1382,95 +1782,83 @@ async def get_reports_history(
 ):
     """Получение истории отчетов с фильтрацией и пагинацией"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        # helper: parse ISO string (possibly with Z) to naive UTC datetime
+        def _parse_to_naive_utc(s: str):
+            if not s:
+                return None
+            # support Z suffix
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                # convert to UTC and drop tzinfo to match DB naive timestamps
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
 
-        # Базовый SQL запрос для подсчета общего количества
-        count_query = """
-            SELECT COUNT(*) as total
-            FROM public."Reports" r
-            WHERE 1=1
-        """
+        async with get_async_session() as session:
+            # Build base query
+            base = (
+                select(
+                    Report.report_id,
+                    Report.description,
+                    Report.created_at,
+                    SeverityLevel.severity_level_id,
+                    SeverityLevel.name.label("severity_name"),
+                    ThreatType.threat_type_id,
+                    ThreatType.name.label("threat_name"),
+                )
+                .outerjoin(SeverityLevel, Report.severity_level_id == SeverityLevel.severity_level_id)
+                .outerjoin(ThreatType, Report.threat_type_id == ThreatType.threat_type_id)
+            )
 
-        # Базовый SQL запрос для получения данных
-        query = """
-            SELECT 
-                r.report_id,
-                r.description,
-                r.created_at,
-                sl.severity_level_id,
-                sl.name as severity_name,
-                tt.threat_type_id,
-                tt.name as threat_name
-            FROM public."Reports" r
-            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
-            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
-            WHERE 1=1
-        """
-        params = []
-        param_count = 1
+            filters = []
+            if date_from:
+                parsed_from = _parse_to_naive_utc(date_from)
+                if parsed_from:
+                    filters.append(Report.created_at >= parsed_from)
+            if date_to:
+                parsed_to = _parse_to_naive_utc(date_to)
+                if parsed_to:
+                    filters.append(Report.created_at <= parsed_to)
+            if severity_level_id:
+                filters.append(Report.severity_level_id == severity_level_id)
+            if threat_type_id:
+                filters.append(Report.threat_type_id == threat_type_id)
 
-        # Добавляем фильтры к обоим запросам
-        filter_conditions = ""
+            if filters:
+                base = base.where(*filters)
 
-        if date_from:
-            filter_conditions += f" AND r.created_at >= ${param_count}"
-            params.append(datetime.fromisoformat(date_from.replace("Z", "+00:00")))
-            param_count += 1
+            # total count
+            count_stmt = select(func.count()).select_from(Report)
+            if filters:
+                count_stmt = count_stmt.where(*filters)
+            total_res = await session.execute(count_stmt)
+            total = int(total_res.scalar() or 0)
 
-        if date_to:
-            filter_conditions += f" AND r.created_at <= ${param_count}"
-            params.append(datetime.fromisoformat(date_to.replace("Z", "+00:00")))
-            param_count += 1
+            # pagination
+            offset = (page - 1) * page_size
+            stmt = base.order_by(Report.created_at.desc()).limit(page_size).offset(offset)
+            rows = await session.execute(stmt)
+            records = rows.all()
 
-        if severity_level_id:
-            filter_conditions += f" AND r.severity_level_id = ${param_count}"
-            params.append(severity_level_id)
-            param_count += 1
+            result = [
+                {
+                    "id": r[0],
+                    "description": r[1],
+                    "created_at": r[2].isoformat() if r[2] else None,
+                    "severity_level_id": r[3],
+                    "severity_name": r[4],
+                    "threat_type_id": r[5],
+                    "threat_name": r[6],
+                }
+                for r in records
+            ]
 
-        if threat_type_id:
-            filter_conditions += f" AND r.threat_type_id = ${param_count}"
-            params.append(threat_type_id)
-            param_count += 1
-
-        # Добавляем фильтры к запросам
-        count_query += filter_conditions
-        query += filter_conditions
-
-        # Получаем общее количество записей
-        total_row = await conn.fetchrow(count_query, *params)
-        total = total_row["total"]
-
-        # Вычисляем offset
-        offset = (page - 1) * page_size
-
-        # Добавляем сортировку, лимит и offset
-        query += f" ORDER BY r.created_at DESC LIMIT ${param_count} OFFSET ${param_count + 1}"
-        params.extend([page_size, offset])
-
-        rows = await conn.fetch(query, *params)
-        await conn.close()
-
-        # Форматируем результаты
-        result = [
-            {
-                "id": row["report_id"],
-                "description": row["description"],
-                "created_at": row["created_at"].isoformat(),
-                "severity_level_id": row["severity_level_id"],
-                "severity_name": row["severity_name"],
-                "threat_type_id": row["threat_type_id"],
-                "threat_name": row["threat_name"],
+            return {
+                "data": result,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size,
             }
-            for row in rows
-        ]
-
-        return {
-            "data": result,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size,
-        }
     except Exception as e:
         logger.error(f"Error getting reports history: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения истории отчетов")
@@ -1480,34 +1868,17 @@ async def get_reports_history(
 async def get_reports_filters():
     """Получение всех доступных фильтров для отчетов"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            sev_res = await session.execute(select(SeverityLevel).order_by(SeverityLevel.severity_level_id))
+            severity_levels = sev_res.scalars().all()
 
-        # Получаем уровни серьезности
-        severity_levels = await conn.fetch("""
-            SELECT severity_level_id, name
-            FROM public."SeverityLevels"
-            ORDER BY severity_level_id
-        """)
+            th_res = await session.execute(select(ThreatType).order_by(ThreatType.threat_type_id))
+            threat_types = th_res.scalars().all()
 
-        # Получаем типы угроз
-        threat_types = await conn.fetch("""
-            SELECT threat_type_id, name
-            FROM public."ThreatTypes"
-            ORDER BY threat_type_id
-        """)
-
-        await conn.close()
-
-        return {
-            "severity_levels": [
-                {"id": row["severity_level_id"], "name": row["name"]}
-                for row in severity_levels
-            ],
-            "threat_types": [
-                {"id": row["threat_type_id"], "name": row["name"]}
-                for row in threat_types
-            ],
-        }
+            return {
+                "severity_levels": [{"id": s.severity_level_id, "name": s.name} for s in severity_levels],
+                "threat_types": [{"id": t.threat_type_id, "name": t.name} for t in threat_types],
+            }
     except Exception as e:
         logger.error(f"Error getting reports filters: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения фильтров отчетов")
@@ -1517,40 +1888,35 @@ async def get_reports_filters():
 async def get_report_details(report_id: int):
     """Получение детальной информации об отчете"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            stmt = (
+                select(
+                    Report.report_id,
+                    Report.description,
+                    Report.created_at,
+                    Report.log_id,
+                    SeverityLevel.name.label("severity_name"),
+                    ThreatType.name.label("threat_name"),
+                    Log.file_content,
+                )
+                .outerjoin(SeverityLevel, Report.severity_level_id == SeverityLevel.severity_level_id)
+                .outerjoin(ThreatType, Report.threat_type_id == ThreatType.threat_type_id)
+                .outerjoin(Log, Report.log_id == Log.log_id)
+                .where(Report.report_id == report_id)
+            )
+            res = await session.execute(stmt)
+            row = res.mappings().one_or_none()
 
-        # Получаем отчет с логами
-        report = await conn.fetchrow(
-            """
-            SELECT 
-                r.report_id,
-                r.description,
-                r.created_at,
-                r.log_id,
-                sl.name as severity_name,
-                tt.name as threat_name,
-                l.file_content
-            FROM public."Reports" r
-            LEFT JOIN public."SeverityLevels" sl ON r.severity_level_id = sl.severity_level_id
-            LEFT JOIN public."ThreatTypes" tt ON r.threat_type_id = tt.threat_type_id
-            LEFT JOIN public."Logs" l ON r.log_id = l.log_id
-            WHERE r.report_id = $1
-        """,
-            report_id,
-        )
-
-        await conn.close()
-
-        if not report:
+        if not row:
             raise HTTPException(status_code=404, detail="Отчет не найден")
 
         return {
-            "id": report["report_id"],
-            "description": report["description"],
-            "created_at": report["created_at"].isoformat(),
-            "severity_name": report["severity_name"],
-            "threat_name": report["threat_name"],
-            "file_content": report["file_content"] or "Логи отсутствуют",
+            "id": row["report_id"],
+            "description": row["description"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "severity_name": row["severity_name"] or None,
+            "threat_name": row["threat_name"] or None,
+            "file_content": row["file_content"] or "Логи отсутствуют",
         }
     except HTTPException:
         raise
@@ -1563,29 +1929,19 @@ async def get_report_details(report_id: int):
 async def save_chat_message(request: ChatMessageRequest):
     """Сохранение сообщения в чат"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            msg = Message(user_id=request.user_id, role=request.role, content=request.content)
+            session.add(msg)
+            await session.flush()
+            await session.commit()
 
-        # Сохраняем сообщение в базу данных
-        row = await conn.fetchrow(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            VALUES ($1, $2, $3, NOW())
-            RETURNING message_id, user_id, role, content, created_at
-        """,
-            request.user_id,
-            request.role,
-            request.content,
-        )
-
-        await conn.close()
-
-        return ChatMessageResponse(
-            message_id=row["message_id"],
-            user_id=row["user_id"],
-            role=row["role"],
-            content=row["content"],
-            created_at=row["created_at"].isoformat(),
-        )
+            return ChatMessageResponse(
+                message_id=msg.message_id,
+                user_id=msg.user_id,
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at.isoformat() if msg.created_at else None,
+            )
     except Exception as e:
         logger.error(f"Error saving chat message: {e}")
         raise HTTPException(status_code=500, detail="Ошибка сохранения сообщения")
@@ -1595,33 +1951,25 @@ async def save_chat_message(request: ChatMessageRequest):
 async def get_chat_messages(user_id: int, limit: int = 50):
     """Получение последних сообщений чата"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL, timeout=5)
+        async with get_async_session() as session:
+            stmt = (
+                select(Message)
+                .where(Message.user_id == user_id)
+                .order_by(Message.created_at.desc())
+                .limit(limit)
+            )
+            rows = await session.execute(stmt)
+            messages_rows = rows.scalars().all()
 
-        # Получаем последние N сообщений для пользователя
-        rows = await conn.fetch(
-            """
-            SELECT message_id, user_id, role, content, created_at
-            FROM public."Messages"
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2
-        """,
-            user_id,
-            limit,
-        )
-
-        await conn.close()
-
-        # Возвращаем в обратном порядке (от старых к новым)
         messages = [
             {
-                "message_id": row["message_id"],
-                "user_id": row["user_id"],
-                "role": row["role"],
-                "content": row["content"],
-                "created_at": row["created_at"].isoformat(),
+                "message_id": m.message_id,
+                "user_id": m.user_id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
             }
-            for row in reversed(rows)
+            for m in reversed(messages_rows)
         ]
 
         return {"data": messages, "total": len(messages)}
@@ -1632,18 +1980,18 @@ async def get_chat_messages(user_id: int, limit: int = 50):
 
 @app.delete("/api/chat/messages")
 async def clear_chat_messages(user_id: int):
-    """Очистка всех сообщений чата пользователя и контекста GigaChat агента"""
+    """Очистка всех сообщений чата пользователя и контекста AI агента"""
     try:
         # Используем специальную функцию для очистки контекста
         deleted_count = await clear_user_context(user_id, DATABASE_URL)
 
         logger.info(
-            f"Chat cleared for user {user_id}: {deleted_count} messages deleted, GigaChat context reset"
+            f"Chat cleared for user {user_id}: {deleted_count} messages deleted, AI context reset"
         )
 
         return {
             "success": True,
-            "message": "Чат и контекст GigaChat очищены",
+            "message": "Чат и контекст AI очищены",
             "deleted_count": deleted_count,
         }
     except Exception as e:
@@ -1669,19 +2017,13 @@ async def _store_agent_fallback_message(user_id: int, text: str) -> None:
     if not DATABASE_URL:
         return
 
-    conn = await asyncpg.connect(DATABASE_URL, timeout=10)
     try:
-        await conn.execute(
-            """
-            INSERT INTO public."Messages" (user_id, role, content, created_at)
-            VALUES ($1, $2, $3, NOW())
-            """,
-            user_id,
-            "agent",
-            text,
-        )
-    finally:
-        await conn.close()
+        async with get_async_session() as session:
+            msg = Message(user_id=user_id, role="agent", content=text)
+            session.add(msg)
+            await session.commit()
+    except Exception:
+        return
 
 
 @app.post("/api/chat/send", response_model=ChatSendResponse)
@@ -1689,9 +2031,9 @@ async def send_chat_message(request: ChatSendRequest):
     """Отправить сообщение AI агенту и получить ответ.
 
     Процесс:
-    1. Сохраняет сообщение пользователя в БД с ролью 'user'
+    1. Пользовательское сообщение уже сохранено фронтендом
     2. Получает последние 20 сообщений для контекста
-    3. Отправляет в GigaChat для получения ответа
+    3. Отправляет в LLM для получения ответа
     4. Сохраняет ответ в БД с ролью 'agent'
     5. Возвращает ответ агента
     """
@@ -1703,18 +2045,13 @@ async def send_chat_message(request: ChatSendRequest):
             )
 
         if DATABASE_URL:
-            conn = await asyncpg.connect(DATABASE_URL, timeout=10)
-            try:
-                await _try_insert_user_log(
-                    conn,
-                    request.user_id,
-                    USER_ACTION_SEND_MESSAGE,
-                    "Отправка сообщения в чат AI-агента",
-                )
-            finally:
-                await conn.close()
+            await _try_insert_user_log(
+                request.user_id,
+                USER_ACTION_SEND_MESSAGE,
+                "Отправка сообщения в чат AI-агента",
+            )
 
-        # Обрабатываем сообщение через GigaChat
+        # Обрабатываем сообщение через LLM
         result = await process_chat_message(
             user_id=request.user_id,
             user_message=request.message,
@@ -1810,7 +2147,7 @@ async def upload_log_file(
     1. Проверка формата файла (.log)
     2. Классический анализ логов
     3. Сохранение в таблицу Logs
-    4. Анализ через GigaChat с учетом ThreatTypes и SeverityLevels
+    4. Анализ через LLM с учетом ThreatTypes и SeverityLevels
     5. Создание отчета в таблице Reports
     6. Возврат результатов пользователю
 
@@ -1873,17 +2210,14 @@ async def upload_log_file(
             raise HTTPException(status_code=499, detail="Клиент прервал загрузку")
         _raise_if_log_upload_canceled(cancel_event)
 
-        conn = await asyncpg.connect(DATABASE_URL, timeout=10)
         try:
             await _try_insert_user_log(
-                conn,
                 user_id,
                 USER_ACTION_SEND_LOGS,
                 f"Отправка логов: файл={file.filename}, размер={len(content_str)} байт",
             )
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_RECEIVE_LOGS,
                 f"Получение логов: файл={file.filename}, user_id={user_id}, размер={len(content_str)} байт",
             )
@@ -1893,7 +2227,6 @@ async def upload_log_file(
             logger.info("Используем AI Agent v2 для анализа")
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_ANALYZE_LOGS,
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
@@ -1929,7 +2262,6 @@ async def upload_log_file(
                 or "402" in lowered_analysis_error
             ):
                 await _try_insert_agent_log(
-                    conn,
                     AGENT_ACTION_RESPOND,
                     "Ответ на запрос: отчет не создан из-за ошибки внешнего AI сервиса (402 Payment Required)",
                 )
@@ -1942,7 +2274,6 @@ async def upload_log_file(
                 )
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_MATCH_THREATS,
                 (
                     "Сопоставление с базой угроз/MITRE: "
@@ -1951,49 +2282,36 @@ async def upload_log_file(
             )
 
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_BUILD_REPORT,
                 "Формирование итогового отчета по результатам анализа",
             )
             _raise_if_log_upload_canceled(cancel_event)
 
             # Сохраняем содержимое лога
-            log_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Logs" (file_content, date)
-                VALUES ($1, NOW())
-                RETURNING log_id
-                """,
-                content_str,
-            )
-            log_id = log_row["log_id"]
-            _raise_if_log_upload_canceled(cancel_event)
+            async with get_async_session() as session:
+                log = Log(file_content=content_str)
+                session.add(log)
+                await session.flush()
+                log_id = log.log_id
+                _raise_if_log_upload_canceled(cancel_event)
 
-            # Создаем отчет на основе анализа GigaChat
-            report_row = await conn.fetchrow(
-                """
-                INSERT INTO public."Reports" (
-                    log_id,
-                    severity_level_id,
-                    threat_type_id,
-                    description,
-                    created_at
+                report = Report(
+                    log_id=log_id,
+                    severity_level_id=analysis_result.get("severity_level_id"),
+                    threat_type_id=analysis_result.get("threat_type_id"),
+                    description=analysis_result.get("description"),
                 )
-                VALUES ($1, $2, $3, $4, NOW())
-                RETURNING report_id
-                """,
-                log_id,
-                analysis_result["severity_level_id"],
-                analysis_result["threat_type_id"],
-                analysis_result["description"],
-            )
-            report_id = report_row["report_id"]
+                session.add(report)
+                await session.flush()
+                report_id = report.report_id
 
-            await _try_insert_agent_log(
-                conn,
-                AGENT_ACTION_SAVE_REPORT,
-                f"Сохранение отчета в БД: log_id={log_id}, report_id={report_id}",
-            )
+                await _try_insert_agent_log(
+                    AGENT_ACTION_SAVE_REPORT,
+                    f"Сохранение отчета в БД: log_id={log_id}, report_id={report_id}",
+                )
+                
+                # Явно коммитим перед отправкой broadcast событий
+                await session.commit()
 
             logger.info(
                 f"Файл {file.filename} успешно обработан. "
@@ -2004,7 +2322,7 @@ async def upload_log_file(
                 "success": True,
                 "log_id": log_id,
                 "report_id": report_id,
-                "gigachat_analysis": analysis_result["description"],
+                "ai_analysis": analysis_result["description"],
             }
 
             # Добавляем метаданные v2 если доступны
@@ -2014,8 +2332,45 @@ async def upload_log_file(
             if "processing_time_ms" in analysis_result:
                 response["processing_time_ms"] = analysis_result["processing_time_ms"]
 
+            # Save generated YARA rules as pending if any
+            generated_rules = analysis_result.get("generated_yara_rules", [])
+            if generated_rules:
+                pending_objs = []
+                for rule_data in generated_rules:
+                    pending = PendingYaraRule(
+                        rule_name=rule_data.get("rule_name", ""),
+                        rule_content=rule_data.get("rule_content", ""),
+                        technique_id=rule_data.get("technique_id", ""),
+                        technique_name=rule_data.get("technique_name", ""),
+                        report_id=report_id,
+                        status="pending",
+                    )
+                    session.add(pending)
+                    pending_objs.append(pending)
+                await session.flush()
+                await session.commit()
+                # Populate pending_rule_id into response dicts
+                enriched_rules = []
+                for pending, rule_data in zip(pending_objs, generated_rules):
+                    enriched = dict(rule_data)
+                    enriched["pending_rule_id"] = pending.pending_rule_id
+                    enriched_rules.append(enriched)
+                logger.info(
+                    f"Saved {len(generated_rules)} pending YARA rules for report_id={report_id}"
+                )
+                response["generated_yara_rules"] = enriched_rules
+
+                # Notify frontend about rule suggestions
+                _schedule_background_task(
+                    _broadcast_yara_rules_suggestion(
+                        user_id=user_id,
+                        report_id=report_id,
+                        rules=generated_rules,
+                    ),
+                    "broadcast_yara_rule_suggestion",
+                )
+
             await _try_insert_agent_log(
-                conn,
                 AGENT_ACTION_RESPOND,
                 f"Ответ на запрос загрузки логов: user_id={user_id}, report_id={report_id}",
             )
@@ -2047,9 +2402,8 @@ async def upload_log_file(
             )
 
             return response
-
         finally:
-            await conn.close()
+            pass
 
     except HTTPException:
         raise
@@ -2132,24 +2486,15 @@ def _format_runtime_timestamp(value: object) -> str:
 def show_agent_logs(limit: int = 50):
     """Show latest agent action logs for admin console."""
     try:
-        conn = commands.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                al.agent_log_id,
-                al.action_type_id,
-                at.name,
-                al.description,
-                al.date
-            FROM public."AgentLogs" al
-            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
-            ORDER BY al.date DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        rows = cursor.fetchall()
+        with get_sync_session() as session:
+            stmt = (
+                select(AgentLog.agent_log_id, AgentLog.action_type_id, ActionType.name, AgentLog.description, AgentLog.date)
+                .outerjoin(ActionType, AgentLog.action_type_id == ActionType.action_type_id)
+                .order_by(AgentLog.date.desc())
+                .limit(limit)
+            )
+            res = session.execute(stmt)
+            rows = res.fetchall()
 
         print("\n" + "=" * 60)
         print(f"  Логи агента (последние {limit}")
@@ -2162,9 +2507,6 @@ def show_agent_logs(limit: int = 50):
                 date_str = _format_cli_datetime(row[4])
                 print(f"[{date_str}] id={row[0]} type={row[1]} ({row[2]}) | {row[3]}")
             print()
-
-        cursor.close()
-        conn.close()
     except Exception as e:
         print(f"❌ Ошибка получения логов агента: {e}")
 
@@ -2172,27 +2514,24 @@ def show_agent_logs(limit: int = 50):
 def show_user_logs(limit: int = 50):
     """Show latest user action logs for admin console."""
     try:
-        conn = commands.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                ul.user_log_id,
-                ul.user_id,
-                u.login,
-                ul.action_type_id,
-                at.name,
-                ul.description,
-                ul.date
-            FROM public."UserLogs" ul
-            LEFT JOIN public."Users" u ON u.user_id = ul.user_id
-            LEFT JOIN public."ActionTypes" at ON at.action_type_id = ul.action_type_id
-            ORDER BY ul.date DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        rows = cursor.fetchall()
+        with get_sync_session() as session:
+            stmt = (
+                select(
+                    UserLog.user_log_id,
+                    UserLog.user_id,
+                    User.login,
+                    UserLog.action_type_id,
+                    ActionType.name,
+                    UserLog.description,
+                    UserLog.date,
+                )
+                .outerjoin(User, UserLog.user_id == User.user_id)
+                .outerjoin(ActionType, UserLog.action_type_id == ActionType.action_type_id)
+                .order_by(UserLog.date.desc())
+                .limit(limit)
+            )
+            res = session.execute(stmt)
+            rows = res.fetchall()
 
         print("\n" + "=" * 60)
         print(f"  Логи пользователей (последние {limit})")
@@ -2207,9 +2546,6 @@ def show_user_logs(limit: int = 50):
                     f"[{date_str}] id={row[0]} user_id={row[1]} ({row[2]}) type={row[3]} ({row[4]}) | {row[5]}"
                 )
             print()
-
-        cursor.close()
-        conn.close()
     except Exception as e:
         print(f"❌ Ошибка получения логов пользователей: {e}")
 
@@ -2722,24 +3058,15 @@ def _fetch_runtime_status_from_api() -> dict | None:
 def show_agent_status() -> None:
     """Show the latest known agent stage from AgentLogs."""
     try:
-        conn = commands.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                al.action_type_id,
-                at.name,
-                al.description,
-                al.date
-            FROM public."AgentLogs" al
-            LEFT JOIN public."ActionTypes" at ON at.action_type_id = al.action_type_id
-            ORDER BY al.date DESC
-            LIMIT 1
-            """
-        )
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        with get_sync_session() as session:
+            stmt = (
+                select(AgentLog.action_type_id, ActionType.name, AgentLog.description, AgentLog.date)
+                .outerjoin(ActionType, AgentLog.action_type_id == ActionType.action_type_id)
+                .order_by(AgentLog.date.desc())
+                .limit(1)
+            )
+            res = session.execute(stmt)
+            row = res.fetchone()
 
         print("\n" + "=" * 60)
         print("  Статус:")

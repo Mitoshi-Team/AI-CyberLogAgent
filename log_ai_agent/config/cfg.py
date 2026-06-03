@@ -10,9 +10,6 @@ if env_path.exists():
                 key, value = line.split("=", 1)
                 os.environ[key] = value
 
-GIGACHAT_API_KEY = os.getenv("GIGACHAT_API_KEY")
-
-
 def _get_bool_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:

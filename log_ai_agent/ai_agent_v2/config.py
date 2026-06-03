@@ -17,28 +17,22 @@ class LLMProvider(str, Enum):
     """Supported LLM providers."""
 
     OLLAMA = "ollama"
-    GIGACHAT = "gigachat"
 
 
 def _detect_provider(
     ollama_url: str | None = None,
-    gigachat_api_key: str | None = None,
 ) -> LLMProvider:
     """Detect which LLM provider to use based on available configuration.
 
     Priority:
     1. Ollama — if ollama_url is provided (on-premise)
-    2. GigaChat — fallback if GIGACHAT_API_KEY is available
 
     """
     if ollama_url and ollama_url.strip():
         return LLMProvider.OLLAMA
-    if gigachat_api_key and gigachat_api_key.strip():
-        return LLMProvider.GIGACHAT
     raise ValueError(
         "No LLM provider configured. "
-        "Set either OLLAMA_URL (for local/on-premise Ollama server) "
-        "or GIGACHAT_API_KEY (for cloud GigaChat)."
+        "Set OLLAMA_URL (for local/on-premise Ollama server)."
     )
 
 
@@ -46,22 +40,19 @@ def _detect_provider(
 class AgentConfig:
     """Configuration for AI Agent v2."""
 
-    # GigaChat settings
-    gigachat_api_key: str = ""
-    gigachat_model: str = "GigaChat-2-Max"
-
     # Ollama settings
     ollama_url: str = ""
     ollama_model: str = ""
 
     # Common LLM settings
     temperature: float = 0.1
-    max_tokens: int = 4000
+    max_tokens: int = 16384
     timeout: int = 90
 
     # RAG settings
     use_rag: bool = True
     rag_top_k: int = 5
+    rag_score_threshold: float = 0.7
 
     # ChromaDB settings
     chroma_path: str = ""
@@ -76,9 +67,6 @@ class AgentConfig:
 
     def __post_init__(self):
         """Initialize default values."""
-        if not self.gigachat_api_key:
-            self.gigachat_api_key = os.getenv("GIGACHAT_API_KEY", "")
-
         if not self.ollama_url:
             self.ollama_url = os.getenv("OLLAMA_URL", "")
         if not self.ollama_model:
@@ -92,22 +80,20 @@ class AgentConfig:
         """Auto-detect LLM provider based on available configuration."""
         return _detect_provider(
             ollama_url=self.ollama_url,
-            gigachat_api_key=self.gigachat_api_key,
         )
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Create configuration from environment variables."""
         return cls(
-            gigachat_api_key=os.getenv("GIGACHAT_API_KEY", ""),
-            gigachat_model=os.getenv("GIGACHAT_MODEL", "GigaChat-2-Max"),
             ollama_url=os.getenv("OLLAMA_URL", ""),
             ollama_model=os.getenv("OLLAMA_MODEL", "TinyLlama:1.1b"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4000")),
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
             timeout=int(os.getenv("LLM_TIMEOUT", "90")),
             use_rag=_get_bool_env("AI_V2_USE_RAG", True),
             rag_top_k=int(os.getenv("AI_V2_RAG_TOP_K", "5")),
+            rag_score_threshold=float(os.getenv("AI_V2_RAG_THRESHOLD", "0.7")),
             chroma_path=os.getenv("AI_V2_CHROMA_PATH", ""),
             debug=os.getenv("DEBUG", "False").lower() == "true",
         )

@@ -27,7 +27,6 @@ def _load_techniques_from_stix(stix_path: Path) -> list[dict]:
 
     Returns:
         List of technique dictionaries
-
     """
     logger.info(f"Loading techniques from {stix_path}...")
 
@@ -45,6 +44,9 @@ def _load_techniques_from_stix(stix_path: Path) -> list[dict]:
                 external_id = ref["external_id"]
                 break
 
+        if not external_id:
+            continue
+
         tactic = "Unknown"
         kill_chain_phases = obj.get("kill_chain_phases", [])
         if kill_chain_phases:
@@ -61,6 +63,59 @@ def _load_techniques_from_stix(stix_path: Path) -> list[dict]:
         techniques.append(technique)
 
     logger.info(f"Extracted {len(techniques)} techniques from STIX file")
+    return techniques
+
+
+def _load_summarized_techniques(summary_path: Path) -> list[dict]:
+    """Load pre-summarized techniques from JSON file.
+
+    Args:
+        summary_path: Path to summarized JSON file
+
+    Returns:
+        List of technique dictionaries with 'summary' field
+    """
+    logger.info(f"Loading summarized techniques from {summary_path}...")
+
+    with open(summary_path, encoding="utf-8") as f:
+        summarized = json.load(f)
+
+    techniques = []
+    for item in summarized:
+        technique = {
+            "technique_id": item.get("external_id", ""),
+            "technique_name": item.get("name", ""),
+            "description": item.get("summary", item.get("original_description", "")),
+            "summary": item.get("summary"),
+            "tactic": item.get("tactic", "Unknown"),
+        }
+        techniques.append(technique)
+
+    logger.info(f"Loaded {len(techniques)} summarized techniques")
+    return techniques
+
+
+def _load_processed_techniques(processed_path: Path) -> list[dict]:
+    """Load processed techniques from clean JSON file.
+
+    This file has only main techniques (no sub-techniques) with fields:
+    - technique_id
+    - technique_name
+    - description
+    - tactic
+
+    Args:
+        processed_path: Path to processed JSON file (mitre_processed.json)
+
+    Returns:
+        List of technique dictionaries
+    """
+    logger.info(f"Loading processed techniques from {processed_path}...")
+
+    with open(processed_path, encoding="utf-8") as f:
+        techniques = json.load(f)
+
+    logger.info(f"Loaded {len(techniques)} processed techniques")
     return techniques
 
 
@@ -101,6 +156,7 @@ def initialize_mitre_knowledge_base(
     collection_name: str = "mitre_collection",
     embedding_model: str | None = None,
     domain: str = "enterprise-attack",
+    use_processed: bool = True,
 ) -> ChromaDBManager:
     """Initialize ChromaDB and populate with MITRE ATT&CK data.
 
@@ -109,10 +165,10 @@ def initialize_mitre_knowledge_base(
         collection_name: Name of the collection
         embedding_model: Embedding model to use
         domain: MITRE domain (not used with GitHub)
+        use_processed: Whether to use processed JSON (mitre_processed.json)
 
     Returns:
         Initialized ChromaDBManager
-
     """
     logger.info("Initializing MITRE ATT&CK knowledge base...")
 
@@ -127,6 +183,22 @@ def initialize_mitre_knowledge_base(
         logger.info("MITRE ATT&CK knowledge base already exists")
         return chroma_mgr
 
+    # Try processed techniques first (clean JSON with only main techniques)
+    if use_processed:
+        processed_file = Path(persist_directory).parent / "knowledge_base" / "mitre_processed.json"
+        if processed_file.exists():
+            logger.info(f"Loading processed techniques from: {processed_file}")
+            techniques = _load_processed_techniques(processed_file)
+            if techniques:
+                count = chroma_mgr.load_mitre_techniques(techniques)
+                logger.info(
+                    f"Knowledge base initialized with {count} processed techniques"
+                )
+                return chroma_mgr
+            else:
+                logger.warning("No techniques in processed file, falling back to STIX")
+
+    # Fallback to STIX file
     stix_file = Path(persist_directory).parent / "mitre_data" / "enterprise-attack.json"
     if stix_file.exists():
         logger.info(f"Loading MITRE ATT&CK from local file: {stix_file}")

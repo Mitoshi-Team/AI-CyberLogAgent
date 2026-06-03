@@ -17,7 +17,6 @@
 
 - **Гибкая LLM-архитектура**:
   - **Ollama (on-premise)** — полная локальная работа, данные не покидают периметр
-  - **GigaChat (облако)** — автоматический fallback
   - Автоматическое определение провайдера по переменным окружения
 
 - **RAG (Retrieval-Augmented Generation)**:
@@ -101,7 +100,6 @@ ai_agent_v2/
 │   └── providers/           # LLM провайдеры
 │       ├── base.py          # Базовый класс
 │       ├── ollama.py       # Ollama провайдер
-│       ├── gigachat.py      # GigaChat провайдер
 │       └── __init__.py
 ├── engines/                    # Сигнатурные движки
 │   ├── yara_engine.py        # YARA на yara-python
@@ -114,9 +112,14 @@ ai_agent_v2/
 │   └── apache_parser.py      # Apache парсер
 ├── rules/                    # Правила обнаружения
 │   ├── yara/
-│   │   ├── cyber_security_rules.yar
-│   │   ├── web_scanner_rules.yar
-│   │   └── web_rce_rules.yar
+│   │   ├── SQL_Injection_Advanced.yar
+│   │   ├── XSS_Advanced.yar
+│   │   ├── Path_Traversal_Advanced.yar
+│   │   ├── Sensitive_File_Access.yar
+│   │   ├── RCE_Payloads.yar
+│   │   ├── WebShell_Indicators.yar
+│   │   ├── Security_Scanner_Signatures.yar
+│   │   └── Protocol_Anomalies.yar
 │   └── sigma/
 │       ├── brute_force_authentication.yml
 │       ├── mimikatz_detection.yml
@@ -190,7 +193,7 @@ pip install uv
 uv sync
 
 # Или установить вручную
-uv pip install pytest pytest-asyncio langchain-core langchain-community langgraph gigachat yara-python pysigma chromadb langchain-chroma
+uv pip install pytest pytest-asyncio langchain-core langchain-community langgraph yara-python pysigma chromadb langchain-chroma
 ```
 
 ### 3. Настройка переменных окружения
@@ -198,17 +201,13 @@ uv pip install pytest pytest-asyncio langchain-core langchain-community langgrap
 Создайте файл `.env` в корневой папке проекта:
 
 ```bash
-# === LLM провайдер (выберите один) ===
+# === LLM провайдер ===
 
 # Вариант 1: Ollama (on-premise / локальный сервер) — РЕКОМЕНДУЕТСЯ
 # Ollama должен быть запущен на указанном URL
 # Важно: установите модель через `ollama pull <model>`
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=TinyLlama:1.1b  # или qwen2.5:7b, llama3.1:8b
-
-# Вариант 2: GigaChat (облако) — fallback, если OLLAMA_URL не задан
-GIGACHAT_API_KEY=your_api_key
-GIGACHAT_MODEL=GigaChat-2-Max
 
 # Общие настройки LLM
 LLM_TEMPERATURE=0.1
@@ -233,7 +232,7 @@ LLM_TIMEOUT=90
 # YARA/Sigma + pipeline nodes (быстрый, без LLM)
 uv run python -m pytest log_ai_agent/ai_agent_v2/pipeline_tests/test_yara_sigma.py -v
 
-# Полный пайплайн (с LLM, требует API ключ или Ollama)
+# Полный пайплайн (с LLM, требует Ollama)
 uv run python log_ai_agent/ai_agent_v2/pipeline_tests/test_full_pipeline.py
 ```
 
@@ -439,19 +438,12 @@ uv run python log_ai_agent/ai_agent_v2/pipeline_tests/test_full_pipeline.py
 
 ### LLM провайдеры
 
-**Приоритет 1: Ollama (on-premise)**
+**Ollama (on-premise)**
 
 ```bash
 # .env
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=TinyLlama:1.1b
-```
-
-**Приоритет 2: GigaChat (облако)**
-
-```bash
-# .env
-GIGACHAT_API_KEY=your_api_key
 ```
 
 **Использование в коде:**
@@ -464,7 +456,6 @@ llm = create_llm()
 
 # Принудительное указание провайдера
 llm = create_llm(provider=LLMProvider.OLLAMA)
-llm = create_llm(provider=LLMProvider.GIGACHAT)
 ```
 
 ### Параметры RAG
@@ -498,8 +489,6 @@ ollama pull qwen2.5:7b
 **Решение**: Добавить в `.env`:
 ```bash
 OLLAMA_URL=http://localhost:11434
-# или
-GIGACHAT_API_KEY=your_key
 ```
 
 ### "ChromaDB not initialized"
