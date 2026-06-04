@@ -55,8 +55,8 @@ DESCRIPTION_AGENT_SYSTEM_PROMPT = """Ты — эксперт по анализу
 
 Примеры КАЧЕСТВЕННЫХ описаний:
 - "Обнаружено создание службы 'UpdateService' через sc.exe с последующим запуском PowerShell с закодированной командой"
-- "Зафиксирована модификация реестра в HKCU\Software\Microsoft\Windows\CurrentVersion\Run для персистенции"
-- "Выявлен дамп LSASS с помощью comsvcs.dll: rundll32.exe C:\Windows\System32\comsvcs.dll MiniDump <PID> lsass.dmp"
+- "Зафиксирована модификация реестра в HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run для персистенции"
+- "Выявлен дамп LSASS с помощью comsvcs.dll: rundll32.exe C:\\Windows\\System32\\comsvcs.dll MiniDump <PID> lsass.dmp"
 - "Обнаружена загрузка и выполнение PowerShell-скрипта из внешнего домена через IEX (New-Object Net.WebClient).DownloadString()"
 - "Зафиксирован процесс инжекции в svchost.exe через OpenProcess → VirtualAllocEx → CreateRemoteThread"
 """
