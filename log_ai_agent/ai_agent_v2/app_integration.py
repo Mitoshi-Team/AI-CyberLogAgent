@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Global pipeline instance
 _pipeline: LogAnalysisPipeline | None = None
 _analyze_lock = asyncio.Lock()
-_MAX_ANALYSIS_LOG_CHARS = int(os.getenv("AI_V2_MAX_ANALYSIS_LOG_CHARS", "25000"))
+_MAX_ANALYSIS_LOG_CHARS = int(os.getenv("AI_V2_MAX_ANALYSIS_LOG_CHARS", "500000"))
 _agent_config: AgentConfig | None = None
 
 
