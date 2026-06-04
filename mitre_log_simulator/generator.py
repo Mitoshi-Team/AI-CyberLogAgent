@@ -44,6 +44,7 @@ class SimulatorConfig:
     log_file: Path
     timeline_file: Path
     markers_file: Path
+    unknown_file: Path
     host_output_dir: Path | None
     host_log_file: Path | None
     host_timeline_file: Path | None
@@ -98,6 +99,7 @@ def parse_config() -> SimulatorConfig:
     parser.add_argument("--log-file", default=os.getenv("SIM_LOG_FILE", "/app/output/generated_logs.log"))
     parser.add_argument("--timeline-file", default=os.getenv("SIM_TIMELINE_FILE", "/app/output/attack_timeline.log"))
     parser.add_argument("--markers-file", default=os.getenv("SIM_MARKERS_FILE", "/app/output/attack_markers.csv"))
+    parser.add_argument("--unknown-file", default=os.getenv("SIM_UNKNOWN_FILE", "/host_output/unknown_techniques.txt"))
     parser.add_argument("--host-output-dir", default=os.getenv("SIM_HOST_OUTPUT_DIR") or None)
     parser.add_argument("--preferred-platforms", default=os.getenv("SIM_PREFERRED_PLATFORMS") or None)
     parser.add_argument("--atomics-folder", default=os.getenv("SIM_ATOMICS_FOLDER", "/opt/atomic-red-team/atomics"))
@@ -114,6 +116,7 @@ def parse_config() -> SimulatorConfig:
         log_file=Path(args.log_file),
         timeline_file=Path(args.timeline_file),
         markers_file=Path(args.markers_file),
+        unknown_file=Path(args.unknown_file),
         host_output_dir=Path(args.host_output_dir) if args.host_output_dir else None,
         host_log_file=(Path(args.host_output_dir) / Path(args.log_file).name) if args.host_output_dir else None,
         host_timeline_file=(Path(args.host_output_dir) / Path(args.timeline_file).name) if args.host_output_dir else None,
@@ -1005,7 +1008,7 @@ _TECHNIQUE_FALLBACK: list[tuple[re.Pattern, CommandHandler]] = [
 ]
 
 
-def generate_logs_for_test(technique: str, technique_name: str, test_name: str, command: str) -> list[str]:
+def generate_logs_for_test(technique: str, technique_name: str, test_name: str, command: str) -> list[str] | None:
     cmd_word = first_word(command)
 
     handler = _COMMAND_MAP.get(cmd_word)
@@ -1017,7 +1020,7 @@ def generate_logs_for_test(technique: str, technique_name: str, test_name: str, 
         if pattern.search(combined):
             return handler(command, cmd_word, technique)
 
-    return _gen_default(command, cmd_word, technique)
+    return None
 
 
 def simulate_atomic_test(sink: OutputSink, config: SimulatorConfig, technique: str) -> None:
@@ -1040,6 +1043,7 @@ def simulate_atomic_test(sink: OutputSink, config: SimulatorConfig, technique: s
     technique_name = data.get("display_name") or technique
     atomic_tests = data.get("atomic_tests") or []
     generated_count = 0
+    has_logs = False
 
     for test in atomic_tests[:3]:
         if not isinstance(test, dict):
@@ -1050,11 +1054,18 @@ def simulate_atomic_test(sink: OutputSink, config: SimulatorConfig, technique: s
         command_clean = re.sub(r'#\{[^}]+\}', '$param', command)
 
         log_lines = generate_logs_for_test(technique, technique_name, test_name, command_clean)
-        for line in log_lines:
-            sink.write_line(line)
-            generated_count += 1
+        if log_lines is not None:
+            for line in log_lines:
+                sink.write_line(line)
+                generated_count += 1
+            has_logs = True
 
     end = datetime.now(timezone.utc)
+
+    if not has_logs:
+        with config.unknown_file.open("a", encoding="utf-8") as f:
+            f.write(f"{technique}\n")
+        return
 
     timeline_line = "|".join([
         start.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -1135,6 +1146,7 @@ def main() -> int:
     validate_mode(config)
 
     clear_output_files(config)
+    config.unknown_file.parent.mkdir(parents=True, exist_ok=True)
 
     file_handles = []
     log_handle = config.log_file.open("a", encoding="utf-8", buffering=1)
