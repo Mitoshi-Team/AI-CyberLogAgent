@@ -529,25 +529,37 @@ def validate_mode(config: SimulatorConfig) -> None:
         raise SystemExit("Only one attack mode can be enabled at a time: --technique, --random-attacks, or --no-attacks.")
 
 
+def clear_output_files(config: SimulatorConfig) -> None:
+    for p in [config.log_file, config.timeline_file, config.markers_file]:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("", encoding="utf-8")
+
+    with config.markers_file.open("w", encoding="utf-8", newline="") as mk:
+        csv.writer(mk).writerow(["timestamp_start", "timestamp_end", "technique"])
+
+    host_files = [config.host_log_file, config.host_timeline_file, config.host_markers_file]
+    for p in host_files:
+        if p is None:
+            continue
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("", encoding="utf-8")
+        except Exception:
+            pass
+
+    if config.host_markers_file:
+        try:
+            with config.host_markers_file.open("w", encoding="utf-8", newline="") as mk:
+                csv.writer(mk).writerow(["timestamp_start", "timestamp_end", "technique"])
+        except Exception:
+            pass
+
+
 def main() -> int:
     config = parse_config()
     validate_mode(config)
 
-    config.output_dir.mkdir(parents=True, exist_ok=True)
-    config.log_file.parent.mkdir(parents=True, exist_ok=True)
-    config.timeline_file.parent.mkdir(parents=True, exist_ok=True)
-    config.markers_file.parent.mkdir(parents=True, exist_ok=True)
-
-    if config.host_output_dir:
-        config.host_output_dir.mkdir(parents=True, exist_ok=True)
-
-    if not config.timeline_file.exists():
-        config.timeline_file.touch()
-
-    if not config.markers_file.exists():
-        with config.markers_file.open("w", encoding="utf-8", newline="") as markers_handle:
-            writer = csv.writer(markers_handle)
-            writer.writerow(["timestamp_start", "timestamp_end", "technique"])
+    clear_output_files(config)
 
     file_handles = []
     log_handle = config.log_file.open("a", encoding="utf-8", buffering=1)
