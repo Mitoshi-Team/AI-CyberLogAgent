@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import time
+import typing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
