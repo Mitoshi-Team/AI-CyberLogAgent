@@ -429,6 +429,11 @@ async def create_pipeline(
     llm_kwargs = llm_config or {}
     llm = create_llm(**llm_kwargs)
 
+    if yara_rules_path is None:
+        yara_rules_path = str(Path(__file__).parent / "rules" / "yara")
+    if sigma_rules_path is None:
+        sigma_rules_path = str(Path(__file__).parent / "rules" / "sigma")
+
     yara_engine = None
     sigma_engine = None
 
