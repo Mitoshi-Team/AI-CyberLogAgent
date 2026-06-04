@@ -94,7 +94,7 @@ def parse_config() -> SimulatorConfig:
     parser.add_argument("--random-attacks", action="store_true", default=parse_bool(os.getenv("SIM_RANDOM_ATTACKS")))
     parser.add_argument("--no-attacks", action="store_true", default=parse_bool(os.getenv("SIM_NO_ATTACKS")))
     parser.add_argument("--interval-seconds", type=int, default=random_default_int(os.getenv("SIM_INTERVAL_SECONDS"), 10, 30))
-    parser.add_argument("--noise-batch-size", type=int, default=random_default_int(os.getenv("SIM_NOISE_BATCH_SIZE"), 50, 100))
+    parser.add_argument("--noise-batch-size", type=int, default=random_default_int(os.getenv("SIM_NOISE_BATCH_SIZE"), 10, 30))
     parser.add_argument("--output-dir", default=os.getenv("SIM_OUTPUT_DIR", "/app/output"))
     parser.add_argument("--log-file", default=os.getenv("SIM_LOG_FILE", "/app/output/generated_logs.log"))
     parser.add_argument("--timeline-file", default=os.getenv("SIM_TIMELINE_FILE", "/app/output/attack_timeline.log"))
