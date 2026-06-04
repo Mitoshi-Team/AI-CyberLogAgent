@@ -637,6 +637,8 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             return
 
         events_found = analysis_result.get("events_found", 0)
+        generated_yara_rules = analysis_result.get("generated_yara_rules", [])
+
         if events_found <= 0:
             logger.info(
                 "Kafka batch has no incidents, skipping auto-report and chat notification: source=%s, records=%s",
@@ -699,6 +701,20 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             user_ids = result.scalars().all()
             messages_to_add = [Message(user_id=uid, role="agent", content=chat_message) for uid in user_ids]
             session.add_all(messages_to_add)
+
+            if generated_yara_rules:
+                for rule_data in generated_yara_rules:
+                    session.add(
+                        PendingYaraRule(
+                            rule_name=rule_data.get("rule_name", ""),
+                            rule_content=rule_data.get("rule_content", ""),
+                            technique_id=rule_data.get("technique_id", ""),
+                            technique_name=rule_data.get("technique_name", ""),
+                            report_id=report_id,
+                            status="pending",
+                        )
+                    )
+
             await session.commit()
 
             await _try_insert_agent_log(
@@ -725,6 +741,14 @@ async def _process_kafka_log_batch(payload: dict) -> None:
                     response_text=chat_message,
                     mode="auto_report",
                 )
+
+            if generated_yara_rules:
+                for uid in user_ids:
+                    await _broadcast_yara_rules_suggestion(
+                        user_id=uid,
+                        report_id=report_id,
+                        rules=generated_yara_rules,
+                    )
 
         await _broadcast_incident_event(
             title=f"Инцидент из Kafka потока ({source_label})",

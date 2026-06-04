@@ -40,9 +40,11 @@ def _extract_timestamp_range(stages: dict[str, Any]) -> tuple[str, str]:
 
 
 def _extract_agent1_events(stages: dict[str, Any]) -> list[str]:
-    """Extract event_type from each agent1 group (unconfirmed events)."""
-    groups: list[dict] = stages.get("agent1", {}).get("groups", [])
-    return [g.get("event_type", "") for g in groups if g.get("event_type")]
+    """Extract mini-report from Agent 1 (primary analysis summary)."""
+    mini_report = stages.get("agent1", {}).get("mini_report", "")
+    if mini_report:
+        return [mini_report.strip()]
+    return []
 
 
 def _extract_rag_techniques(stages: dict[str, Any]) -> list[str]:

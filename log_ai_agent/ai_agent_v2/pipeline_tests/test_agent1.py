@@ -55,17 +55,17 @@ def test_agent1_parse_groups():
 [
   {
     "group_id": "g1",
-    "events": [
-      {"description": "Auth failed", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"},
-      {"description": "Auth failed again", "timestamp": "2025-12-17 13:06:15", "log_line": "line2"}
+    "log_lines": [
+      "line1",
+      "line2"
     ],
     "first_seen": "2025-12-17 13:06:06",
     "last_seen": "2025-12-17 13:06:15"
   },
   {
     "group_id": "g2",
-    "events": [
-      {"description": "SQL injection attempt", "timestamp": "2025-12-17 13:07:00", "log_line": "line3"}
+    "log_lines": [
+      "line3"
     ],
     "first_seen": "2025-12-17 13:07:00",
     "last_seen": "2025-12-17 13:07:00"
@@ -76,9 +76,9 @@ def test_agent1_parse_groups():
     groups = parse_groups_from_response(response)
     assert len(groups) == 2
     assert groups[0]["group_id"] == "g1"
-    assert len(groups[0]["events"]) == 2
+    assert len(groups[0]["log_lines"]) == 2
     assert groups[1]["group_id"] == "g2"
-    assert len(groups[1]["events"]) == 1
+    assert len(groups[1]["log_lines"]) == 1
 
 
 def test_agent1_parse_groups_empty():
@@ -99,22 +99,12 @@ def test_parse_groups_with_brackets_in_log_lines():
 [
   {
     "group_id": "g1",
-    "events": [
-      {
-        "description": "File descriptor limit reached",
-        "timestamp": "2025-12-17 01:15:29",
-        "log_line": "[Wed Dec 17 01:15:29 2025] [crit] File descriptor limit reached, cannot accept connections"
-      },
-      {
-        "description": "MaxClients reached",
-        "timestamp": "2025-12-17 01:16:20",
-        "log_line": "[Wed Dec 17 01:16:20 2025] [crit] Server reached MaxClients setting, refusing new connections"
-      }
+    "log_lines": [
+      "[Wed Dec 17 01:15:29 2025] [crit] File descriptor limit reached, cannot accept connections",
+      "[Wed Dec 17 01:16:20 2025] [crit] Server reached MaxClients setting, refusing new connections"
     ],
     "first_seen": "2025-12-17 01:15:29",
-    "last_seen": "2025-12-17 01:16:20",
-    "keywords": ["file descriptor", "MaxClients", "отказ в обслуживании"],
-    "description": "Обнаружено исчерпание ресурсов сервера."
+    "last_seen": "2025-12-17 01:16:20"
   }
 ]
 ---GROUPS---
@@ -122,9 +112,9 @@ def test_parse_groups_with_brackets_in_log_lines():
     groups = parse_groups_from_response(response)
     assert len(groups) == 1
     assert groups[0]["group_id"] == "g1"
-    assert len(groups[0]["events"]) == 2
-    assert "File descriptor" in groups[0]["events"][0]["description"]
-    assert "MaxClients" in groups[0]["events"][1]["description"]
+    assert len(groups[0]["log_lines"]) == 2
+    assert "File descriptor" in groups[0]["log_lines"][0]
+    assert "MaxClients" in groups[0]["log_lines"][1]
 
 
 def test_parse_groups_multiple_brackets_in_log_line():
@@ -133,51 +123,39 @@ def test_parse_groups_multiple_brackets_in_log_line():
 [
   {
     "group_id": "g1",
-    "events": [
-      {
-        "description": "Auth failed",
-        "timestamp": "2025-12-17 13:06:06",
-        "log_line": "[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user 'admin'"
-      }
+    "log_lines": [
+      "[Wed Dec 17 13:06:06 2025] [error] [client 89.23.74.19] Authentication failed for user 'admin'"
     ],
     "first_seen": "2025-12-17 13:06:06",
-    "last_seen": "2025-12-17 13:06:06",
-    "keywords": ["брутфорс", "аутентификация"],
-    "description": "Зафиксирована неудачная попытка аутентификации."
+    "last_seen": "2025-12-17 13:06:06"
   }
 ]
 ---GROUPS---
 """
     groups = parse_groups_from_response(response)
     assert len(groups) == 1
-    assert len(groups[0]["events"]) == 1
-    assert "89.23.74.19" in groups[0]["events"][0]["log_line"]
+    assert len(groups[0]["log_lines"]) == 1
+    assert "89.23.74.19" in groups[0]["log_lines"][0]
 
 
-def test_parse_groups_with_nested_braces_in_description():
-    """Test parsing groups with JSON-like text in description."""
+def test_parse_groups_with_nested_braces_in_log_line():
+    """Test parsing groups with JSON-like text in log line."""
     response = """---GROUPS---
 [
   {
     "group_id": "g1",
-    "events": [
-      {
-        "description": "SQL injection with payload: {'OR': '1=1'}",
-        "timestamp": "2025-12-17 13:06:06",
-        "log_line": "GET /search?q='OR'1'='1 HTTP/1.1"
-      }
+    "log_lines": [
+      "GET /search?q='OR'1'='1 HTTP/1.1"
     ],
     "first_seen": "2025-12-17 13:06:06",
-    "last_seen": "2025-12-17 13:06:06",
-    "keywords": ["sql injection"],
-    "description": "Обнаружена SQL-инъекция."
+    "last_seen": "2025-12-17 13:06:06"
   }
 ]
 ---GROUPS---
 """
     groups = parse_groups_from_response(response)
     assert len(groups) == 1
-    assert "1=1" in groups[0]["events"][0]["description"]
+    assert "OR" in groups[0]["log_lines"][0]
 
 
 def test_parse_groups_missing_optional_fields():
@@ -186,9 +164,7 @@ def test_parse_groups_missing_optional_fields():
 [
   {
     "group_id": "g1",
-    "events": [
-      {"description": "Event", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"}
-    ]
+    "log_lines": ["line1"]
   }
 ]
 ---GROUPS---
@@ -196,11 +172,9 @@ def test_parse_groups_missing_optional_fields():
     groups = parse_groups_from_response(response)
     assert len(groups) == 1
     assert groups[0]["group_id"] == "g1"
-    assert groups[0]["events"] == [{"description": "Event", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"}]
+    assert groups[0]["log_lines"] == ["line1"]
     assert groups[0].get("first_seen") == ""
     assert groups[0].get("last_seen") == ""
-    assert groups[0].get("keywords") == []
-    assert groups[0].get("description") == ""
 
 
 def test_parse_groups_empty_array():
@@ -226,31 +200,29 @@ def test_parse_groups_malformed_json():
 def test_parse_groups_no_closing_marker():
     """Test parsing when closing marker is missing — uses raw_decode fallback."""
     response = """---GROUPS---
-[{"group_id": "g1", "events": []}]
+[{"group_id": "g1", "log_lines": []}]
 """
     groups = parse_groups_from_response(response)
     assert len(groups) == 1
     assert groups[0]["group_id"] == "g1"
 
 
-def test_parse_groups_keywords_ru_fallback():
-    """Test that keywords_ru is used as fallback when keywords missing."""
+def test_parse_groups_with_log_lines_only():
+    """Test parsing groups with only log_lines field."""
     response = """---GROUPS---
 [
   {
     "group_id": "g1",
-    "events": [{"description": "Test", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"}],
+    "log_lines": ["line1", "line2"],
     "first_seen": "2025-12-17 13:06:06",
-    "last_seen": "2025-12-17 13:06:06",
-    "keywords_ru": ["тест", "проверка"],
-    "description": "Тестовое событие."
+    "last_seen": "2025-12-17 13:06:06"
   }
 ]
 ---GROUPS---
 """
     groups = parse_groups_from_response(response)
     assert len(groups) == 1
-    assert groups[0]["keywords"] == ["тест", "проверка"]
+    assert groups[0]["log_lines"] == ["line1", "line2"]
 
 
 def test_agent1_parse_events_from_groups():
@@ -261,10 +233,7 @@ def test_agent1_parse_events_from_groups():
 [
   {
     "group_id": "g1",
-    "events": [
-      {"description": "Event 1", "timestamp": "2025-12-17 13:06:06", "log_line": "line1"},
-      {"description": "Event 2", "timestamp": "2025-12-17 13:06:15", "log_line": "line2"}
-    ],
+    "log_lines": ["line1", "line2"],
     "first_seen": "2025-12-17 13:06:06",
     "last_seen": "2025-12-17 13:06:15"
   }
@@ -273,8 +242,8 @@ def test_agent1_parse_events_from_groups():
 """
     events = parse_events_from_response(response)
     assert len(events) == 2
-    assert events[0]["description"] == "Event 1"
-    assert events[1]["description"] == "Event 2"
+    assert events[0]["description"] == "line1"
+    assert events[1]["description"] == "line2"
 
 
 @pytest.mark.asyncio
@@ -293,9 +262,7 @@ Brief summary here.
 [
   {
     "group_id": "g1",
-    "events": [
-      {"description": "Test event", "timestamp": "2025-12-17 13:06:06", "log_line": "log line"}
-    ],
+    "log_lines": ["log line"],
     "first_seen": "2025-12-17 13:06:06",
     "last_seen": "2025-12-17 13:06:06"
   }
@@ -336,13 +303,7 @@ Multiple auth failures detected.
 [
   {
     "group_id": "g1",
-    "events": [
-      {"description": "Auth failed", "timestamp": "2025-12-17 13:00:00", "log_line": "line1"},
-      {"description": "Auth failed", "timestamp": "2025-12-17 13:01:00", "log_line": "line2"},
-      {"description": "Auth failed", "timestamp": "2025-12-17 13:02:00", "log_line": "line3"},
-      {"description": "Auth failed", "timestamp": "2025-12-17 13:03:00", "log_line": "line4"},
-      {"description": "Auth failed", "timestamp": "2025-12-17 13:04:00", "log_line": "line5"}
-    ],
+    "log_lines": ["line1", "line2", "line3", "line4", "line5"],
     "first_seen": "2025-12-17 13:00:00",
     "last_seen": "2025-12-17 13:04:00"
   }
