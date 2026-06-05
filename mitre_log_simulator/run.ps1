@@ -13,7 +13,7 @@ param(
     [int]$IntervalSeconds = 30,
 
     [ValidateRange(1, 10000)]
-    [int]$NoiseBatchSize = 24,
+    [int]$NoiseBatchSize = 30,
 
     [switch]$Detached
 )
