@@ -1045,9 +1045,8 @@ def simulate_atomic_test(sink: OutputSink, config: SimulatorConfig, technique: s
     generated_count = 0
     has_logs = False
 
-    for test in atomic_tests[:3]:
-        if not isinstance(test, dict):
-            continue
+    tests_batch = [t for t in atomic_tests[:3] if isinstance(t, dict)]
+    for idx, test in enumerate(tests_batch):
         test_name = test.get("name", "unknown")
         executor = test.get("executor") or {}
         command = (executor.get("command") or "").strip()
@@ -1059,6 +1058,9 @@ def simulate_atomic_test(sink: OutputSink, config: SimulatorConfig, technique: s
                 sink.write_line(line)
                 generated_count += 1
             has_logs = True
+
+        if idx < len(tests_batch) - 1:
+            emit_background_noise(sink, random.randint(3, 8))
 
     end = datetime.now(timezone.utc)
 
