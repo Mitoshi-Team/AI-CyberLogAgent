@@ -134,7 +134,7 @@ class LogAnalysisPipeline:
         llm: BaseLanguageModel | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
-        rag_score_threshold: float = 0.7,
+        rag_score_threshold: float = 0.5,
         yara_engine: Any | None = None,
         sigma_engine: Any | None = None,
     ):
@@ -145,7 +145,7 @@ class LogAnalysisPipeline:
             llm: Language model (creates default if None)
             use_rag: Whether to use RAG
             rag_top_k: Number of techniques to retrieve
-            rag_score_threshold: Minimum similarity threshold for RAG (0.0-1.0). Default: 0.7
+            rag_score_threshold: Minimum similarity threshold for RAG (0.0-1.0). Default: 0.5
             yara_engine: YARA engine instance (optional)
             sigma_engine: Sigma engine instance (optional)
 

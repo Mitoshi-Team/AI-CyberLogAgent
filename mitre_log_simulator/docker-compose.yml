@@ -16,6 +16,7 @@ services:
       SIM_LOG_FILE: /app/output/generated_logs.log
       SIM_TIMELINE_FILE: /app/output/attack_timeline.log
       SIM_MARKERS_FILE: /app/output/attack_markers.csv
+      SIM_UNKNOWN_FILE: /host_output/unknown_techniques.txt
       SIM_ATOMICS_FOLDER: /opt/atomic-red-team/atomics
       SIM_HOST_OUTPUT_DIR: /host_output
     volumes:

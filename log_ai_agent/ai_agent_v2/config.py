@@ -52,7 +52,7 @@ class AgentConfig:
     # RAG settings
     use_rag: bool = True
     rag_top_k: int = 5
-    rag_score_threshold: float = 0.7
+    rag_score_threshold: float = 0.5
 
     # ChromaDB settings
     chroma_path: str = ""
@@ -93,7 +93,7 @@ class AgentConfig:
             timeout=int(os.getenv("LLM_TIMEOUT", "90")),
             use_rag=_get_bool_env("AI_V2_USE_RAG", True),
             rag_top_k=int(os.getenv("AI_V2_RAG_TOP_K", "5")),
-            rag_score_threshold=float(os.getenv("AI_V2_RAG_THRESHOLD", "0.7")),
+            rag_score_threshold=float(os.getenv("AI_V2_RAG_THRESHOLD", "0.5")),
             chroma_path=os.getenv("AI_V2_CHROMA_PATH", ""),
             debug=os.getenv("DEBUG", "False").lower() == "true",
         )
