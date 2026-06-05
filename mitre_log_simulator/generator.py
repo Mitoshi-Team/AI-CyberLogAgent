@@ -431,7 +431,7 @@ def _gen_bcdedit(command: str, cmd_word: str, technique: str) -> list[str]:
 
 def _gen_file_read(command: str, cmd_word: str, technique: str) -> list[str]:
     src = _src_ip()
-    m = re.search(rf'{cmd_word}\s+(\S+)', command)
+    m = re.search(rf'{re.escape(cmd_word)}\s+(\S+)', command)
     path = m.group(1) if m else "/etc/passwd"
     return [
         f"[{apache_ts()}] [notice] [client {src}] File content viewed: {path}",
@@ -681,7 +681,7 @@ def _gen_crypto(command: str, cmd_word: str, technique: str) -> list[str]:
 
 def _gen_compile(command: str, cmd_word: str, technique: str) -> list[str]:
     src = _src_ip()
-    m = re.search(rf'{cmd_word}\s+(\S+)', command)
+    m = re.search(rf'{re.escape(cmd_word)}\s+(\S+)', command)
     f = m.group(1) if m else "payload.c"
     return [
         f"[{apache_ts()}] [info] [client {src}] Compilation started: {f}",
