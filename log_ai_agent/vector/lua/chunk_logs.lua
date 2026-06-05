@@ -21,24 +21,6 @@ local function read_env_int(name, default_value, min_value)
   return value
 end
 
-local function read_env_float(name, default_value)
-  if os == nil or os.getenv == nil then
-    return default_value
-  end
-
-  local raw = os.getenv(name)
-  if raw == nil or raw:match("^%s*$") then
-    return default_value
-  end
-
-  local value = tonumber(raw)
-  if value == nil then
-    return default_value
-  end
-
-  return value
-end
-
 local function read_env_string(name, default_value)
   if os == nil or os.getenv == nil then
     return default_value
@@ -54,21 +36,9 @@ end
 
 local BATCH_SIZE = read_env_int("CHUNK_BATCH_SIZE", 250, 1)
 local OVERLAP = read_env_int("CHUNK_OVERLAP", 20, 0)
-local FLUSH_INTERVAL_SECONDS = read_env_int("CHUNK_FLUSH_INTERVAL_SECONDS", 120, 1)
-local FLUSH_INTERVAL_JITTER = read_env_float("CHUNK_FLUSH_INTERVAL_JITTER", 0.5)
+local FLUSH_INTERVAL_SECONDS = read_env_int("CHUNK_FLUSH_INTERVAL_SECONDS", 180, 1)
 local STATE_FILE = read_env_string("CHUNK_STATE_FILE", "/var/lib/vector/chunk_logs_state.tsv")
 local RESET_MARKER_FILE = read_env_string("CHUNK_RESET_MARKER_FILE", "/data/external/.chunk_state_reset")
-
-math.randomseed(os.time())
-
-local function rand_interval()
-  local jitter = FLUSH_INTERVAL_JITTER
-  if jitter <= 0 then
-    return FLUSH_INTERVAL_SECONDS
-  end
-  local half = FLUSH_INTERVAL_SECONDS * jitter / 2
-  return FLUSH_INTERVAL_SECONDS - half + math.random() * half * 2
-end
 
 local state = {
   queue = {},
@@ -76,7 +46,6 @@ local state = {
   next_record_seq = 1,
   next_batch_seq = 1,
   last_emitted_record_seq = 0,
-  current_flush_interval = FLUSH_INTERVAL_SECONDS,
 }
 
 local function split_tab(line)
@@ -414,7 +383,7 @@ local function flush_if_due(emit, now_ts)
     return
   end
 
-  if now_ts - state.first_ts < state.current_flush_interval then
+  if now_ts - state.first_ts < FLUSH_INTERVAL_SECONDS then
     return
   end
 
@@ -427,8 +396,6 @@ local function flush_if_due(emit, now_ts)
   else
     state.first_ts = nil
   end
-  state.current_flush_interval = rand_interval()
-
   persist_state()
 end
 
@@ -455,7 +422,6 @@ function process(event, emit)
 
   if state.first_ts == nil then
     state.first_ts = now_ts
-    state.current_flush_interval = rand_interval()
   end
 
   local current_record_seq = state.next_record_seq
