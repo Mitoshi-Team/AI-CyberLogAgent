@@ -11,7 +11,7 @@ services:
       SIM_RANDOM_ATTACKS: ${SIM_RANDOM_ATTACKS:-false}
       SIM_NO_ATTACKS: ${SIM_NO_ATTACKS:-false}
       SIM_INTERVAL_SECONDS: ${SIM_INTERVAL_SECONDS:-30}
-      SIM_NOISE_BATCH_SIZE: ${SIM_NOISE_BATCH_SIZE:-24}
+      SIM_NOISE_BATCH_SIZE: ${SIM_NOISE_BATCH_SIZE:-30}
       SIM_OUTPUT_DIR: /app/output
       SIM_LOG_FILE: /app/output/generated_logs.log
       SIM_TIMELINE_FILE: /app/output/attack_timeline.log
