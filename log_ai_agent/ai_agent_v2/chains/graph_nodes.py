@@ -41,7 +41,7 @@ class PipelineNodes:
         sigma_engine: SigmaEngine | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
-        rag_score_threshold: float = 0.7,
+        rag_score_threshold: float = 0.5,
         rag_parallelism: int = 5,
     ):
         self.llm = llm

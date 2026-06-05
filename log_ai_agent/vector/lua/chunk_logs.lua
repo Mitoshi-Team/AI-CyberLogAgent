@@ -36,7 +36,7 @@ end
 
 local BATCH_SIZE = read_env_int("CHUNK_BATCH_SIZE", 250, 1)
 local OVERLAP = read_env_int("CHUNK_OVERLAP", 20, 0)
-local FLUSH_INTERVAL_SECONDS = read_env_int("CHUNK_FLUSH_INTERVAL_SECONDS", 300, 1)
+local FLUSH_INTERVAL_SECONDS = read_env_int("CHUNK_FLUSH_INTERVAL_SECONDS", 180, 1)
 local STATE_FILE = read_env_string("CHUNK_STATE_FILE", "/var/lib/vector/chunk_logs_state.tsv")
 local RESET_MARKER_FILE = read_env_string("CHUNK_RESET_MARKER_FILE", "/data/external/.chunk_state_reset")
 
@@ -396,7 +396,6 @@ local function flush_if_due(emit, now_ts)
   else
     state.first_ts = nil
   end
-
   persist_state()
 end
 

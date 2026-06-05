@@ -1,0 +1,515 @@
+2026-06-05T16:44:58Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:42:28
+timestamp_end: 2026-06-05 16:43:26
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:42:28 2026] [warning] [client 10.0.84.159] cmd.exe execution: cmd.exe /c \"$param\\$param\" asreproast /outfile:\"$par...
+RAG: T1558, T1003, T1558, T1112
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:45:16Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:42:28
+timestamp_end: 2026-06-05 16:43:26
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:42:28 2026] [warning] [client 10.0.84.159] cmd.exe execution: cmd.exe /c \"$param\\$param\" asreproast /outfile:\"$par...
+RAG: T1558, T1190, T1059, T1112
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:47:22Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:44:23
+timestamp_end: 2026-06-05 16:45:21
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:44:23 2026] [warning] [client 10.0.143.61] Registry modification: \"HKEY_CURRENT_USER\\Software\\Microsoft\\Terminal"
+...
+RAG: T1112, T1543, T1190
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:47:38Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:44:23
+timestamp_end: 2026-06-05 16:45:21
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:44:23 2026] [warning] [client 10.0.143.61] Registry modification: \"HKEY_CURRENT_USER\\Software\\Microsoft\\Terminal"
+...
+RAG: T1112, T1543, T1190
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:49:43Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:46:47
+timestamp_end: 2026-06-05 16:48:14
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:46:47 2026] [notice] [client 10.0.149.213] File content viewed: /etc/passwd",
+      "[Fri Jun 05 16:46:47 2026] [info]...
+RAG: T1589 & T1590 & T1591 & T1592, T1546
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:49:58Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:46:47
+timestamp_end: 2026-06-05 16:48:14
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:46:47 2026] [notice] [client 10.0.149.213] File content viewed: /etc/passwd",
+      "[Fri Jun 05 16:46:47 2026] [info]...
+RAG: T1589 & T1590 & T1591 & T1592, T1546
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:51:41Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:49:40
+timestamp_end: 2026-06-05 16:50:09
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:49:40 2026] [warning] [client 10.0.137.95] Network configuration: net localgroup net group /domain net group \"enterpr...
+RAG: T1589 & T1590 & T1591 & T1592, T1190, T1499
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:51:57Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:49:40
+timestamp_end: 2026-06-05 16:50:09
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:49:40 2026] [warning] [client 10.0.137.95] Network configuration: net localgroup net group /domain net group \"enterpr...
+RAG: T1589 & T1590 & T1591 & T1592, T1190, T1498
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:53:03Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:51:06
+timestamp_end: 2026-06-05 16:52:33
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:51:06 2026] [warning] [client 10.0.207.246] Network configuration: NET USER $param$ $param /ADD /expires:never  REG AD...
+RAG: T1098 & T1136, T1105, T1498, T1190
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:53:20Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:51:06
+timestamp_end: 2026-06-05 16:52:33
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:51:06 2026] [warning] [client 10.0.207.246] Network configuration: NET USER $param$ $param /ADD /expires:never  REG AD...
+RAG: T1098 & T1136, T1105, T1498, T1190
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:55:36Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:52:33
+timestamp_end: 2026-06-05 16:54:57
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:52:33 2026] [warning] [client 10.0.216.205] Possible SYN flood detected from 10.0.216.205",
+      "[Fri Jun 05 16:52:3...
+RAG: T1046, T1498, T1563, T1190, T1489
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:56:09Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:52:33
+timestamp_end: 2026-06-05 16:54:57
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:52:33 2026] [warning] [client 10.0.216.205] Possible SYN flood detected from 10.0.216.205",
+      "[Fri Jun 05 16:52:3...
+RAG: T1499, T1498, T1548, T1190, T1489
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:57:47Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:54:57
+timestamp_end: 2026-06-05 16:56:23
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:54:57 2026] [info] systemd[7531]: Stopped mysql.service",
+      "[Fri Jun 05 16:54:57 2026] [info] [client 10.0.189.23...
+RAG: T1489, T1595, T1105
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:58:04Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:54:57
+timestamp_end: 2026-06-05 16:56:23
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:54:57 2026] [info] systemd[7531]: Stopped mysql.service",
+      "[Fri Jun 05 16:54:57 2026] [info] [client 10.0.189.23...
+RAG: T1489, T1595, T1105
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T16:59:54Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:57:49
+timestamp_end: 2026-06-05 16:58:18
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:57:49 2026] [warning] [client 10.0.167.102] Network configuration: net user /domain net group /domain",
+      "[Fri Ju...
+RAG: T1087, T1210
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:00:12Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:57:49
+timestamp_end: 2026-06-05 16:58:18
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:57:49 2026] [warning] [client 10.0.167.102] Network configuration: net user /domain net group /domain",
+      "[Fri Ju...
+RAG: T1087, T1210
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:01:48Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:59:45
+timestamp_end: 2026-06-05 17:00:42
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:59:45 2026] [info] sudo[4726]: root : TTY=pts/1 ; USER=root ; COMMAND=if [ ! -d $param ]; then mkdir $param ; mount $p...
+RAG: T1105, T1070
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:02:05Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 16:59:45
+timestamp_end: 2026-06-05 17:00:42
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 16:59:45 2026] [info] sudo[4726]: root : TTY=pts/1 ; USER=root ; COMMAND=if [ ! -d $param ]; then mkdir $param ; mount $p...
+RAG: T1105, T1070
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:03:48Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:00:42
+timestamp_end: 2026-06-05 17:03:06
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:01:11 2026] [warning] [client 10.0.176.77] Volume Shadow Copy operation: vssadmin.exe create shadow /for=$param",
+    ...
+RAG: T1490, T1190, T1070
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:04:20Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:00:42
+timestamp_end: 2026-06-05 17:03:06
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:01:11 2026] [warning] [client 10.0.176.77] Volume Shadow Copy operation: vssadmin.exe create shadow /for=$param",
+    ...
+RAG: T1490, T1202, T1070
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:05:38Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:03:06
+timestamp_end: 2026-06-05 17:03:35
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:03:06 2026] [warning] [client 10.0.55.54] Volume Shadow Copy operation: vssadmin.exe delete shadows /all /quiet",
+    ...
+RAG: T1490, T1218
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:05:58Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:03:06
+timestamp_end: 2026-06-05 17:03:35
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:03:06 2026] [warning] [client 10.0.55.54] Volume Shadow Copy operation: vssadmin.exe delete shadows /all /quiet",
+    ...
+RAG: T1490, T1218
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:07:29Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:05:01
+timestamp_end: 2026-06-05 17:06:28
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "19.168.77.182 - weissnat7367 [05/Jun/2026:17:05:01 +0000] \"POST /scale/24%2f7/seamless HTTP/1.1\" 301 47857 \"http://www.customercol...
+RAG: T1190, T1070, T1489
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:07:47Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:05:59
+timestamp_end: 2026-06-05 17:06:28
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:05:59 2026] [error] [client 10.0.131.158] File created: $param",
+      "[Fri Jun 05 17:05:59 2026] [info] [client 10.0...
+RAG: T1190, T1070, T1112
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:10:02Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:07:25
+timestamp_end: 2026-06-05 17:08:23
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:07:25 2026] [warning] [client 10.0.248.99] Possible SYN flood detected from 10.0.248.99",
+      "[Fri Jun 05 17:07:25 ...
+RAG: T1498, T1498, T1087, T1059
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:10:21Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:07:25
+timestamp_end: 2026-06-05 17:08:23
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:07:25 2026] [warning] [client 10.0.248.99] Possible SYN flood detected from 10.0.248.99",
+      "[Fri Jun 05 17:07:25 ...
+RAG: T1498, T1595, T1003, T1027
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:11:52Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:09:49
+timestamp_end: 2026-06-10:18
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:09:49 2026] [warning] [client 10.0.198.150] Network configuration: net user $param $param /add net.exe user $param $pa...
+RAG: T1585, T1543
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:12:11Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:09:49
+timestamp_end: 2026-06-05 17:10:18
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:09:49 2026] [warning] [client 10.0.198.150] Network configuration: net user $param $param /add net.exe user $param $pa...
+RAG: T1098 & T1136, T1489
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:13:38Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:11:16
+timestamp_end: 2026-06-05 17:12:42
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:11:16 2026] [notice] [client 10.0.195.25] File content viewed: /etc/passwd",
+      "[Fri Jun 05 17:11:16 2026] [info] ...
+RAG: T1082 & T1016 & T1049 & T1057 & T1083 & T1007 & T1012 & T1654, T1082 & T1016 & T1049 & T1057 & T1083 & T1007 & T1012 & T1654, T1059, T1601, T1110, T1595
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:16:24Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:12:42
+timestamp_end: 2026-06-05 17:14:09
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:12:42 2026] [error] [client 10.0.193.123] File does not exist: /payload, referer: http://10.0.193.123/payload",
+      ...
+RAG: T1595, T1505, T1070, T1070, T1543
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:17:51Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:14:09
+timestamp_end: 2026-06-05 17:16:32
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:14:37 2026] [warning] [client 10.0.194.52] Possible SYN flood detected from 10.0.194.52",
+      "[Fri Jun 05 17:14:37 ...
+RAG: T1499, T1110, T1595, T1070, T1505
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:18:58Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:16:32
+timestamp_end: 2026-06-05 17:17:59
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:17:01 2026] [info] sudo[7488]: root : TTY=pts/1 ; USER=root ; COMMAND=if [ ! -d $param ]; then mkdir $param ; mount $p...
+RAG: T1548, T1574, T1005, T1189, T1595
+YARA: Нет
+SIGMA: Нет
+-----------------
+2026-06-05T17:19:29Z - INCIDENT
+-----------------
+
+timestamp_start: 2026-06-05 17:16:32
+timestamp_end: 2026-06-05 17:17:59
+AGENT1: ---GROUPS---
+[
+  {
+    "group_id": "g1",
+    "log_lines": [
+      "[Fri Jun 05 17:17:01 2026] [info] sudo[7488]: root : TTY=pts/1 ; USER=root ; COMMAND=if [ ! -d $param ]; then mkdir $param ; mount $p...
+RAG: T1548, T1190, T1020, T1105, T1190, T1595
+YARA: Нет
+SIGMA: Нет
+-----------------

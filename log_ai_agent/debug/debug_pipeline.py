@@ -231,7 +231,6 @@ async def main():
         chroma_path = PROJECT_ROOT / "ai_agent_v2" / "chroma_db"
         chroma_mgr = initialize_mitre_knowledge_base(
             persist_directory=str(chroma_path),
-            use_processed=True,
         )
         if chroma_mgr and chroma_mgr.is_initialized:
             coll = chroma_mgr._vectorstore._client.get_collection(

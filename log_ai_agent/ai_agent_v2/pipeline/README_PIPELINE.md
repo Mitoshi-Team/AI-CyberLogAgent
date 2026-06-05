@@ -70,6 +70,17 @@ This document describes the LangGraph-based analysis pipeline for processing sec
 - **Output**: `final_report`, `severity_level_id`, `threat_type_id`, `recommendations`
 - **Purpose**: Generate comprehensive security incident report
 
+### 8. YARA Generator (Post-processing)
+- **Input**: MITRE techniques from Agent 2, existing YARA rules
+- **Output**: Generated YARA rules (saved to DB as suggestions)
+- **Purpose**: Auto-generate YARA rules for uncovered MITRE techniques
+- **How it works**:
+  1. For each MITRE technique found by RAG, checks if already covered by existing YARA rules
+  2. If uncovered → LLM generates a YARA rule for the technique using log samples as reference
+  3. Rule is validated: compiled with `yara-python`, scanned against original logs, reviewed by LLM
+  4. If passes all checks → saved as a `PendingYaraRule` (visible in Web UI as suggestion)
+  5. Admin can accept/reject via Web UI
+
 ## Data Types
 
 ### EventGroup

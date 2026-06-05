@@ -5,6 +5,8 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from snowballstemmer import stemmer as snowball_stemmer
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
@@ -22,6 +24,7 @@ class BM25Searcher:
         self.avgdl: float = 0
         self.k1 = 1.5
         self.b = 0.75
+        self._stemmer = snowball_stemmer("russian")
 
     def add_documents(self, docs: list[dict]):
         """Add documents for BM25 search.
@@ -42,10 +45,10 @@ class BM25Searcher:
         logger.info(f"BM25 index built: {len(docs)} documents, {len(self.doc_freq)} terms")
 
     def _tokenize(self, text: str) -> list[str]:
-        """Tokenize text for BM25."""
+        """Tokenize text for BM25 with Russian stemming."""
         text = text.lower()
         tokens = re.findall(r'\b\w+\b', text)
-        return tokens
+        return self._stemmer.stemWords(tokens)
 
     def _calc_idf(self, term: str) -> float:
         """Calculate IDF for a term."""

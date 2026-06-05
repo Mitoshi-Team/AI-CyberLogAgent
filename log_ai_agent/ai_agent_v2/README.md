@@ -6,10 +6,11 @@
 
 ### Особенности
 
-- **Трёхэтапная аналитика с LangGraph**:
+- **Четырёхэтапная аналитика с LangGraph**:
   - **Agent 1**: Первичный анализ логов, выявление событий безопасности с timestamps
-  - **Agent 2**: RAG-поиск MITRE-техник для КАЖДОГО события (параллельно)
-  - **Agent 3**: Финальный отчёт с объединением всех источников
+  - **Description Agent**: Генерация структурированных описаний для каждой группы событий
+  - **Agent 2**: RAG-поиск MITRE-техник по описаниям от Description Agent (параллельно)
+  - **Agent 3**: Финальный отчёт с объединением Agent 1 (напрямую), Description Agent → Agent 2, YARA и Sigma
 
 - **Сигнатурные движки**:
   - **YARA** (`yara-python`) — обнаружение малвари, эксплойтов, паттернов атак
@@ -29,44 +30,50 @@
 ## Архитектура пайплайна
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     log_content (input)                     │
-└──────┬──────────────────┬──────────────────┬───────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     log_content (input)                      │
+└──────┬──────────────────┬──────────────────┬────────────────┘
        │                  │                  │
        ▼                  ▼                  ▼
 ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│   Agent 1   │   │parse_logs   │   │  YARA Scan  │
-│  (primary   │   │  (Apache    │   │  (parallel) │
-│   analysis) │   │   parser)   │   └──────┬──────┘
-└──────┬──────┘   └──────┬──────┘          │
-       │                  │                  │
-       │                  ▼                  ▼
-       │           ┌─────────────┐   ┌─────────────┐
-       │           │parse_logs   │   │ Sigma Scan  │
-       │           │  (output)   │   │  (parallel) │
-       │           └──────┬──────┘   └──────┬──────┘
-       │                  │                  │
-       │                  └────────┬─────────┘
-       │                           │
-       ▼                           ▼
-┌─────────────┐            ┌─────────────────┐
-│   Agent 2   │            │     Agent 3     │
-│  (RAG per   │◄───────────│   (summarize)   │
-│   event,    │            │                 │
-│  parallel)  │            └────────┬────────┘
-└──────┬──────┘                     │
-       │                            ▼
-       │                     ┌─────────────┐
-       └───────────────────▶│ END (report)│
-                             └─────────────┘
+│  Prefilter  │   │parse_logs   │   │  YARA Scan  │
+└──────┬──────┘   │  (Apache    │   │  (parallel) │
+       │          │   parser)   │   └──────┬──────┘
+       ▼          └──────┬──────┘          │
+┌─────────────┐          │                  ▼
+│   Agent 1   │          │           ┌─────────────┐
+│  (primary   │          │           │ Sigma Scan  │
+│   analysis) │          │           │  (parallel) │
+└──┬───┬──────┘          │           └──────┬──────┘
+   │   │                 │                   │
+   │   │                 └────────┬──────────┘
+   │   └──────────────────┐      │
+   │                      │      │
+┌──▼───────────┐   ┌──────▼──────▼─────┐
+│ Description  │   │                  │
+│   Agent      │   │    Agent 3       │
+│ (generates   │   │  (summarize)     │
+│ descriptions)│   │                  │
+└──┬───────────┘   └────────┬─────────┘
+   │                        │
+┌──▼───────────┐            │
+│ Agent 2 (RAG)│───────────▶│
+│  (parallel)  │            │
+└──────────────┘            ▼
+                     ┌─────────────┐
+                     │ END (report)│
+                     └─────────────┘
 ```
 
 ### Поток данных
 
-1. **Agent 1** → возвращает `suspicious_events` (список dict с `description`, `timestamp`, `log_line`)
-2. **Agent 2** → для каждого события делает RAG-запрос (без timestamp), накапливает `mitre_techniques_final`
-3. **YARA/Sigma** → сканируют параллельно после `parse_logs`
-4. **Agent 3** → получает всё: MITRE-техники с timestamps, YARA/Sigma совпадения, генерирует финальный отчёт
+1. **Prefilter** → фильтрация "мусорных" строк (heartbeat, health check)
+2. **Agent 1** → первичный анализ, возвращает `groups` (список групп событий с описанием, timestamp, log_line)
+   — параллельно уходит **напрямую в Agent 3** и в **Description Agent**
+3. **Description Agent** → для каждой группы генерирует структурированное описание: категория угрозы, ключевые слова (RU/EN), severity, временной диапазон
+4. **YARA/Sigma** → сканируют параллельно после `parse_logs`
+5. **Agent 2 (RAG)** → для каждого описания от Description Agent делает RAG-запрос, накапливает `mitre_techniques_final`
+6. **Agent 3** → получает всё: Agent 1 (напрямую), MITRE-техники от Agent 2, YARA/Sigma совпадения, генерирует финальный отчёт
 
 ### MITRE техники с timestamp
 
@@ -89,28 +96,31 @@
 ```
 ai_agent_v2/
 ├── chains/                     # LLM-цепочки для агентов
-│   ├── agent1.py              # Первичный анализ логов (V2)
-│   ├── agent2.py             # Детальный AI-отчёт
-│   ├── agent3.py             # Финальная суммаризация
+│   ├── agent1.py              # Первичный анализ логов
+│   ├── agent2.py              # RAG-обогащение событий
+│   ├── agent3.py              # Финальная суммаризация
+│   ├── description_agent.py   # Генерация описаний техник
 │   ├── graph_nodes.py        # LangGraph узлы
+│   ├── llm.py                # LLM провайдер
+│   ├── prefilter.py          # Предобработка логов
 │   ├── rag_chain.py          # RAG-поиск MITRE
-│   ├── llm.py              # LLM провайдер
-│   ├── prefilter.py         # Предобработка логов
+│   ├── yara_generator.py     # Генерация YARA-правил
 │   ├── __init__.py
-│   └── providers/           # LLM провайдеры
-│       ├── base.py          # Базовый класс
-│       ├── ollama.py       # Ollama провайдер
+│   └── providers/            # LLM провайдеры
+│       ├── base.py           # Базовый класс
+│       ├── ollama.py         # Ollama провайдер
+│       ├── openai.py         # OpenAI-совместимый провайдер
 │       └── __init__.py
 ├── engines/                    # Сигнатурные движки
-│   ├── yara_engine.py        # YARA на yara-python
-│   ├── sigma_engine.py       # Sigma на pysigma
+│   ├── yara_engine.py         # YARA на yara-python
+│   ├── sigma_engine.py        # Sigma на pysigma
 │   └── __init__.py
-├── models/                    # Типы данных
-│   ├── models_types.py       # Pydantic схемы
+├── models/                     # Типы данных
+│   ├── schemas.py             # Pydantic схемы
 │   └── __init__.py
-├── parsers/                   # Парсеры логов
-│   └── apache_parser.py      # Apache парсер
-├── rules/                    # Правила обнаружения
+├── parsers/                    # Парсеры логов
+│   └── apache_parser.py       # Apache парсер
+├── rules/                      # Правила обнаружения
 │   ├── yara/
 │   │   ├── SQL_Injection_Advanced.yar
 │   │   ├── XSS_Advanced.yar
@@ -123,49 +133,78 @@ ai_agent_v2/
 │   └── sigma/
 │       ├── brute_force_authentication.yml
 │       ├── mimikatz_detection.yml
+│       ├── path_traversal.yml
 │       ├── powershell_encoded_command.yml
 │       ├── remote_file_inclusion.yml
 │       ├── reverse_shell_detection.yml
 │       ├── scanner_detection.yml
 │       ├── sql_injection_attempt.yml
 │       └── xss_attempt.yml
-├── pipeline/                   # LangGraph pipeline
-│   ├── langgraph_pipeline.py  # LangGraph StateGraph
+├── pipeline/                    # LangGraph pipeline
+│   ├── langgraph_pipeline.py   # LangGraph StateGraph
+│   ├── README_PIPELINE.md      # Документация пайплайна
 │   └── __init__.py
-├── knowledge_base/            # База знаний MITRE ATT&CK
-│   ├── manager.py          # ChromaDB менеджер
-│   ├── mitre_loader.py   # Загрузчик MITRE
+├── knowledge_base/             # База знаний MITRE ATT&CK
+│   ├── manager.py              # ChromaDB менеджер
+│   ├── mitre_loader.py         # Загрузчик MITRE (из mitre_processed.json)
+│   ├── mitre_processed.json    # Обработанные техники MITRE (основной источник)
+│   ├── enterprise-attack.json  # STIX-дамп (резервный)
 │   └── __init__.py
-├── embedding/                # Эмбеддинги
-│   ├── manager.py         # Менеджер эмбеддингов
-│   ├── models/          # Скачанная модель (не в Git)
+├── embedding/                  # Эмбеддинги
+│   ├── manager.py              # Менеджер эмбеддингов
+│   ├── models/                 # Скачанная модель (не в Git)
+│   │   └── multilingual-e5-base/
 │   └── __init__.py
-├── prompts/                 # Промты для агентов
+├── prompts/                    # Промты для агентов
 │   ├── system.py
 │   ├── log_analysis.py
+│   ├── yara_generation.py
 │   └── __init__.py
-├── visual_graph/            # Визуализация графа
-│   ├── render_graph.py    # Рендер графа
-│   └── pipeline_graph.mmd # Mermaid диаграмма
-├── pipeline_tests/           # Тесты
+├── visual_graph/               # Визуализация графа
+│   ├── render_graph.py         # Рендер графа
+│   └── pipeline_graph.mmd      # Mermaid диаграмма
+├── metrics/                    # Метрики качества детекции
+│   ├── evaluate.py             # Сравнение ground truth с детекциями
+│   ├── metrics_logger.py       # Логирование метрик после анализа
+│   ├── README_METRICS.md       # Документация метрик
+│   ├── pipeline_metrics.log    # Журнал детекций (создаётся автоматически)
+│   └── TESTS_DATA/
+│       ├── SUMMARY_REPORT.md   # Сводка метрик
+│       ├── test1/              # Сырые данные теста 1
+│       └── test2/              # Отчёт и верификация теста 2
+├── pipeline_tests/             # Тесты
 │   ├── conftest.py
-│   ├── test_yara_sigma.py
+│   ├── rag_ground_truth.json
+│   ├── run_rag_eval.py
+│   ├── test_agent1.py
+│   ├── test_agent3.py
+│   ├── test_description_agent.py
 │   ├── test_full_pipeline.py
+│   ├── test_graph_nodes.py
+│   ├── test_llm.py
+│   ├── test_new_features.py
+│   ├── test_pipeline_basic.py
+│   ├── test_prefilter.py
 │   ├── test_quick.py
 │   ├── test_rag.py
+│   ├── test_rag_eval.py
+│   ├── test_rag_evaluation.py
 │   ├── test_rag_flow.py
+│   ├── test_yara.py
+│   ├── test_yara_generator.py
+│   ├── test_yara_sigma.py
 │   └── __init__.py
-├── examples/              # Примеры использования
+├── examples/                   # Примеры использования
 │   ├── basic.py
 │   └── __init__.py
-├── chroma_db/             # Векторная база (генерируется, не в Git)
-├── app_integration.py      # Интеграция с FastAPI
-├── callbacks.py         # Колбэки
-├── chat_integration.py  # Интеграция чата
-├── config.py          # Конфигурация агента
-├── init_mitre.py      # Инициализация MITRE
-├── models_types.py   # Типы моделей
-├── run.py           # Точка входа
+├── chroma_db/                  # Векторная база (генерируется, не в Git)
+├── app_integration.py          # Интеграция с FastAPI
+├── callbacks.py                # Колбэки
+├── chat_integration.py         # Интеграция чата
+├── config.py                   # Конфигурация агента
+├── init_mitre.py               # Инициализация MITRE
+├── models_types.py             # Типы моделей
+├── run.py                      # Точка входа
 ├── __init__.py
 └── README.md
 ```
@@ -416,11 +455,11 @@ print(f'Техник в базе: {coll.count()}')
 
 ## MITRE ATT&CK
 
-### Источники данных
+### Источник данных
 
-- **GitHub**: [mitre/cti](https://github.com/mitre/cti)
-- **Файл**: `enterprise-attack/enterprise-attack.json`
-- **Формат**: STIX 2.1
+- **Файл**: `knowledge_base/mitre_processed.json` — проектный файл с обработанными техниками (88 шт.)
+- **Формат**: JSON (id, name, description, tactic)
+- **Источник**: обработанный MITRE ATT&CK — только основные техники, без GitHub/STIX загрузки
 
 ### Обновление базы
 
@@ -428,8 +467,8 @@ print(f'Техник в базе: {coll.count()}')
 # Удалить существующую базу
 rm -rf log_ai_agent/ai_agent_v2/chroma_db
 
-# Запустить пайплайн (скачает заново)
-uv run python log_ai_agent/ai_agent_v2/pipeline_tests/test_full_pipeline.py
+# Переинициализировать (загрузится из mitre_processed.json)
+uv run python log_ai_agent/ai_agent_v2/init_mitre.py
 ```
 
 ---

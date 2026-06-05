@@ -4,33 +4,34 @@ This module builds the LangGraph StateGraph for the full analysis pipeline:
 
 Architecture:
 ```
-┌─────────────────────────────────────────────┐
-│           log_content (input)              │
-└────┬────────────┬─────────────┬───────────┘
+┌──────────────────────────────────────────┐
+│           log_content (input)           │
+└────┬────────────┬─────────────┬──────────┘
      │            │             │
 ┌────▼────┐ ┌───▼─────┐ ┌───▼──────┐
-│Prefilter │ │parse_log│ │  YARA     │
+│Prefilter│ │parse_log│ │  YARA    │
 └────┬────┘ └────┬─────┘ └────┬─────┘
      │            │             │
 ┌────▼────┐     │       ┌─────▼─────┐
 │ Agent 1 │     │       │  Sigma    │
-└────┬────┘     └───────┴────┬─────┘
-     │                        │
-     │            ┌──────────┴──────────┐
-     ▼            │                     ▼
-┌──────────────────┴────┐      ┌──────────┐
-│  Description Agent   │      │ Agent 3  │
-└──────────────┬───────┘      └──────────┘
-               │
-┌──────────────▼───────┐
-│       Agent 2 (RAG)  │──────▶│ Agent 3 │
-└──────────────────────┘       └──────────┘
+└──┬──┬───┘     └───────┴────┬─────┘
+   │  │                       │
+   │  └─────────────────┐     │
+   │                    │     │
+┌──▼───────────┐  ┌────▼─────▼────┐
+│ Description  │  │              │
+│   Agent      │  │   Agent 3    │
+└──┬───────────┘  └──────────────┘
+   │
+┌──▼───────────┐
+│ Agent 2 (RAG)│──▶│ Agent 3 │
+└──────────────┘   └─────────┘
 ```
 
 Flow:
 - START → prefilter → Agent 1 (groups of events)
 - START → parse_logs → YARA/Sigma (all logs, no filtering)
-- Agent1 → Description Agent (generate group descriptions)
+- Agent1 → Description Agent (generate group descriptions) + Agent3 (direct)
 - Description Agent → Agent2 (RAG search for each description)
 - All branches converge at Agent 3
 """
@@ -82,24 +83,13 @@ def build_analysis_graph(
 
     workflow.add_edge("prefilter", "agent1")
     workflow.add_edge("agent1", "description_agent")
+    workflow.add_edge("agent1", "agent3")
 
     # parse_logs runs on all logs (not filtered), for YARA/Sigma
     workflow.add_edge("parse_logs", "yara_scan")
     workflow.add_edge("parse_logs", "sigma_scan")
 
-    # Conditional edge: if no groups found by agent1, skip description_agent and agent2
-    def should_skip_description_agent(state):
-        return state.get("groups", []) == []
-
-    workflow.add_conditional_edges(
-        "description_agent",
-        should_skip_description_agent,
-        {
-            True: "agent3",
-            False: "agent2",
-        },
-    )
-
+    workflow.add_edge("description_agent", "agent2")
     workflow.add_edge("agent2", "agent3")
     workflow.add_edge("yara_scan", "agent3")
     workflow.add_edge("sigma_scan", "agent3")
@@ -134,7 +124,7 @@ class LogAnalysisPipeline:
         llm: BaseLanguageModel | None = None,
         use_rag: bool = True,
         rag_top_k: int = 5,
-        rag_score_threshold: float = 0.7,
+        rag_score_threshold: float = 0.5,
         yara_engine: Any | None = None,
         sigma_engine: Any | None = None,
     ):
@@ -145,7 +135,7 @@ class LogAnalysisPipeline:
             llm: Language model (creates default if None)
             use_rag: Whether to use RAG
             rag_top_k: Number of techniques to retrieve
-            rag_score_threshold: Minimum similarity threshold for RAG (0.0-1.0). Default: 0.7
+            rag_score_threshold: Minimum similarity threshold for RAG (0.0-1.0). Default: 0.5
             yara_engine: YARA engine instance (optional)
             sigma_engine: Sigma engine instance (optional)
 
@@ -375,6 +365,11 @@ async def create_pipeline(
 
     llm_kwargs = llm_config or {}
     llm = create_llm(**llm_kwargs)
+
+    if yara_rules_path is None:
+        yara_rules_path = str(Path(__file__).parent / "rules" / "yara")
+    if sigma_rules_path is None:
+        sigma_rules_path = str(Path(__file__).parent / "rules" / "sigma")
 
     yara_engine = None
     sigma_engine = None
