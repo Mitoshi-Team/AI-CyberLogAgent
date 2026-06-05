@@ -16,10 +16,10 @@ graph TD;
 	__end__([<p>__end__</p>]):::last
 	__start__ --> parse_logs;
 	__start__ --> prefilter;
-	agent1 --> description_agent;
 	agent1 --> agent3;
-	description_agent --> agent2;
+	agent1 --> description_agent;
 	agent2 --> agent3;
+	description_agent --> agent2;
 	parse_logs --> sigma_scan;
 	parse_logs --> yara_scan;
 	prefilter --> agent1;

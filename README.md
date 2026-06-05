@@ -530,6 +530,13 @@ AI-CyberLogAgent/
 - status: text (Статус предложенного правила)
 - created_at: timestamp with time zone (Дата и время создания предложенного правила)
 
+## Метрики качества
+
+Подробная документация: `ai_agent_v2/metrics/README_METRICS.md`
+Текущая сводка: `ai_agent_v2/metrics/TESTS_DATA/SUMMARY_REPORT.md`
+
+---
+
 ## О разработчиках
 
 Проект разработан командой **Mitoshi Team** в рамках проектного практикума в УрФУ.
