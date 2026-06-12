@@ -542,10 +542,7 @@ AI-CyberLogAgent/
 ### Состав команды разработчиков
 
 - **Никита Лецколюк** - Team Lead, Software architect
-- **Матвей Вахрушев** - AI engineer, Back-end developer
-- **Михаил Видякин** - Back-end developer
-- **Савелий Вялков** - Front-end developer
-- **Сотник Тимур** - Systems analyst
+- **Матвей Вахрушев** - AI engineer, AI agent architect, Back-end developer
 - **Николай Кочкин** - Test engineer
 
 ### Контакты
