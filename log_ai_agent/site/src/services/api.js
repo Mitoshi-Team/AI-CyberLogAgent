@@ -88,8 +88,8 @@ export const statistics = {
  * Работа с чатом
  */
 export const chat = {
-  sendMessage: (userId, role, content) => 
-    apiClient.post('/chat/messages', { user_id: userId, role, content }),
+  sendMessage: (userId, role, content, suggestions = null) => 
+    apiClient.post('/chat/messages', { user_id: userId, role, content, suggestions }),
   getMessages: (userId, limit = 50) => 
     apiClient.get('/chat/messages', { params: { user_id: userId, limit } }),
   clearMessages: (userId) => 

@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS public."Messages" (
     user_id integer NOT NULL,
     role text NOT NULL,
     content text NOT NULL,
+    suggestions text,
     created_at timestamp with time zone NOT NULL
 );
 

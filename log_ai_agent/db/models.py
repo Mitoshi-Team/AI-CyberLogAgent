@@ -104,6 +104,7 @@ class Message(Base):
     user_id = Column(Integer, ForeignKey("Users.user_id"))
     role = Column(String(32))
     content = Column(Text)
+    suggestions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User")
 

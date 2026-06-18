@@ -166,12 +166,18 @@
           (messages.length > 0 || isLoading) ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >
-        <div v-if="isHistoryLoaded && messages.length === 0 && !isLoading" class="mb-1 text-center select-none">
+        <div v-if="isHistoryLoaded && messages.length === 0 && !isLoading" class="mb-1 text-center select-none relative">
           <img
             src="/wavescan_chat_logo.svg"
             alt="wavescan agent"
-            class="w-full max-w-[520px] sm:max-w-[620px] mx-auto wave-logo"
+            class="w-full max-w-[300px] sm:max-w-[400px] mx-auto wave-logo"
           />
+          <div
+            class="absolute inset-0 flex items-center justify-center pointer-events-none"
+            style="font-family: 'Unbounded-Medium', sans-serif;"
+          >
+            <span class="text-white text-3xl sm:text-3xl md:text-3xl wave-glow">{{ greetingText }}</span>
+          </div>
         </div>
 
         <div
@@ -179,25 +185,13 @@
           class="flex flex-wrap justify-start gap-3 mb-4"
         >
           <button
-            @click="selectQuickQuestion('Какие рекомендации для предотвращения атак?')"
+            v-for="(pill, idx) in activeSuggestions"
+            :key="idx"
+            @click="selectQuickQuestion(pill)"
             :disabled="isQuickQuestionBlocked"
             class="quick-pill"
           >
-            Рекомендации
-          </button>
-          <button
-            @click="selectQuickQuestion('Какие тренды в безопасности?')"
-            :disabled="isQuickQuestionBlocked"
-            class="quick-pill"
-          >
-            Тренды
-          </button>
-          <button
-            @click="selectQuickQuestion('Покажи релевантные техники MITRE ATT&CK для этих инцидентов')"
-            :disabled="isQuickQuestionBlocked"
-            class="quick-pill"
-          >
-            MITRE
+            {{ pill }}
           </button>
         </div>
 
@@ -307,25 +301,13 @@
 
         <div v-if="messages.length === 0 && (!isHistoryLoaded || !isLoading)" class="flex flex-wrap justify-center gap-3 mt-5">
           <button
-            @click="selectQuickQuestion('Какие рекомендации для предотвращения атак?')"
+            v-for="(pill, idx) in activeSuggestions"
+            :key="idx"
+            @click="selectQuickQuestion(pill)"
             :disabled="isQuickQuestionBlocked"
             class="quick-pill"
           >
-            Рекомендации
-          </button>
-          <button
-            @click="selectQuickQuestion('Какие тренды в безопасности?')"
-            :disabled="isQuickQuestionBlocked"
-            class="quick-pill"
-          >
-            Тренды
-          </button>
-          <button
-            @click="selectQuickQuestion('Покажи релевантные техники MITRE ATT&CK для этих инцидентов')"
-            :disabled="isQuickQuestionBlocked"
-            class="quick-pill"
-          >
-            MITRE
+            {{ pill }}
           </button>
         </div>
       </div>
@@ -451,6 +433,46 @@ const SCROLLBAR_EDGE_GAP = 96
 const messages = ref([])
 const shouldSyncAfterBackgroundCompletion = ref(false)
 
+// Подсказки
+const DEFAULT_SUGGESTIONS = ['Последний инцидент', 'Тренды', 'Что ты умеешь?']
+const suggestions = ref([...DEFAULT_SUGGESTIONS])
+
+const activeSuggestions = computed(() => suggestions.value)
+
+const GREETINGS = ['Привет, {user}', 'Чем я могу помочь?', 'С чего начнем?', 'Добро пожаловать!', 'С возвращением, {user}!', 'Рад тебя видеть, {user}!', 'Готов к работе, {user}?', 'Приветствую, {user}!', 'Какой сегодня вопрос, {user}?', 'Чем займемся сегодня, {user}?']
+const greetingText = ref('')
+
+const pickRandomGreeting = () => {
+  const user = appStore.currentUser?.login || appStore.currentUser?.username || 'Пользователь'
+  const text = GREETINGS[Math.floor(Math.random() * GREETINGS.length)]
+  greetingText.value = text.replace('{user}', user)
+}
+
+const STORAGE_KEY_SUGGESTIONS = 'chat_suggestions'
+
+const loadSuggestionsFromStorage = () => {
+  const userId = appStore.currentUser?.id
+  if (!userId) return
+  try {
+    const stored = localStorage.getItem(`${STORAGE_KEY_SUGGESTIONS}_${userId}`)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length === 3) {
+        suggestions.value = parsed
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+const saveSuggestionsToStorage = (newSuggestions) => {
+  const userId = appStore.currentUser?.id
+  if (!userId || !newSuggestions || newSuggestions.length !== 3) return
+  suggestions.value = newSuggestions
+  try {
+    localStorage.setItem(`${STORAGE_KEY_SUGGESTIONS}_${userId}`, JSON.stringify(newSuggestions))
+  } catch { /* ignore */ }
+}
+
 const validateSberSpeechKey = async () => {
   isVoiceKeyCheckInProgress.value = true
   try {
@@ -485,7 +507,11 @@ onMounted(async () => {
     shouldSyncAfterBackgroundCompletion.value = true
   }
   
-  // Загружаем историю чата из БД
+  // Загружаем подсказки из localStorage (до загрузки истории из БД)
+  loadSuggestionsFromStorage()
+  pickRandomGreeting()
+
+  // Загружаем историю чата из БД (перезапишет подсказки, если в истории есть AI сообщение)
   await loadChatHistory()
   isHistoryLoaded.value = true
 
@@ -514,6 +540,7 @@ const loadChatHistory = async () => {
         role: msg.role === 'user' ? 'user' : (msg.role === 'notice' ? 'notice' : 'ai'),
         text: msg.content,
         isNew: false,
+        suggestions: msg.suggestions || undefined,
       }))
 
       // Прикрепляем ожидающие YARA правила к AI сообщениям
@@ -536,6 +563,12 @@ const loadChatHistory = async () => {
         .map(msg => msg.role)
         .lastIndexOf('user')
 
+      // Извлекаем подсказки из последнего AI сообщения
+      const lastAiMsg = [...messages.value].reverse().find(m => m.role === 'ai')
+      if (lastAiMsg?.suggestions?.length === 3) {
+        saveSuggestionsToStorage(lastAiMsg.suggestions)
+      }
+
       if (lastUserMessageIndex >= 0) {
         await scrollMessageToTop(lastUserMessageIndex)
         topAlignSpacerHeight.value = Math.max(topAlignSpacerHeight.value - 32, 0)
@@ -544,6 +577,7 @@ const loadChatHistory = async () => {
     } else {
       // Если история пуста, оставляем чат пустым
       messages.value = []
+      saveSuggestionsToStorage(DEFAULT_SUGGESTIONS)
     }
     
     scrollToBottom()
@@ -555,7 +589,7 @@ const loadChatHistory = async () => {
 }
 
 // Функция сохранения сообщения в БД
-const saveChatMessage = async (role, content) => {
+const saveChatMessage = async (role, content, suggestions = null) => {
   try {
     const userId = appStore.currentUser?.id
     if (!userId) {
@@ -563,7 +597,7 @@ const saveChatMessage = async (role, content) => {
       return
     }
     
-    await chat.sendMessage(userId, role, content)
+    await chat.sendMessage(userId, role, content, suggestions)
   } catch (error) {
     console.error('Error saving chat message:', error)
     appStore.addNotification('Ошибка сохранения сообщения', 'error')
@@ -1251,11 +1285,16 @@ const sendMessage = async () => {
     console.log(`💬 Message: "${userMessage}"`)
     console.log('---')
     
+    const aiSuggestions = response.data.suggestions
     messages.value.push({
       role: 'ai',
       text: aiResponse,
       isNew: false,
+      suggestions: aiSuggestions || undefined,
     })
+    if (aiSuggestions?.length === 3) {
+      saveSuggestionsToStorage(aiSuggestions)
+    }
     await reduceTopAlignSpacerByLastAssistantMessage()
     
   } catch (error) {
@@ -1366,16 +1405,19 @@ const handleFileUpload = async (event) => {
       const analysisMsg = response.data.ai_analysis
       
       const yaraRules = response.data.generated_yara_rules || []
+      const uploadSuggestions = response.data.suggestions || DEFAULT_SUGGESTIONS
       messages.value.push({
         role: 'ai',
         text: analysisMsg,
         isNew: false,
+        suggestions: uploadSuggestions,
         yaraRules: yaraRules.length > 0 ? yaraRules : undefined,
       })
+      saveSuggestionsToStorage(uploadSuggestions)
       await reduceTopAlignSpacerByLastAssistantMessage()
       
       // Сохраняем ответ в БД
-      await saveChatMessage('agent', analysisMsg)
+      await saveChatMessage('agent', analysisMsg, uploadSuggestions)
       
       // Явно обновляем историю отчетов, чтобы новый отчет появился в вкладке "История"
       appStore.notifyReportsUpdated()
@@ -1470,6 +1512,8 @@ const confirmNewChat = async () => {
     messages.value = []
     topAlignSpacerHeight.value = 0
     appStore.clearPipeline()
+    saveSuggestionsToStorage(DEFAULT_SUGGESTIONS)
+    pickRandomGreeting()
 
     // Показываем уведомление с информацией об очистке
     appStore.addNotification(

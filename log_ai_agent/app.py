@@ -737,7 +737,8 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             # Post a message for every user
             result = await session.execute(select(User.user_id))
             user_ids = result.scalars().all()
-            messages_to_add = [Message(user_id=uid, role="agent", content=chat_message) for uid in user_ids]
+            default_suggestions = json.dumps(["Рекомендации", "Анализ рисков", "Мониторинг"], ensure_ascii=False)
+            messages_to_add = [Message(user_id=uid, role="agent", content=chat_message, suggestions=default_suggestions) for uid in user_ids]
             session.add_all(messages_to_add)
 
             if generated_yara_rules:
@@ -897,6 +898,7 @@ class ChatMessageRequest(BaseModel):
     user_id: int
     role: str  # 'user', 'agent' или 'notice'
     content: str
+    suggestions: list[str] | None = None
 
 
 class ChatMessageResponse(BaseModel):
@@ -904,6 +906,7 @@ class ChatMessageResponse(BaseModel):
     user_id: int
     role: str
     content: str
+    suggestions: list[str] | None = None
     created_at: str
 
 
@@ -2148,7 +2151,13 @@ async def save_chat_message(request: ChatMessageRequest):
     """Сохранение сообщения в чат"""
     try:
         async with get_async_session() as session:
-            msg = Message(user_id=request.user_id, role=request.role, content=request.content)
+            suggestions_json = json.dumps(request.suggestions, ensure_ascii=False) if request.suggestions else None
+            msg = Message(
+                user_id=request.user_id,
+                role=request.role,
+                content=request.content,
+                suggestions=suggestions_json,
+            )
             session.add(msg)
             await session.flush()
             await session.commit()
@@ -2158,6 +2167,7 @@ async def save_chat_message(request: ChatMessageRequest):
                 user_id=msg.user_id,
                 role=msg.role,
                 content=msg.content,
+                suggestions=request.suggestions,
                 created_at=msg.created_at.isoformat() if msg.created_at else None,
             )
     except Exception as e:
@@ -2185,6 +2195,7 @@ async def get_chat_messages(user_id: int, limit: int = 50):
                 "user_id": m.user_id,
                 "role": m.role,
                 "content": m.content,
+                "suggestions": json.loads(m.suggestions) if m.suggestions else None,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
             for m in reversed(messages_rows)
@@ -2226,6 +2237,7 @@ class ChatSendResponse(BaseModel):
     success: bool
     user_message: str
     agent_response: str
+    suggestions: list[str] | None = None
     mode: str | None = None
     message: str | None = None
 
@@ -2237,7 +2249,8 @@ async def _store_agent_fallback_message(user_id: int, text: str) -> None:
 
     try:
         async with get_async_session() as session:
-            msg = Message(user_id=user_id, role="agent", content=text)
+            default_suggestions = json.dumps(["Рекомендации", "Тренды", "MITRE"], ensure_ascii=False)
+            msg = Message(user_id=user_id, role="agent", content=text, suggestions=default_suggestions)
             session.add(msg)
             await session.commit()
     except Exception:
@@ -2290,6 +2303,7 @@ async def send_chat_message(request: ChatSendRequest):
             success=True,
             user_message=request.message,
             agent_response=result["response"],
+            suggestions=result.get("suggestions"),
             mode=result["mode"],
             message="Сообщение успешно обработано",
         )
@@ -2566,6 +2580,7 @@ async def upload_log_file(
                 "log_id": log_id,
                 "report_id": report_id,
                 "ai_analysis": analysis_result["description"],
+                "suggestions": ["Рекомендации", "Анализ рисков", "Мониторинг"],
             }
 
             # Добавляем метаданные v2 если доступны
