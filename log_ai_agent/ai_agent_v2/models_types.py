@@ -58,6 +58,23 @@ class MITRETechnique(TypedDict, total=False):
     group_id: str
 
 
+class IncidentInfo(TypedDict, total=False):
+    """Single incident within a report, mapped to a MITRE technique.
+
+    One report can have multiple incidents, each linked to a MITRE
+    technique/tactic with its own severity level.
+    """
+
+    description: str
+    technique_id: str
+    technique_name: str
+    tactic: str
+    severity_level_id: int
+    threat_type_id: int | None
+    group_id: str | None
+    confirmed: bool
+
+
 class AnalysisState(TypedDict, total=False):
     """State type for LangGraph analysis pipeline.
 
@@ -112,6 +129,7 @@ class AnalysisState(TypedDict, total=False):
 
     # ===== AGENT 2 OUTPUT =====
     agent2_report: str
+    incidents: list[IncidentInfo]
 
     # ===== YARA SCAN OUTPUT =====
     yara_matches: Annotated[list[str], operator.add]
@@ -126,8 +144,7 @@ class AnalysisState(TypedDict, total=False):
     # ===== AGENT 3 OUTPUT (FINAL) =====
     final_report: str
     recommendations: list[str]
-    severity_level_id: int
-    threat_type_id: int
+    overall_severity_level_id: int
     confidence_level: str
     unconfirmed_events_count: int
 

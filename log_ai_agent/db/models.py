@@ -66,17 +66,36 @@ class Log(Base):
     date = Column(DateTime, default=datetime.utcnow)
 
 
+class ReportIncident(Base):
+    __tablename__ = "ReportIncidents"
+    incident_id = Column(Integer, primary_key=True)
+    report_id = Column(Integer, ForeignKey("Reports.report_id"))
+    event_description = Column(Text, nullable=False)
+    group_id = Column(String(64))
+    mitre_technique_id = Column(String(64), nullable=False)
+    mitre_technique_name = Column(String(256), nullable=False)
+    mitre_tactic = Column(String(256), nullable=False)
+    severity_level_id = Column(Integer, ForeignKey("SeverityLevels.severity_level_id"), nullable=False)
+    threat_type_id = Column(Integer, ForeignKey("ThreatTypes.threat_type_id"))
+    confirmed = Column("confirmed", Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    report = relationship("Report", back_populates="incidents")
+    severity = relationship("SeverityLevel")
+    threat = relationship("ThreatType")
+
+
 class Report(Base):
     __tablename__ = "Reports"
     report_id = Column(Integer, primary_key=True)
     log_id = Column(Integer, ForeignKey("Logs.log_id"))
     severity_level_id = Column(Integer, ForeignKey("SeverityLevels.severity_level_id"))
-    threat_type_id = Column(Integer, ForeignKey("ThreatTypes.threat_type_id"))
+    threat_type_id = Column(Integer, ForeignKey("ThreatTypes.threat_type_id"), nullable=True)
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     log = relationship("Log")
     severity = relationship("SeverityLevel")
     threat = relationship("ThreatType")
+    incidents = relationship("ReportIncident", back_populates="report", cascade="all, delete-orphan")
 
 
 class Message(Base):
@@ -85,6 +104,7 @@ class Message(Base):
     user_id = Column(Integer, ForeignKey("Users.user_id"))
     role = Column(String(32))
     content = Column(Text)
+    suggestions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User")
 

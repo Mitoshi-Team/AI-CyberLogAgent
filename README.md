@@ -530,6 +530,11 @@ AI-CyberLogAgent/
 - status: text (Статус предложенного правила)
 - created_at: timestamp with time zone (Дата и время создания предложенного правила)
 
+## Метрики качества
+
+Подробная документация: `ai_agent_v2/metrics/README_METRICS.md`    
+Текущая сводка: `ai_agent_v2/metrics/TESTS_DATA/SUMMARY_REPORT.md`
+
 ## О разработчиках
 
 Проект разработан командой **Mitoshi Team** в рамках проектного практикума в УрФУ.
@@ -537,13 +542,16 @@ AI-CyberLogAgent/
 ### Состав команды разработчиков
 
 - **Никита Лецколюк** - Team Lead, Software architect
-- **Матвей Вахрушев** - AI engineer, Back-end developer
-- **Михаил Видякин** - Back-end developer
-- **Савелий Вялков** - Front-end developer
-- **Сотник Тимур** - Systems analyst
+- **Матвей Вахрушев** - AI engineer, AI agent architect, Back-end developer
 - **Николай Кочкин** - Test engineer
 
 ### Контакты
 
-Почта - nikitaletskolyuk@gmail.com
+Почта - nikitaletskolyuk@gmail.com    
 Telegram - @sser1to
+
+## Copyright
+
+Copyright © 2025 Mitoshi Team. All rights reserved.
+
+This repository and its contents are the intellectual property of Mitoshi Team. Unauthorized copying, modification, distribution, or use of this software, in whole or in part, is prohibited without prior written permission from the authors.

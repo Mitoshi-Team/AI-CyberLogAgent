@@ -57,7 +57,7 @@ async def test_rag_threshold_integration():
 
 
 def test_agent3_unconfirmed_not_affect_severity():
-    """Test that unconfirmed events don't affect severity_level_id."""
+    """Test that unconfirmed events don't affect overall_severity."""
     report = """
 ## Report
 
@@ -69,20 +69,25 @@ This might be hallucination.
 === КОНЕЦ БЛОКА ===
 
 ---META---
-severity_level_id: 2
-threat_type_id: 9
-mitre_techniques: []
+overall_severity: 2
 yara_rules: []
 sigma_rules: []
 events_found: 1
 confidence_level: "low"
 unconfirmed_events_count: 1
+---INCIDENT---
+description: Suspicious event
+technique_id: T1078
+technique_name: Valid Accounts
+tactic: Defense Evasion
+severity_level_id: 2
+confirmed: False
 ---END---
 """
     metadata = parse_agent3_metadata(report)
     
     # Severity should NOT be affected by unconfirmed events
-    assert metadata["severity_level_id"] == 2
+    assert metadata["overall_severity"] == 2
     assert metadata["confidence_level"] == "low"
     assert metadata["unconfirmed_events_count"] == 1
 
@@ -146,14 +151,19 @@ async def test_generate_final_report_new_fields():
 ## Final Report
 
 ---META---
-severity_level_id: 3
-threat_type_id: 11
-mitre_techniques: []
+overall_severity: 3
 yara_rules: []
 sigma_rules: []
 events_found: 0
 confidence_level: "medium"
 unconfirmed_events_count: 0
+---INCIDENT---
+description: Test incident
+technique_id: T1078
+technique_name: Valid Accounts
+tactic: Defense Evasion
+severity_level_id: 3
+confirmed: True
 ---END---
 """)
     
@@ -165,8 +175,7 @@ unconfirmed_events_count: 0
             events_found=0,
             mitre_context="",
             agent2_report="",
-            severity_level_id=3,
-            threat_type_id=11,
+            incidents=[{"description": "Test incident", "technique_id": "T1078", "technique_name": "Valid Accounts", "tactic": "Defense Evasion", "severity_level_id": 3}],
             mitre_techniques=[],
             yara_context="",
             yara_count=0,

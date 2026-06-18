@@ -187,22 +187,8 @@ def print_results(results: dict):
         agent3 = results["stages"]["agent3"]
 
         severity_names = {1: "Критический", 2: "Высокий", 3: "Средний", 4: "Низкий"}
-        threat_names = {
-            1: "Вторжение",
-            2: "Malware",
-            3: "DDoS",
-            4: "Утечка",
-            5: "Доступ",
-            6: "Фишинг",
-            7: "SQL",
-            8: "XSS",
-            9: "Брутфорс",
-            10: "Сканирование",
-            11: "Другое",
-        }
 
-        severity = agent3.get("severity_level_id", 3)
-        threat = agent3.get("threat_type_id", 11)
+        severity = agent3.get("overall_severity_level_id", 3)
 
         severity_color = (
             Colors.RED
@@ -213,14 +199,16 @@ def print_results(results: dict):
         print(
             f"Уровень серьезности: {severity_color}{severity}/4 ({severity_names.get(severity, 'N/A')}){Colors.RESET}"
         )
-        print(
-            f"Тип угрозы: {Colors.YELLOW}{threat}/11 ({threat_names.get(threat, 'N/A')}){Colors.RESET}"
-        )
 
-        if agent3.get("mitre_techniques"):
-            print(
-                f"MITRE техники: {Colors.CYAN}{', '.join(agent3['mitre_techniques'])}{Colors.RESET}"
-            )
+        incidents = agent3.get("incidents", [])
+        if incidents:
+            print(f"{Colors.CYAN}Инциденты ({len(incidents)}):{Colors.RESET}")
+            for inc in incidents:
+                tid = inc.get("technique_id", "?")
+                tname = inc.get("technique_name", "?")
+                tactic = inc.get("tactic", "?")
+                sev = inc.get("severity_level_id", "?")
+                print(f"  {Colors.YELLOW}{tid}{Colors.RESET} {tname} [{tactic}] severity={sev}")
 
         if agent3.get("yara_rules"):
             print(

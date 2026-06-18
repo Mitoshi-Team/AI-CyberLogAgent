@@ -38,6 +38,7 @@ Flow:
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -176,18 +177,22 @@ class LogAnalysisPipeline:
         self,
         log_content: str,
         config: RunnableConfig | None = None,
+        progress_callback: Callable[[str, str], None] | None = None,
     ) -> dict[str, Any]:
         """Analyze log content through full LangGraph pipeline.
 
         Args:
             log_content: Raw log content
             config: Optional LangChain config (callbacks, etc.)
+            progress_callback: Optional async callback(stage_name, label) called before each node
 
         Returns:
             Dictionary with all results
 
         """
         start_time = time.time()
+
+        self._nodes.set_progress_callback(progress_callback)
 
         initial_state: AnalysisState = {
             "log_content": log_content,
@@ -208,6 +213,8 @@ class LogAnalysisPipeline:
             "search_query": "",
             "agent2_report": "",
             "mitre_techniques_final": [],
+            "incidents": [],
+            "overall_severity_level_id": 3,
             "yara_matches": [],
             "yara_rules_matched": [],
             "yara_context": "",
@@ -286,18 +293,25 @@ class LogAnalysisPipeline:
             results["stages"]["agent3"] = {
                 "success": True,
                 "final_report": final_state.get("final_report", ""),
-                "severity_level_id": final_state.get("severity_level_id", 3),
-                "threat_type_id": final_state.get("threat_type_id", 11),
+                "overall_severity_level_id": final_state.get("overall_severity_level_id", 3),
+                "severity_level_id": final_state.get("overall_severity_level_id", 3),
+                "incidents": final_state.get("incidents", []),
                 "mitre_techniques": final_state.get("mitre_techniques_final", []),
                 "yara_rules": final_state.get("yara_rules_matched", []),
                 "sigma_rules": final_state.get("sigma_rules_matched", []),
+                "confidence_level": final_state.get("confidence_level", "medium"),
+                "unconfirmed_events_count": final_state.get("unconfirmed_events_count", 0),
             }
+
+            if progress_callback:
+                await progress_callback("agent3", "Формирование итогового отчета")
 
             results["success"] = True
             results["total_time_sec"] = elapsed
             results["final_report"] = final_state.get("final_report", "")
-            results["severity_level_id"] = final_state.get("severity_level_id", 3)
-            results["threat_type_id"] = final_state.get("threat_type_id", 11)
+            results["overall_severity_level_id"] = final_state.get("overall_severity_level_id", 3)
+            results["severity_level_id"] = final_state.get("overall_severity_level_id", 3)
+            results["incidents"] = final_state.get("incidents", [])
             results["mitre_techniques"] = final_state.get("mitre_techniques_final", [])
             results["events_found"] = final_state.get("events_found", 0)
 
@@ -310,7 +324,7 @@ class LogAnalysisPipeline:
 
             logger.info(
                 f"LangGraph pipeline complete in {elapsed:.1f}s: "
-                f"severity={results['severity_level_id']}, threat={results['threat_type_id']}"
+                f"severity={results['severity_level_id']}, incidents={len(results.get('incidents', []))}"
             )
 
         except Exception as e:
@@ -319,6 +333,8 @@ class LogAnalysisPipeline:
             results["success"] = False
             results["error"] = error_details
             results["total_time_sec"] = time.time() - start_time
+        finally:
+            self._nodes.set_progress_callback(None)
 
         return results
 

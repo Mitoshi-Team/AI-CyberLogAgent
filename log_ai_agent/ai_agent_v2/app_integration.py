@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from .callbacks import get_callback_config
@@ -136,17 +137,21 @@ async def reload_sigma_rules() -> None:
         logger.warning(f"Failed to reload Sigma rules: {e}")
 
 
-async def analyze_log_v2(log_content: str) -> dict:
+async def analyze_log_v2(
+    log_content: str,
+    progress_callback: Callable[[str, str], None] | None = None,
+) -> dict:
     """Analyze log using AI Agent v2.
 
     Args:
         log_content: Raw log content
+        progress_callback: Optional async callback(stage_name, label) for pipeline progress
 
     Returns:
         Dictionary with:
         - description: Report text
-        - severity_level_id: 1-4
-        - threat_type_id: 1-11
+        - overall_severity_level_id: 1-4
+        - incidents: List of incident dicts with technique_id, technique_name, tactic, severity_level_id
         - mitre_techniques: List of technique IDs
         - events_found: Number of events detected by Agent 1
 
@@ -168,6 +173,7 @@ async def analyze_log_v2(log_content: str) -> dict:
             results = await pipeline.analyze(
                 log_content=prepared_log_content,
                 config=get_callback_config(show_output=False),
+                progress_callback=progress_callback,
             )
 
             error_msg = str(results.get("error") or "")
@@ -187,8 +193,9 @@ async def analyze_log_v2(log_content: str) -> dict:
 
         result_dict = {
             "description": agent3.get("final_report", ""),
-            "severity_level_id": agent3.get("severity_level_id", 3),
-            "threat_type_id": agent3.get("threat_type_id", 11),
+            "overall_severity_level_id": agent3.get("overall_severity_level_id", 3),
+            "severity_level_id": agent3.get("overall_severity_level_id", 3),
+            "incidents": agent3.get("incidents", []),
             "mitre_techniques": agent3.get("mitre_techniques", []),
             "events_found": agent1.get("events_found", 0),
             "processing_time_ms": results.get("total_time_sec", 0) * 1000,
@@ -233,7 +240,8 @@ async def analyze_log_v2(log_content: str) -> dict:
                     "Повторите анализ через 15-60 секунд."
                 ),
                 "severity_level_id": 3,
-                "threat_type_id": 11,
+                "overall_severity_level_id": 3,
+                "incidents": [],
                 "mitre_techniques": [],
                 "events_found": 0,
                 "error": error_msg,
@@ -242,7 +250,8 @@ async def analyze_log_v2(log_content: str) -> dict:
         return {
             "description": f"⚠️ Ошибка анализа: {error_msg}",
             "severity_level_id": 3,
-            "threat_type_id": 11,
+            "overall_severity_level_id": 3,
+            "incidents": [],
             "mitre_techniques": [],
             "events_found": 0,
             "error": error_msg,

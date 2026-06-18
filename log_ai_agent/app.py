@@ -25,6 +25,7 @@ from log_ai_agent.db.models import (
     UserLog,
     Log,
     Report,
+    ReportIncident,
     Message,
     SeverityLevel,
     ThreatType,
@@ -489,6 +490,25 @@ async def _broadcast_report_created_event(
         logger.warning("Failed to broadcast report_created event: %s", error)
 
 
+async def _broadcast_pipeline_progress(
+    user_id: int,
+    stage_name: str,
+    label: str,
+) -> None:
+    """Broadcast pipeline stage progress to frontend clients."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "pipeline_progress",
+                "user_id": user_id,
+                "stage": stage_name,
+                "label": label,
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast pipeline_progress event: %s", error)
+
+
 async def _broadcast_yara_rules_suggestion(
     user_id: int,
     report_id: int,
@@ -679,15 +699,33 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             await session.flush()
             log_id = log.log_id
 
+            overall_severity = analysis_result.get("overall_severity_level_id") or analysis_result.get("severity_level_id", 3)
+            incidents_data = analysis_result.get("incidents", [])
+
             report = Report(
                 log_id=log_id,
-                severity_level_id=analysis_result.get("severity_level_id"),
-                threat_type_id=analysis_result.get("threat_type_id"),
+                severity_level_id=overall_severity,
+                threat_type_id=None,
                 description=report_description,
             )
             session.add(report)
             await session.flush()
             report_id = report.report_id
+
+            # Save incidents
+            for inc in incidents_data:
+                session.add(
+                    ReportIncident(
+                        report_id=report_id,
+                        event_description=inc.get("description", ""),
+                        group_id=inc.get("group_id"),
+                        mitre_technique_id=inc.get("technique_id", ""),
+                        mitre_technique_name=inc.get("technique_name", ""),
+                        mitre_tactic=inc.get("tactic", ""),
+                        severity_level_id=inc.get("severity_level_id", 3),
+                        confirmed=inc.get("confirmed", True),
+                    )
+                )
 
             await _try_insert_agent_log(
                 AGENT_ACTION_SAVE_REPORT,
@@ -699,7 +737,8 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             # Post a message for every user
             result = await session.execute(select(User.user_id))
             user_ids = result.scalars().all()
-            messages_to_add = [Message(user_id=uid, role="agent", content=chat_message) for uid in user_ids]
+            default_suggestions = json.dumps(["Рекомендации", "Анализ рисков", "Мониторинг"], ensure_ascii=False)
+            messages_to_add = [Message(user_id=uid, role="agent", content=chat_message, suggestions=default_suggestions) for uid in user_ids]
             session.add_all(messages_to_add)
 
             if generated_yara_rules:
@@ -723,10 +762,11 @@ async def _process_kafka_log_batch(payload: dict) -> None:
             )
 
             logger.info(
-                "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, log_id=%s, report_id=%s",
+                "Kafka batch analyzed and saved via v2: source=%s, records=%s, events_found=%s, incidents=%s, log_id=%s, report_id=%s",
                 source_label,
                 len(messages),
                 events_found,
+                len(incidents_data),
                 log_id,
                 report_id,
             )
@@ -753,13 +793,13 @@ async def _process_kafka_log_batch(payload: dict) -> None:
         await _broadcast_incident_event(
             title=f"Инцидент из Kafka потока ({source_label})",
             description=report_description,
-            severity_level_id=analysis_result.get("severity_level_id"),
+            severity_level_id=overall_severity,
             source="Kafka Pipeline",
         )
         await _broadcast_report_created_event(
             report_id=report_id,
             source="Kafka Pipeline",
-            severity_level_id=analysis_result.get("severity_level_id"),
+            severity_level_id=overall_severity,
         )
         analysis_completed = True
     except Exception as error:
@@ -858,6 +898,7 @@ class ChatMessageRequest(BaseModel):
     user_id: int
     role: str  # 'user', 'agent' или 'notice'
     content: str
+    suggestions: list[str] | None = None
 
 
 class ChatMessageResponse(BaseModel):
@@ -865,6 +906,7 @@ class ChatMessageResponse(BaseModel):
     user_id: int
     role: str
     content: str
+    suggestions: list[str] | None = None
     created_at: str
 
 
@@ -1619,28 +1661,29 @@ async def reject_pending_yara_rule(request: RejectYaraRuleRequest, user_id: int 
 
 @app.get("/api/statistics/severity")
 async def get_severity_statistics(start_date: str = None, end_date: str = None):
-    """Получить статистику по уровням серьезности"""
+    """Получить статистику по уровням серьезности (по инцидентам)"""
     try:
         async with get_async_session() as session:
-            # Формируем запрос с учетом фильтров по датам
+            base_query = select(
+                SeverityLevel.severity_level_id,
+                SeverityLevel.name,
+                func.count(ReportIncident.incident_id).label("count"),
+            ).outerjoin(
+                ReportIncident,
+                SeverityLevel.severity_level_id == ReportIncident.severity_level_id,
+            ).outerjoin(
+                Report,
+                ReportIncident.report_id == Report.report_id,
+            ).group_by(
+                SeverityLevel.severity_level_id, SeverityLevel.name,
+            ).order_by(SeverityLevel.severity_level_id)
+
             if start_date and end_date:
                 start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
                 end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                base_query = base_query.where(Report.created_at.between(start_dt, end_dt))
 
-                count_expr = func.count(
-                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
-                ).label("count")
-            else:
-                count_expr = func.count(Report.report_id).label("count")
-
-            stmt = (
-                select(SeverityLevel.severity_level_id, SeverityLevel.name, count_expr)
-                .outerjoin(Report, SeverityLevel.severity_level_id == Report.severity_level_id)
-                .group_by(SeverityLevel.severity_level_id, SeverityLevel.name)
-                .order_by(SeverityLevel.severity_level_id)
-            )
-
-            rows = await session.execute(stmt)
+            rows = await session.execute(base_query)
             records = rows.all()
             result = [
                 {"id": r[0], "name": r[1], "count": int(r[2] or 0)} for r in records
@@ -1654,39 +1697,126 @@ async def get_severity_statistics(start_date: str = None, end_date: str = None):
 
 @app.get("/api/statistics/threats")
 async def get_threat_statistics(start_date: str = None, end_date: str = None):
-    """Получить статистику по типам угроз"""
+    """Получить статистику по типам угроз (из инцидентов MITRE)"""
     try:
         async with get_async_session() as session:
+            base_query = select(
+                ReportIncident.mitre_tactic.label("name"),
+                func.count(ReportIncident.incident_id).label("count"),
+            ).join(
+                Report, ReportIncident.report_id == Report.report_id,
+            ).group_by(
+                ReportIncident.mitre_tactic,
+            ).order_by(
+                func.count(ReportIncident.incident_id).desc(),
+            )
+
             if start_date and end_date:
                 start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
                 end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                count_expr = func.count(
-                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
-                ).label("count")
-                order_expr = func.count(
-                    case((Report.created_at.between(start_dt, end_dt), Report.report_id))
-                ).desc()
-            else:
-                count_expr = func.count(Report.report_id).label("count")
-                order_expr = func.count(Report.report_id).desc()
+                base_query = base_query.where(Report.created_at.between(start_dt, end_dt))
 
-            stmt = (
-                select(ThreatType.threat_type_id, ThreatType.name, count_expr)
-                .outerjoin(Report, ThreatType.threat_type_id == Report.threat_type_id)
-                .group_by(ThreatType.threat_type_id, ThreatType.name)
-                .order_by(order_expr, ThreatType.name)
-            )
-
-            rows = await session.execute(stmt)
+            rows = await session.execute(base_query)
             records = rows.all()
             result = [
-                {"id": r[0], "name": r[1], "count": int(r[2] or 0)} for r in records
+                {"name": r[0], "count": int(r[1] or 0)} for r in records
             ]
 
             return {"data": result}
     except Exception as e:
         logger.error(f"Error getting threat statistics: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения статистики")
+
+
+@app.get("/api/statistics/mitre_tactics")
+async def get_mitre_tactic_statistics(start_date: str = None, end_date: str = None):
+    """Получить статистику по тактикам MITRE ATT&CK"""
+    try:
+        async with get_async_session() as session:
+            if start_date and end_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                count_expr = func.count(
+                    case((Report.created_at.between(start_dt, end_dt), ReportIncident.incident_id))
+                ).label("count")
+            else:
+                count_expr = func.count(ReportIncident.incident_id).label("count")
+
+            stmt = (
+                select(
+                    ReportIncident.mitre_tactic,
+                    count_expr,
+                )
+                .join(Report, ReportIncident.report_id == Report.report_id)
+                .group_by(ReportIncident.mitre_tactic)
+                .order_by(func.count(ReportIncident.incident_id).desc())
+            )
+
+            if start_date and end_date:
+                stmt = stmt.where(Report.created_at.between(start_dt, end_dt))
+
+            rows = await session.execute(stmt)
+            records = rows.all()
+            result = [
+                {"tactic": r[0], "count": int(r[1] or 0)} for r in records
+            ]
+
+            return {"data": result}
+    except Exception as e:
+        logger.error(f"Error getting MITRE tactic statistics: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статистики по тактикам MITRE")
+
+
+@app.get("/api/statistics/mitre_techniques")
+async def get_mitre_technique_statistics(
+    start_date: str = None, end_date: str = None, top_n: int = 10
+):
+    """Получить топ-N техник MITRE ATT&CK"""
+    try:
+        async with get_async_session() as session:
+            if start_date and end_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+
+                stmt = (
+                    select(
+                        ReportIncident.mitre_technique_id,
+                        ReportIncident.mitre_technique_name,
+                        func.count(ReportIncident.incident_id).label("count"),
+                    )
+                    .join(Report, ReportIncident.report_id == Report.report_id)
+                    .where(Report.created_at.between(start_dt, end_dt))
+                    .group_by(ReportIncident.mitre_technique_id, ReportIncident.mitre_technique_name)
+                    .order_by(func.count(ReportIncident.incident_id).desc())
+                    .limit(top_n)
+                )
+            else:
+                stmt = (
+                    select(
+                        ReportIncident.mitre_technique_id,
+                        ReportIncident.mitre_technique_name,
+                        func.count(ReportIncident.incident_id).label("count"),
+                    )
+                    .group_by(ReportIncident.mitre_technique_id, ReportIncident.mitre_technique_name)
+                    .order_by(func.count(ReportIncident.incident_id).desc())
+                    .limit(top_n)
+                )
+
+            rows = await session.execute(stmt)
+            records = rows.all()
+            result = [
+                {
+                    "technique_id": r[0],
+                    "technique_name": r[1],
+                    "count": int(r[2] or 0),
+                }
+                for r in records
+            ]
+
+            return {"data": result}
+    except Exception as e:
+        logger.error(f"Error getting MITRE technique statistics: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статистики по техникам MITRE")
 
 
 @app.get("/api/statistics/activity")
@@ -1800,24 +1930,44 @@ async def get_reports_history(
     date_from: str = None,
     date_to: str = None,
     severity_level_id: int = None,
-    threat_type_id: int = None,
+    mitre_tactic: str = None,
     page: int = 1,
     page_size: int = 10,
 ):
     """Получение истории отчетов с фильтрацией и пагинацией"""
     try:
-        # helper: parse ISO string (possibly with Z) to naive UTC datetime
         def _parse_to_naive_utc(s: str):
             if not s:
                 return None
-            # support Z suffix
             dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
             if dt.tzinfo is not None:
-                # convert to UTC and drop tzinfo to match DB naive timestamps
                 dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
             return dt
 
         async with get_async_session() as session:
+            # Count subquery for incidents per report
+            incident_count_subq = (
+                select(
+                    ReportIncident.report_id,
+                    func.count(ReportIncident.incident_id).label("incident_count"),
+                )
+                .group_by(ReportIncident.report_id)
+                .subquery()
+            )
+
+            # MITRE techniques per report (for list display, show first few)
+            mitre_techniques_subq = (
+                select(
+                    ReportIncident.report_id,
+                    func.string_agg(
+                        ReportIncident.mitre_technique_id + ' ' + ReportIncident.mitre_technique_name,
+                        ', '
+                    ).label("mitre_summary"),
+                )
+                .group_by(ReportIncident.report_id)
+                .subquery()
+            )
+
             # Build base query
             base = (
                 select(
@@ -1826,11 +1976,12 @@ async def get_reports_history(
                     Report.created_at,
                     SeverityLevel.severity_level_id,
                     SeverityLevel.name.label("severity_name"),
-                    ThreatType.threat_type_id,
-                    ThreatType.name.label("threat_name"),
+                    func.coalesce(incident_count_subq.c.incident_count, 0).label("incident_count"),
+                    mitre_techniques_subq.c.mitre_summary,
                 )
                 .outerjoin(SeverityLevel, Report.severity_level_id == SeverityLevel.severity_level_id)
-                .outerjoin(ThreatType, Report.threat_type_id == ThreatType.threat_type_id)
+                .outerjoin(incident_count_subq, Report.report_id == incident_count_subq.c.report_id)
+                .outerjoin(mitre_techniques_subq, Report.report_id == mitre_techniques_subq.c.report_id)
             )
 
             filters = []
@@ -1844,8 +1995,13 @@ async def get_reports_history(
                     filters.append(Report.created_at <= parsed_to)
             if severity_level_id:
                 filters.append(Report.severity_level_id == severity_level_id)
-            if threat_type_id:
-                filters.append(Report.threat_type_id == threat_type_id)
+            if mitre_tactic:
+                # Filter reports that have at least one incident with this tactic
+                tactic_subq = (
+                    select(ReportIncident.report_id)
+                    .where(ReportIncident.mitre_tactic.ilike(f"%{mitre_tactic}%"))
+                )
+                filters.append(Report.report_id.in_(tactic_subq))
 
             if filters:
                 base = base.where(*filters)
@@ -1870,8 +2026,8 @@ async def get_reports_history(
                     "created_at": r[2].isoformat() if r[2] else None,
                     "severity_level_id": r[3],
                     "severity_name": r[4],
-                    "threat_type_id": r[5],
-                    "threat_name": r[6],
+                    "incident_count": int(r[5]),
+                    "mitre_summary": r[6] or "",
                 }
                 for r in records
             ]
@@ -1896,12 +2052,17 @@ async def get_reports_filters():
             sev_res = await session.execute(select(SeverityLevel).order_by(SeverityLevel.severity_level_id))
             severity_levels = sev_res.scalars().all()
 
-            th_res = await session.execute(select(ThreatType).order_by(ThreatType.threat_type_id))
-            threat_types = th_res.scalars().all()
+            # Get distinct MITRE tactics from existing incidents
+            tactic_res = await session.execute(
+                select(ReportIncident.mitre_tactic)
+                .distinct()
+                .order_by(ReportIncident.mitre_tactic)
+            )
+            mitre_tactics = [row[0] for row in tactic_res.all() if row[0]]
 
             return {
                 "severity_levels": [{"id": s.severity_level_id, "name": s.name} for s in severity_levels],
-                "threat_types": [{"id": t.threat_type_id, "name": t.name} for t in threat_types],
+                "mitre_tactics": mitre_tactics,
             }
     except Exception as e:
         logger.error(f"Error getting reports filters: {e}")
@@ -1919,12 +2080,11 @@ async def get_report_details(report_id: int):
                     Report.description,
                     Report.created_at,
                     Report.log_id,
+                    Report.severity_level_id,
                     SeverityLevel.name.label("severity_name"),
-                    ThreatType.name.label("threat_name"),
                     Log.file_content,
                 )
                 .outerjoin(SeverityLevel, Report.severity_level_id == SeverityLevel.severity_level_id)
-                .outerjoin(ThreatType, Report.threat_type_id == ThreatType.threat_type_id)
                 .outerjoin(Log, Report.log_id == Log.log_id)
                 .where(Report.report_id == report_id)
             )
@@ -1934,12 +2094,49 @@ async def get_report_details(report_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Отчет не найден")
 
+        # Get incidents for this report
+        incidents_rows = []
+        async with get_async_session() as session2:
+            inc_stmt = select(
+                ReportIncident.incident_id,
+                ReportIncident.event_description,
+                ReportIncident.mitre_technique_id,
+                ReportIncident.mitre_technique_name,
+                ReportIncident.mitre_tactic,
+                ReportIncident.severity_level_id,
+                ReportIncident.confirmed,
+                SeverityLevel.name.label("severity_name"),
+            ).outerjoin(
+                SeverityLevel,
+                ReportIncident.severity_level_id == SeverityLevel.severity_level_id
+            ).where(
+                ReportIncident.report_id == report_id
+            ).order_by(ReportIncident.incident_id)
+
+            inc_res = await session2.execute(inc_stmt)
+            incidents_rows = inc_res.all()
+
+        incidents = [
+            {
+                "id": r[0],
+                "description": r[1],
+                "technique_id": r[2],
+                "technique_name": r[3],
+                "tactic": r[4],
+                "severity_level_id": r[5],
+                "confirmed": r[6],
+                "severity_name": r[7],
+            }
+            for r in incidents_rows
+        ]
+
         return {
             "id": row["report_id"],
             "description": row["description"],
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "severity_level_id": row["severity_level_id"],
             "severity_name": row["severity_name"] or None,
-            "threat_name": row["threat_name"] or None,
+            "incidents": incidents,
             "file_content": row["file_content"] or "Логи отсутствуют",
         }
     except HTTPException:
@@ -1954,7 +2151,13 @@ async def save_chat_message(request: ChatMessageRequest):
     """Сохранение сообщения в чат"""
     try:
         async with get_async_session() as session:
-            msg = Message(user_id=request.user_id, role=request.role, content=request.content)
+            suggestions_json = json.dumps(request.suggestions, ensure_ascii=False) if request.suggestions else None
+            msg = Message(
+                user_id=request.user_id,
+                role=request.role,
+                content=request.content,
+                suggestions=suggestions_json,
+            )
             session.add(msg)
             await session.flush()
             await session.commit()
@@ -1964,6 +2167,7 @@ async def save_chat_message(request: ChatMessageRequest):
                 user_id=msg.user_id,
                 role=msg.role,
                 content=msg.content,
+                suggestions=request.suggestions,
                 created_at=msg.created_at.isoformat() if msg.created_at else None,
             )
     except Exception as e:
@@ -1991,6 +2195,7 @@ async def get_chat_messages(user_id: int, limit: int = 50):
                 "user_id": m.user_id,
                 "role": m.role,
                 "content": m.content,
+                "suggestions": json.loads(m.suggestions) if m.suggestions else None,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
             for m in reversed(messages_rows)
@@ -2032,6 +2237,7 @@ class ChatSendResponse(BaseModel):
     success: bool
     user_message: str
     agent_response: str
+    suggestions: list[str] | None = None
     mode: str | None = None
     message: str | None = None
 
@@ -2043,7 +2249,8 @@ async def _store_agent_fallback_message(user_id: int, text: str) -> None:
 
     try:
         async with get_async_session() as session:
-            msg = Message(user_id=user_id, role="agent", content=text)
+            default_suggestions = json.dumps(["Рекомендации", "Тренды", "MITRE"], ensure_ascii=False)
+            msg = Message(user_id=user_id, role="agent", content=text, suggestions=default_suggestions)
             session.add(msg)
             await session.commit()
     except Exception:
@@ -2096,6 +2303,7 @@ async def send_chat_message(request: ChatSendRequest):
             success=True,
             user_message=request.message,
             agent_response=result["response"],
+            suggestions=result.get("suggestions"),
             mode=result["mode"],
             message="Сообщение успешно обработано",
         )
@@ -2254,7 +2462,12 @@ async def upload_log_file(
                 AGENT_ACTION_ANALYZE_LOGS,
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
-            analyze_task = asyncio.create_task(analyze_log_v2(content_str))
+            async def _pipeline_progress_cb(stage_name: str, label: str) -> None:
+                await _broadcast_pipeline_progress(user_id, stage_name, label)
+
+            analyze_task = asyncio.create_task(
+                analyze_log_v2(content_str, progress_callback=_pipeline_progress_cb)
+            )
             cancel_wait_task = asyncio.create_task(cancel_event.wait())
             done, pending = await asyncio.wait(
                 {analyze_task, cancel_wait_task},
@@ -2273,6 +2486,8 @@ async def upload_log_file(
                 )
 
             analysis_result = await analyze_task
+
+            await _broadcast_pipeline_progress(user_id, "complete", "Анализ завершен")
 
             if await request.is_disconnected():
                 raise HTTPException(status_code=499, detail="Клиент прервал загрузку")
@@ -2297,11 +2512,14 @@ async def upload_log_file(
                     ),
                 )
 
+            incidents_data = analysis_result.get("incidents", [])
+            overall_severity = analysis_result.get("overall_severity_level_id") or analysis_result.get("severity_level_id", 3)
+
             await _try_insert_agent_log(
                 AGENT_ACTION_MATCH_THREATS,
                 (
-                    "Сопоставление с базой угроз/MITRE: "
-                    f"threat_type_id={analysis_result.get('threat_type_id', 'n/a')}"
+                    "Сопоставление с MITRE ATT&CK: "
+                    f"найдено {len(incidents_data)} инцидентов"
                 ),
             )
 
@@ -2321,13 +2539,28 @@ async def upload_log_file(
 
                 report = Report(
                     log_id=log_id,
-                    severity_level_id=analysis_result.get("severity_level_id"),
-                    threat_type_id=analysis_result.get("threat_type_id"),
+                    severity_level_id=overall_severity,
+                    threat_type_id=None,
                     description=analysis_result.get("description"),
                 )
                 session.add(report)
                 await session.flush()
                 report_id = report.report_id
+
+                # Save incidents
+                for inc in incidents_data:
+                    session.add(
+                        ReportIncident(
+                            report_id=report_id,
+                            event_description=inc.get("description", ""),
+                            group_id=inc.get("group_id"),
+                            mitre_technique_id=inc.get("technique_id", ""),
+                            mitre_technique_name=inc.get("technique_name", ""),
+                            mitre_tactic=inc.get("tactic", ""),
+                            severity_level_id=inc.get("severity_level_id", 3),
+                            confirmed=inc.get("confirmed", True),
+                        )
+                    )
 
                 await _try_insert_agent_log(
                     AGENT_ACTION_SAVE_REPORT,
@@ -2347,6 +2580,7 @@ async def upload_log_file(
                 "log_id": log_id,
                 "report_id": report_id,
                 "ai_analysis": analysis_result["description"],
+                "suggestions": ["Рекомендации", "Анализ рисков", "Мониторинг"],
             }
 
             # Добавляем метаданные v2 если доступны
@@ -2403,7 +2637,7 @@ async def upload_log_file(
                 _broadcast_incident_event(
                     title="Найден новый инцидент",
                     description=analysis_result["description"],
-                    severity_level_id=analysis_result.get("severity_level_id"),
+                    severity_level_id=overall_severity,
                     source="Manual Log Upload",
                 ),
                 "broadcast_incident_event",
@@ -2420,7 +2654,7 @@ async def upload_log_file(
                 _broadcast_report_created_event(
                     report_id=report_id,
                     source="Manual Log Upload",
-                    severity_level_id=analysis_result.get("severity_level_id"),
+                    severity_level_id=overall_severity,
                 ),
                 "broadcast_report_created_event",
             )

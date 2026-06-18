@@ -69,6 +69,11 @@ export const statistics = {
   timeline: (days = 30) => apiClient.get('/statistics/timeline', { params: { days } }),
   severity: (startDate, endDate) => apiClient.get('/statistics/severity', { params: { start_date: startDate, end_date: endDate } }),
   threats: (startDate, endDate) => apiClient.get('/statistics/threats', { params: { start_date: startDate, end_date: endDate } }),
+  mitreTactics: (startDate, endDate) => apiClient.get('/statistics/mitre_tactics', { params: { start_date: startDate, end_date: endDate } }),
+  mitreTechniques: (startDate, endDate, topN = 10) => 
+    apiClient.get('/statistics/mitre_techniques', { 
+      params: { start_date: startDate, end_date: endDate, top_n: topN } 
+    }),
   activity: (periodType, startDate, endDate) => 
     apiClient.get('/statistics/activity', { 
       params: { 
@@ -83,8 +88,8 @@ export const statistics = {
  * Работа с чатом
  */
 export const chat = {
-  sendMessage: (userId, role, content) => 
-    apiClient.post('/chat/messages', { user_id: userId, role, content }),
+  sendMessage: (userId, role, content, suggestions = null) => 
+    apiClient.post('/chat/messages', { user_id: userId, role, content, suggestions }),
   getMessages: (userId, limit = 50) => 
     apiClient.get('/chat/messages', { params: { user_id: userId, limit } }),
   clearMessages: (userId) => 

@@ -7,6 +7,7 @@ Each node takes AnalysisState as input and returns a partial state update.
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 
 from langchain_core.language_models import BaseLanguageModel
 
@@ -21,6 +22,20 @@ from .prefilter import prefilter_logs
 from .rag_chain import rag_search_single_event
 
 logger = logging.getLogger(__name__)
+
+
+STAGE_LABELS: dict[str, str] = {
+    "prefilter": "Предобработка лог-файла перед загрузкой",
+    "parse_logs": "Парсинг лог-файла для последующего анализа",
+    "agent1": "Первичный анализ логов",
+    "description_agent": "Генерация описаний событий для дальнейшего сопоставления",
+    "agent2": "Сопоставление описаний с MITRE ATT&CK",
+    "yara_scan": "Сканирование YARA правилами",
+    "sigma_scan": "Сканирование Sigma правилами",
+    "agent3": "Формирование итогового отчета",
+}
+
+ProgressCallback = Callable[[str, str], None]  # async def callback(stage_name: str, label: str)
 
 
 class PipelineNodes:
@@ -51,9 +66,21 @@ class PipelineNodes:
         self.use_rag = use_rag and chroma_mgr is not None
         self.rag_top_k = rag_top_k
         self.rag_score_threshold = rag_score_threshold
+        self._progress_callback: ProgressCallback | None = None
 
         self._rag_semaphore = asyncio.Semaphore(rag_parallelism)
         self._agent1_chain = create_agent1_chain(llm)
+
+    def set_progress_callback(self, callback: ProgressCallback | None) -> None:
+        """Set a callback invoked before each pipeline node executes."""
+        self._progress_callback = callback
+        self._reported_stages: set[str] = set()
+
+    async def _report_progress(self, stage_name: str) -> None:
+        if self._progress_callback and stage_name not in self._reported_stages:
+            self._reported_stages.add(stage_name)
+            label = STAGE_LABELS.get(stage_name, stage_name)
+            await self._progress_callback(stage_name, label)
 
     def reload_yara_rules(self, rules_list: list | None = None) -> None:
         """Light reload of YARA rules without recreating the pipeline."""
@@ -71,6 +98,7 @@ class PipelineNodes:
         Reads: log_content
         Writes: log_content (filtered), prefilter_stats
         """
+        await self._report_progress("prefilter")
         logger.info("[Node] Pre-filter: lightweight log filtering")
         start = time.time()
 
@@ -104,6 +132,7 @@ class PipelineNodes:
         Reads: log_content
         Writes: primary_analysis, mini_report, groups, events_found
         """
+        await self._report_progress("agent1")
         logger.info("[Node] Agent 1: Primary log analysis")
         start = time.time()
 
@@ -139,6 +168,7 @@ class PipelineNodes:
         Reads: groups
         Writes: group_descriptions
         """
+        await self._report_progress("description_agent")
         logger.info("[Node] Description Agent: Generating group descriptions")
         start = time.time()
 
@@ -170,6 +200,7 @@ class PipelineNodes:
         Reads: log_content
         Writes: parsed_logs
         """
+        await self._report_progress("parse_logs")
         logger.info("[Node] Parse logs: parsing log content")
         start = time.time()
 
@@ -203,6 +234,7 @@ class PipelineNodes:
         Reads: primary_analysis, group_descriptions, mitre_context
         Writes: mitre_context, mitre_techniques_final, agent2_report
         """
+        await self._report_progress("agent2")
         logger.info("[Node] Agent 2: RAG search + report generation")
         start = time.time()
 
@@ -306,6 +338,7 @@ class PipelineNodes:
         Reads: parsed_logs
         Writes: yara_matches, yara_rules_matched, yara_context
         """
+        await self._report_progress("yara_scan")
         logger.info("[Node] YARA scan: checking rules")
         start = time.time()
 
@@ -349,6 +382,7 @@ class PipelineNodes:
         Reads: parsed_logs
         Writes: sigma_matches, sigma_rules_matched, sigma_context
         """
+        await self._report_progress("sigma_scan")
         logger.info("[Node] Sigma scan: checking rules")
         start = time.time()
 
@@ -390,7 +424,7 @@ class PipelineNodes:
         """Node: Agent 3 — Final report summarization.
 
         Reads: All previous nodes' outputs
-        Writes: final_report, recommendations, severity_level_id, threat_type_id
+        Writes: final_report, recommendations, overall_severity_level_id, incidents
         """
         logger.info("[Node] Agent 3: Final summarization")
         start = time.time()
@@ -411,6 +445,8 @@ class PipelineNodes:
                 or "No MITRE techniques found"
             )
 
+            incidents = state.get("incidents", [])
+
             agent3_result = await generate_agent3_report(
                 llm=self.llm,
                 primary_analysis=state.get("primary_analysis", ""),
@@ -418,8 +454,7 @@ class PipelineNodes:
                 events_found=state.get("events_found", 0),
                 mitre_context=state.get("mitre_context", ""),
                 agent2_report=state.get("agent2_report", ""),
-                severity_level_id=state.get("severity_level_id", 3),
-                threat_type_id=state.get("threat_type_id", 11),
+                incidents=incidents,
                 mitre_techniques=mitre_techniques,
                 yara_context=state.get("yara_context", "YARA check not performed."),
                 yara_count=len(state.get("yara_matches", [])),
@@ -428,14 +463,14 @@ class PipelineNodes:
             )
 
             logger.info(
-                f"[Node] Agent 3 complete: severity={agent3_result.get('severity_level_id', 3)}, "
-                f"threat={agent3_result.get('threat_type_id', 11)} in {time.time() - start:.1f}s"
+                f"[Node] Agent 3 complete: overall_severity={agent3_result.get('overall_severity', 3)}, "
+                f"incidents={len(incidents)} in {time.time() - start:.1f}s"
             )
             return {
                 "final_report": agent3_result.get("final_report", ""),
                 "recommendations": [],
-                "severity_level_id": agent3_result.get("severity_level_id", 3),
-                "threat_type_id": agent3_result.get("threat_type_id", 11),
+                "overall_severity_level_id": agent3_result.get("overall_severity", 3),
+                "incidents": agent3_result.get("incidents", incidents),
                 "yara_rules_matched": agent3_result.get("yara_rules", []),
                 "sigma_rules_matched": agent3_result.get("sigma_rules", []),
                 "events_found": agent3_result.get("events_found", 0),
@@ -448,8 +483,8 @@ class PipelineNodes:
             return {
                 "final_report": f"Error: {e}",
                 "recommendations": [],
-                "severity_level_id": 3,
-                "threat_type_id": 11,
+                "overall_severity_level_id": 3,
+                "incidents": [],
                 "yara_rules_matched": [],
                 "sigma_rules_matched": [],
                 "events_found": 0,
