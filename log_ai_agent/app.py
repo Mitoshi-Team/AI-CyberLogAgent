@@ -489,6 +489,25 @@ async def _broadcast_report_created_event(
         logger.warning("Failed to broadcast report_created event: %s", error)
 
 
+async def _broadcast_pipeline_progress(
+    user_id: int,
+    stage_name: str,
+    label: str,
+) -> None:
+    """Broadcast pipeline stage progress to frontend clients."""
+    try:
+        await realtime_hub.broadcast(
+            {
+                "type": "pipeline_progress",
+                "user_id": user_id,
+                "stage": stage_name,
+                "label": label,
+            }
+        )
+    except Exception as error:
+        logger.warning("Failed to broadcast pipeline_progress event: %s", error)
+
+
 async def _broadcast_yara_rules_suggestion(
     user_id: int,
     report_id: int,
@@ -2254,7 +2273,12 @@ async def upload_log_file(
                 AGENT_ACTION_ANALYZE_LOGS,
                 f"Анализ логов через AI Agent v2: файл={file.filename}",
             )
-            analyze_task = asyncio.create_task(analyze_log_v2(content_str))
+            async def _pipeline_progress_cb(stage_name: str, label: str) -> None:
+                await _broadcast_pipeline_progress(user_id, stage_name, label)
+
+            analyze_task = asyncio.create_task(
+                analyze_log_v2(content_str, progress_callback=_pipeline_progress_cb)
+            )
             cancel_wait_task = asyncio.create_task(cancel_event.wait())
             done, pending = await asyncio.wait(
                 {analyze_task, cancel_wait_task},
@@ -2273,6 +2297,8 @@ async def upload_log_file(
                 )
 
             analysis_result = await analyze_task
+
+            await _broadcast_pipeline_progress(user_id, "complete", "Анализ завершен")
 
             if await request.is_disconnected():
                 raise HTTPException(status_code=499, detail="Клиент прервал загрузку")

@@ -67,6 +67,10 @@ const handleWebsocketMessage = (data) => {
       appStore.addNotification('Новое сообщение от ассистента в чате', 'info', 5000, true)
     }
   }
+
+  if (data.type === 'pipeline_progress' && data.user_id === appStore.currentUser?.id) {
+    appStore.setPipelineStage(data.stage, data.label)
+  }
 }
 
 const connectWebsocket = () => {

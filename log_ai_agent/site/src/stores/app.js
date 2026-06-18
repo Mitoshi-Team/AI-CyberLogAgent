@@ -26,6 +26,13 @@ export const useAppStore = defineStore('app', () => {
   const chatUpdateVersion = ref(0)
   const reportsUpdateVersion = ref(0)
 
+  // Pipeline progress for log analysis
+  const pipelineStages = ref([])
+  const pipelineCurrentStageName = ref('')
+  const pipelineCurrentStageLabel = ref('')
+  const pipelineStartTime = ref(null)
+  const pipelineElapsed = ref(0)
+
   // Инициализация: восстанавливаем сессию из localStorage
   const initializeAuth = () => {
     const savedToken = localStorage.getItem('auth_token')
@@ -358,6 +365,39 @@ export const useAppStore = defineStore('app', () => {
     chatUpdateVersion.value += 1
   }
 
+  const startPipeline = () => {
+    pipelineStages.value = []
+    pipelineCurrentStageName.value = ''
+    pipelineCurrentStageLabel.value = ''
+    pipelineStartTime.value = Date.now()
+    pipelineElapsed.value = 0
+  }
+
+  const setPipelineStage = (stageName, label) => {
+    if (stageName === 'complete') {
+      if (pipelineCurrentStageLabel.value) {
+        pipelineStages.value.push({ stage: pipelineCurrentStageName.value, label: pipelineCurrentStageLabel.value })
+      }
+      pipelineCurrentStageName.value = ''
+      pipelineCurrentStageLabel.value = ''
+      return
+    }
+    if (stageName === pipelineCurrentStageName.value) return
+    if (pipelineCurrentStageLabel.value) {
+      pipelineStages.value.push({ stage: pipelineCurrentStageName.value, label: pipelineCurrentStageLabel.value })
+    }
+    pipelineCurrentStageName.value = stageName
+    pipelineCurrentStageLabel.value = label
+  }
+
+  const clearPipeline = () => {
+    pipelineStages.value = []
+    pipelineCurrentStageName.value = ''
+    pipelineCurrentStageLabel.value = ''
+    pipelineStartTime.value = null
+    pipelineElapsed.value = 0
+  }
+
   return {
     isAuthenticated,
     currentUser,
@@ -375,6 +415,11 @@ export const useAppStore = defineStore('app', () => {
     chatLogUploadAbortController,
     chatUpdateVersion,
     reportsUpdateVersion,
+    pipelineStages,
+    pipelineCurrentStageName,
+    pipelineCurrentStageLabel,
+    pipelineStartTime,
+    pipelineElapsed,
     login,
     refreshCurrentUser,
     logout,
@@ -386,5 +431,8 @@ export const useAppStore = defineStore('app', () => {
     addIncident,
     notifyChatUpdated,
     notifyReportsUpdated,
+    startPipeline,
+    setPipelineStage,
+    clearPipeline,
   }
 })

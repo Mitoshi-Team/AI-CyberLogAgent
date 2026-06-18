@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from .callbacks import get_callback_config
@@ -136,11 +137,15 @@ async def reload_sigma_rules() -> None:
         logger.warning(f"Failed to reload Sigma rules: {e}")
 
 
-async def analyze_log_v2(log_content: str) -> dict:
+async def analyze_log_v2(
+    log_content: str,
+    progress_callback: Callable[[str, str], None] | None = None,
+) -> dict:
     """Analyze log using AI Agent v2.
 
     Args:
         log_content: Raw log content
+        progress_callback: Optional async callback(stage_name, label) for pipeline progress
 
     Returns:
         Dictionary with:
@@ -168,6 +173,7 @@ async def analyze_log_v2(log_content: str) -> dict:
             results = await pipeline.analyze(
                 log_content=prepared_log_content,
                 config=get_callback_config(show_output=False),
+                progress_callback=progress_callback,
             )
 
             error_msg = str(results.get("error") or "")

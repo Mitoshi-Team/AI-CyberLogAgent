@@ -38,6 +38,7 @@ Flow:
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -176,18 +177,22 @@ class LogAnalysisPipeline:
         self,
         log_content: str,
         config: RunnableConfig | None = None,
+        progress_callback: Callable[[str, str], None] | None = None,
     ) -> dict[str, Any]:
         """Analyze log content through full LangGraph pipeline.
 
         Args:
             log_content: Raw log content
             config: Optional LangChain config (callbacks, etc.)
+            progress_callback: Optional async callback(stage_name, label) called before each node
 
         Returns:
             Dictionary with all results
 
         """
         start_time = time.time()
+
+        self._nodes.set_progress_callback(progress_callback)
 
         initial_state: AnalysisState = {
             "log_content": log_content,
@@ -293,6 +298,9 @@ class LogAnalysisPipeline:
                 "sigma_rules": final_state.get("sigma_rules_matched", []),
             }
 
+            if progress_callback:
+                await progress_callback("agent3", "Формирование итогового отчета")
+
             results["success"] = True
             results["total_time_sec"] = elapsed
             results["final_report"] = final_state.get("final_report", "")
@@ -319,6 +327,8 @@ class LogAnalysisPipeline:
             results["success"] = False
             results["error"] = error_details
             results["total_time_sec"] = time.time() - start_time
+        finally:
+            self._nodes.set_progress_callback(None)
 
         return results
 

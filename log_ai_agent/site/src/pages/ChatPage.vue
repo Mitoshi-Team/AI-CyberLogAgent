@@ -106,7 +106,34 @@
             </div>
           </div>
 
-          <div v-if="isLoading" class="flex justify-center pb-2">
+          <div v-if="isLogAnalysisInProgress" class="pb-4">
+            <div class="max-w-3xl mx-auto">
+              <div class="flex items-center gap-3 mb-3">
+                <div class="flex gap-1.5">
+                  <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 0ms"/>
+                  <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 150ms"/>
+                  <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 300ms"/>
+                </div>
+                <span class="text-sm text-[#8c91a1] font-mono tabular-nums">{{ formattedElapsed }}</span>
+              </div>
+              <div class="space-y-1">
+                <div
+                  v-for="(stage, idx) in appStore.pipelineStages"
+                  :key="idx"
+                  class="pl-3 border-l-2 border-[#4a4d57] py-0.5"
+                >
+                  <span class="text-sm text-[#8c91a1]">{{ stage.label }}</span>
+                </div>
+                <div
+                  v-if="appStore.pipelineCurrentStageLabel"
+                  class="pl-3 border-l-2 border-[#4a4d57] py-0.5"
+                >
+                  <span class="text-sm text-[#c8cbd4]">{{ appStore.pipelineCurrentStageLabel }}...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="isLoading" class="flex justify-center pb-2">
             <div class="flex gap-1.5 px-3 py-2 rounded-full">
               <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 0ms"/>
               <div class="w-2 h-2 bg-[#7C7C7C] rounded-full animate-bounce" style="animation-delay: 150ms"/>
@@ -402,6 +429,13 @@ const scrollbarThumbTop = ref(0)
 const isDraggingScrollbar = ref(false)
 const scrollbarDragStartOffset = ref(0)
 const copiedMessageIndex = ref(null)
+const pipelineTimerInterval = ref(null)
+const formattedElapsed = computed(() => {
+  const totalSeconds = Math.floor(appStore.pipelineElapsed / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+})
 let clearNotificationsTimer = null
 let copyResetTimer = null
 
@@ -454,6 +488,11 @@ onMounted(async () => {
   // Загружаем историю чата из БД
   await loadChatHistory()
   isHistoryLoaded.value = true
+
+  // Resume pipeline timer if analysis was already in progress (tab switch)
+  if (isLogAnalysisInProgress.value && appStore.pipelineStartTime) {
+    startPipelineTimer(false)
+  }
 })
 
 // Функция загрузки истории чата
@@ -849,6 +888,25 @@ const reduceTopAlignSpacerByLastAssistantMessage = async () => {
 
   // По мере появления ответов ассистента уменьшаем добавленное псевдопространство
   topAlignSpacerHeight.value = Math.max(topAlignSpacerHeight.value - spacerReduction, 0)
+}
+
+const startPipelineTimer = (reset = true) => {
+  stopPipelineTimer()
+  if (reset) {
+    appStore.startPipeline()
+  }
+  pipelineTimerInterval.value = setInterval(() => {
+    if (appStore.pipelineStartTime) {
+      appStore.pipelineElapsed = Date.now() - appStore.pipelineStartTime
+    }
+  }, 200)
+}
+
+const stopPipelineTimer = () => {
+  if (pipelineTimerInterval.value) {
+    clearInterval(pipelineTimerInterval.value)
+    pipelineTimerInterval.value = null
+  }
 }
 
 const adjustTextareaHeight = () => {
@@ -1295,7 +1353,8 @@ const handleFileUpload = async (event) => {
   isLoading.value = true
   isLogAnalysisInProgress.value = true
   appStore.chatLogUploadAbortController = new AbortController()
-  
+  startPipelineTimer()
+
   try {
     // Отправляем файл на сервер для анализа
     const response = await logs.upload(userId, file, {
@@ -1338,6 +1397,7 @@ const handleFileUpload = async (event) => {
       await saveChatMessage('notice', canceledMsg)
 
       appStore.addNotification('Анализ лога отменен', 'info')
+      stopPipelineTimer()
       return
     }
 
@@ -1352,6 +1412,7 @@ const handleFileUpload = async (event) => {
       await saveChatMessage('notice', canceledMsg)
 
       appStore.addNotification('Анализ лога отменен', 'info')
+      stopPipelineTimer()
       return
     }
 
@@ -1372,6 +1433,7 @@ ${error.response?.data?.detail || error.message || 'Неизвестная ош�
     isLogAnalysisInProgress.value = false
     isLoading.value = false
     event.target.value = '' // Сбрасываем input
+    stopPipelineTimer()
     nextTick(updateCustomScrollbar)
   }
 }
@@ -1385,6 +1447,8 @@ onUnmounted(() => {
   if (isVoiceRecording.value) {
     stopVoiceRecording('manual')
   }
+
+  stopPipelineTimer()
 })
 
 const confirmNewChat = async () => {
@@ -1405,6 +1469,7 @@ const confirmNewChat = async () => {
     // Очищаем локальный массив сообщений
     messages.value = []
     topAlignSpacerHeight.value = 0
+    appStore.clearPipeline()
 
     // Показываем уведомление с информацией об очистке
     appStore.addNotification(
