@@ -1,5 +1,6 @@
 """Agent 3: Final report summarization with all detection contexts."""
 
+import json
 import logging
 import re
 from typing import Any
@@ -49,13 +50,12 @@ def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
         report_text: Full response text with ---META--- block
 
     Returns:
-        Dictionary with severity, threat_type, mitre_techniques,
+        Dictionary with overall_severity, incidents list,
         yara_rules, sigma_rules, events_found
 
     """
-    severity_id = 3
-    threat_id = 11
-    mitre_techniques = []
+    overall_severity = 3
+    incidents = []
     yara_rules = []
     sigma_rules = []
     events_found = 0
@@ -68,70 +68,88 @@ def parse_agent3_metadata(report_text: str) -> dict[str, Any]:
             meta_end = report_text.index("---END---", meta_start)
             meta_section = report_text[meta_start + 10 : meta_end].strip()
 
-            for line in meta_section.split("\n"):
+            # Split by ---INCIDENT--- delimiter
+            parts = re.split(r"^---INCIDENT---$", meta_section, flags=re.MULTILINE)
+
+            # First part is global metadata
+            global_part = parts[0].strip() if parts else ""
+            for line in global_part.split("\n"):
                 line = line.strip()
                 if ":" not in line:
                     continue
-
                 key, value = line.split(":", 1)
                 key = key.strip()
                 value = value.strip()
 
-                if key == "severity_level_id":
+                if key == "overall_severity":
                     try:
-                        severity_id = int(value)
-                        if severity_id < 1 or severity_id > 4:
-                            severity_id = 3
+                        overall_severity = int(value)
+                        if overall_severity < 1 or overall_severity > 4:
+                            overall_severity = 3
                     except ValueError:
                         pass
-
-                elif key == "threat_type_id":
-                    try:
-                        threat_id = int(value)
-                        if threat_id < 1 or threat_id > 11:
-                            threat_id = 11
-                    except ValueError:
-                        pass
-
-                elif key == "mitre_techniques":
-                    mitre_techniques = re.findall(r'"([^"]*)"', value)
-
                 elif key == "yara_rules":
                     yara_rules = re.findall(r'"([^"]*)"', value)
-
                 elif key == "sigma_rules":
                     sigma_rules = re.findall(r'"([^"]*)"', value)
-
                 elif key == "events_found":
                     try:
                         events_found = int(value)
                     except ValueError:
                         pass
-
                 elif key == "confidence_level":
-                    # Remove quotes if present
                     clean_value = value.strip('"\'')
                     if clean_value in ["high", "medium", "low"]:
                         confidence_level = clean_value
-
                 elif key == "unconfirmed_events_count":
                     try:
                         unconfirmed_events_count = int(value)
                     except ValueError:
                         pass
 
+            # Remaining parts are incidents
+            for incident_part in parts[1:]:
+                incident = {}
+                for line in incident_part.strip().split("\n"):
+                    line = line.strip()
+                    if ":" not in line:
+                        continue
+                    key, value = line.split(":", 1)
+                    key = key.strip()
+                    value = value.strip()
+
+                    if key == "description":
+                        incident["description"] = value
+                    elif key == "technique_id":
+                        incident["technique_id"] = value
+                    elif key == "technique_name":
+                        incident["technique_name"] = value
+                    elif key == "tactic":
+                        incident["tactic"] = value
+                    elif key == "severity_level_id":
+                        try:
+                            incident["severity_level_id"] = int(value)
+                        except ValueError:
+                            incident["severity_level_id"] = 3
+                    elif key == "confirmed":
+                        incident["confirmed"] = value.lower() == "true"
+
+                if incident.get("technique_id"):
+                    incident.setdefault("severity_level_id", 3)
+                    incident.setdefault("confirmed", True)
+                    incidents.append(incident)
+
             logger.debug(
-                f"Parsed Agent 3 metadata: severity={severity_id}, threat={threat_id}, "
-                f"mitre={mitre_techniques}, yara={yara_rules}, sigma={sigma_rules}"
+                f"Parsed Agent 3 metadata: overall_severity={overall_severity}, "
+                f"incidents={len(incidents)}, yara={yara_rules}, sigma={sigma_rules}"
             )
 
     except Exception as e:
         logger.warning(f"Failed to parse Agent 3 metadata: {e}")
 
     return {
-        "severity_level_id": severity_id,
-        "threat_type_id": threat_id,
-        "mitre_techniques": mitre_techniques,
+        "overall_severity": overall_severity,
+        "incidents": incidents,
         "yara_rules": yara_rules,
         "sigma_rules": sigma_rules,
         "events_found": events_found,
@@ -147,8 +165,7 @@ async def generate_final_report(
     events_found: int,
     mitre_context: str,
     agent2_report: str,
-    severity_level_id: int,
-    threat_type_id: int,
+    incidents: list[dict],
     mitre_techniques: list[dict],
     yara_context: str,
     yara_count: int,
@@ -163,9 +180,13 @@ async def generate_final_report(
         events_found: Number of events found by Agent 1
         mitre_context: MITRE ATT&CK context from RAG (formatted text)
         agent2_report: Detailed report from Agent 2
-        severity_level_id: Severity level from Agent 2
-        threat_type_id: Threat type from Agent 2
-        mitre_techniques: List of MITRE technique dicts with:
+        incidents: List of incident dicts from Agent 2 with:
+            - description: str
+            - technique_id: str
+            - technique_name: str
+            - tactic: str
+            - severity_level_id: int
+        mitre_techniques: List of MITRE technique dicts from RAG with:
             - technique_id: str
             - name: str
             - timestamp: str | None
@@ -193,6 +214,8 @@ async def generate_final_report(
         else "No MITRE techniques found"
     )
 
+    incidents_json = json.dumps(incidents, ensure_ascii=False, default=str) if incidents else "[]"
+
     result = await chain.ainvoke(
         {
             "primary_analysis": primary_analysis,
@@ -200,8 +223,7 @@ async def generate_final_report(
             "events_found": events_found,
             "mitre_context": mitre_context,
             "agent2_report": agent2_report,
-            "severity_level_id": severity_level_id,
-            "threat_type_id": threat_type_id,
+            "incidents_json": incidents_json,
             "mitre_techniques_str": mitre_techniques_str,
             "yara_context": yara_context,
             "yara_count": yara_count,

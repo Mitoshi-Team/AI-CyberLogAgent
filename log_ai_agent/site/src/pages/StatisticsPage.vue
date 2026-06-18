@@ -4,7 +4,7 @@
       <div class="mb-6 md:mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2">Статистика</h1>
-          <p class="text-sm sm:text-base text-[#7f8799]">График и распределение по уровням и типам</p>
+          <p class="text-sm sm:text-base text-[#7f8799]">График и распределение по тактикам MITRE ATT&CK</p>
         </div>
         
         <DatePeriodPicker 
@@ -36,7 +36,6 @@
             >
               <div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
             </div>
-            <!-- Подсказка справа для высоких столбиков, сверху для низких -->
             <div 
               v-if="item.count * 20 > 150"
               class="absolute left-full ml-2 top-0 bg-[#252525] text-[#d9dfec] text-xs px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-[#2d313d]"
@@ -54,14 +53,14 @@
         </div>
       </div>
 
-      <!-- Блок статистики по уровням серьезности (из БД) -->
+      <!-- Блок статистики по уровням серьезности -->
       <div class="mb-6 md:mb-8">
         <div class="rounded-xl border border-[#2d313d] bg-[#252525] p-6">
           <h2 class="text-base sm:text-lg font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
             <svg class="w-5 h-5 text-[#8a83ff]" fill="currentColor" viewBox="0 0 20 20">
               <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
             </svg>
-            Уровень серьезности
+            Уровень серьезности (по инцидентам)
           </h2>
           <div v-if="loading" class="text-center py-8 text-[#7f8799]">
             Загрузка данных...
@@ -80,7 +79,6 @@
                   :class="getSeverityGradient(severity.name)"
                   :style="{ width: widthPercent(severity.count, totalSeverityCount) + '%' }"
                 />
-                <!-- Всплывающая подсказка -->
                 <div class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-[#252525] text-[#d9dfec] text-xs px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 border border-[#2d313d]">
                   {{ severity.count }} {{ pluralize(severity.count, 'инцидент', 'инцидента', 'инцидентов') }}
                 </div>
@@ -93,27 +91,31 @@
         </div>
       </div>
 
-      <!-- Блок статистики по типам угроз (из БД) -->
+      <!-- Топ техник MITRE -->
       <div class="mb-6 md:mb-8">
         <div class="rounded-xl border border-[#2d313d] bg-[#252525] p-6">
           <h2 class="text-base sm:text-lg font-bold text-white mb-4 sm:mb-6 flex items-center gap-2">
             <svg class="w-5 h-5 text-[#8a83ff]" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+              <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
             </svg>
-            Тип угрозы
+            Топ техник MITRE ATT&CK
           </h2>
-          <div v-if="loading" class="text-center py-8 text-[#7f8799]">
+          <div v-if="loadingTechniques" class="text-center py-8 text-[#7f8799]">
             Загрузка данных...
           </div>
-          <div v-else-if="threatStats.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div v-else-if="techniqueStats.length > 0" class="space-y-2" :class="techniqueStats.length > 5 ? 'max-h-[340px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-[#3b4150] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent' : ''">
             <div 
-              v-for="threat in threatStats" 
-              :key="threat.id"
-              class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-[#252525]/65 rounded-lg border border-[#2d313d] hover:border-[#3b4150] transition-colors gap-2"
+              v-for="(technique, index) in techniqueStats" 
+              :key="technique.technique_id"
+              class="flex items-center justify-between p-3 bg-[#252525]/65 rounded-lg border border-[#2d313d] hover:border-[#3b4150] transition-colors"
             >
-              <span class="text-sm sm:text-base text-[#c7cedf] break-words">{{ threat.name }}</span>
-              <span class="inline-flex items-center px-3 py-1 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap" :class="getThreatBadgeClass(threat.count)">
-                {{ threat.count }} {{ pluralize(threat.count, 'инцидент', 'инцидента', 'инцидентов') }}
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="text-xs font-bold text-[#6d7588] w-5 text-right flex-shrink-0">#{{ index + 1 }}</span>
+                <span class="text-sm font-mono font-bold text-[#8c84ff] flex-shrink-0">{{ technique.technique_id }}</span>
+                <span class="text-sm text-[#c7cedf] truncate">{{ technique.technique_name }}</span>
+              </div>
+              <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 ml-2" :class="getThreatBadgeClass(technique.count)">
+                {{ technique.count }} {{ pluralize(technique.count, 'раз', 'раза', 'раз') }}
               </span>
             </div>
           </div>
@@ -134,10 +136,11 @@ import DatePeriodPicker from '@/components/DatePeriodPicker.vue'
 // Состояние загрузки
 const loading = ref(true)
 const loadingActivity = ref(false)
+const loadingTechniques = ref(false)
 
 // Данные из БД
 const severityStats = ref([])
-const threatStats = ref([])
+const techniqueStats = ref([])
 const activityData = ref([])
 
 // Вычисляемые значения
@@ -181,21 +184,20 @@ async function loadSeverityStats() {
   }
 }
 
-// Загрузка данных по типам угроз
-async function loadThreatStats() {
+// Загрузка топ техник MITRE
+async function loadTechniqueStats() {
+  loadingTechniques.value = true
   try {
-    const response = await statistics.threats(
+    const response = await statistics.mitreTechniques(
       formatDateTime(selectedPeriod.value.start),
-      formatDateTime(selectedPeriod.value.end)
+      formatDateTime(selectedPeriod.value.end),
+      10
     )
-    // Сортируем так, чтобы "Другое" было в конце
-    threatStats.value = response.data.data.sort((a, b) => {
-      if (a.name === 'Другое') return 1
-      if (b.name === 'Другое') return -1
-      return 0
-    })
+    techniqueStats.value = response.data.data || []
   } catch (error) {
-    console.error('Ошибка загрузки статистики по угрозам:', error)
+    console.error('Ошибка загрузки статистики по техникам MITRE:', error)
+  } finally {
+    loadingTechniques.value = false
   }
 }
 
@@ -231,10 +233,9 @@ async function loadActivityStats() {
 function onPeriodChange(event) {
   selectedPeriod.value = { start: event.start, end: event.end }
   periodType.value = event.periodType
-  // Обновляем все данные при изменении периода
   loadActivityStats()
   loadSeverityStats()
-  loadThreatStats()
+  loadTechniqueStats()
 }
 
 // Вычисление процента для прогресс-бара
@@ -265,7 +266,7 @@ function getSeverityGradient(name) {
   return gradients[name] || 'bg-gradient-to-r from-[#495064] to-[#656d82]'
 }
 
-// Получить класс badge для угрозы
+// Получить класс badge
 function getThreatBadgeClass(count) {
   if (count === 0) return 'bg-[#5f66ff]/15 text-[#a8b0ff] border border-[#5f66ff]/25'
   if (count >= 10) return 'bg-[#ff7a80]/12 text-[#ff9ca2] border border-[#ff7a80]/30'
@@ -289,9 +290,7 @@ function getLabel(index, dateStr) {
     const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
     return days[index] || ''
   } else {
-    // Для месяца - день из даты (парсим как локальную дату без смещения часовых поясов)
     if (!dateStr) return ''
-    // Парсим дату в формате YYYY-MM-DD как локальную
     const parts = dateStr.split('-')
     if (parts.length === 3) {
       return parseInt(parts[2], 10)
@@ -305,7 +304,7 @@ onMounted(async () => {
   loading.value = true
   await Promise.all([
     loadSeverityStats(),
-    loadThreatStats(),
+    loadTechniqueStats(),
     loadActivityStats()
   ])
   loading.value = false

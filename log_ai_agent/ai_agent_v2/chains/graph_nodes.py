@@ -424,7 +424,7 @@ class PipelineNodes:
         """Node: Agent 3 — Final report summarization.
 
         Reads: All previous nodes' outputs
-        Writes: final_report, recommendations, severity_level_id, threat_type_id
+        Writes: final_report, recommendations, overall_severity_level_id, incidents
         """
         logger.info("[Node] Agent 3: Final summarization")
         start = time.time()
@@ -445,6 +445,8 @@ class PipelineNodes:
                 or "No MITRE techniques found"
             )
 
+            incidents = state.get("incidents", [])
+
             agent3_result = await generate_agent3_report(
                 llm=self.llm,
                 primary_analysis=state.get("primary_analysis", ""),
@@ -452,8 +454,7 @@ class PipelineNodes:
                 events_found=state.get("events_found", 0),
                 mitre_context=state.get("mitre_context", ""),
                 agent2_report=state.get("agent2_report", ""),
-                severity_level_id=state.get("severity_level_id", 3),
-                threat_type_id=state.get("threat_type_id", 11),
+                incidents=incidents,
                 mitre_techniques=mitre_techniques,
                 yara_context=state.get("yara_context", "YARA check not performed."),
                 yara_count=len(state.get("yara_matches", [])),
@@ -462,14 +463,14 @@ class PipelineNodes:
             )
 
             logger.info(
-                f"[Node] Agent 3 complete: severity={agent3_result.get('severity_level_id', 3)}, "
-                f"threat={agent3_result.get('threat_type_id', 11)} in {time.time() - start:.1f}s"
+                f"[Node] Agent 3 complete: overall_severity={agent3_result.get('overall_severity', 3)}, "
+                f"incidents={len(incidents)} in {time.time() - start:.1f}s"
             )
             return {
                 "final_report": agent3_result.get("final_report", ""),
                 "recommendations": [],
-                "severity_level_id": agent3_result.get("severity_level_id", 3),
-                "threat_type_id": agent3_result.get("threat_type_id", 11),
+                "overall_severity_level_id": agent3_result.get("overall_severity", 3),
+                "incidents": agent3_result.get("incidents", incidents),
                 "yara_rules_matched": agent3_result.get("yara_rules", []),
                 "sigma_rules_matched": agent3_result.get("sigma_rules", []),
                 "events_found": agent3_result.get("events_found", 0),
@@ -482,8 +483,8 @@ class PipelineNodes:
             return {
                 "final_report": f"Error: {e}",
                 "recommendations": [],
-                "severity_level_id": 3,
-                "threat_type_id": 11,
+                "overall_severity_level_id": 3,
+                "incidents": [],
                 "yara_rules_matched": [],
                 "sigma_rules_matched": [],
                 "events_found": 0,

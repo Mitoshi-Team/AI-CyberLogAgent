@@ -639,6 +639,57 @@ ALTER TABLE ONLY public."UserLogs"
 -- Completed on 2026-03-21 11:14:00
 
 --
+-- TOC entry 4920 (class 2606 OID 16530)
+-- Name: ReportIncidents; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE IF NOT EXISTS public."ReportIncidents" (
+    incident_id integer NOT NULL,
+    report_id integer NOT NULL,
+    event_description text NOT NULL,
+    group_id text,
+    mitre_technique_id text NOT NULL,
+    mitre_technique_name text NOT NULL,
+    mitre_tactic text NOT NULL,
+    severity_level_id integer NOT NULL,
+    threat_type_id integer,
+    confirmed boolean NOT NULL DEFAULT true,
+    created_at timestamp with time zone NOT NULL
+);
+
+
+ALTER TABLE public."ReportIncidents" OWNER TO postgres;
+
+ALTER TABLE public."ReportIncidents" ALTER COLUMN incident_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public."ReportIncidents_incident_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+ALTER TABLE ONLY public."ReportIncidents"
+    ADD CONSTRAINT "ReportIncidents_pkey" PRIMARY KEY (incident_id);
+
+ALTER TABLE ONLY public."ReportIncidents"
+    ADD CONSTRAINT "FK_ReportIncident_Report" FOREIGN KEY (report_id) REFERENCES public."Reports"(report_id);
+
+ALTER TABLE ONLY public."ReportIncidents"
+    ADD CONSTRAINT "FK_ReportIncident_SeverityLevel" FOREIGN KEY (severity_level_id) REFERENCES public."SeverityLevels"(severity_level_id);
+
+ALTER TABLE ONLY public."ReportIncidents"
+    ADD CONSTRAINT "FK_ReportIncident_ThreatType" FOREIGN KEY (threat_type_id) REFERENCES public."ThreatTypes"(threat_type_id);
+
+
+--
+-- Make threat_type_id nullable in Reports (it's now secondary to MITRE techniques)
+--
+
+ALTER TABLE ONLY public."Reports" ALTER COLUMN threat_type_id DROP NOT NULL;
+
+
+--
 -- YaraRules table
 --
 

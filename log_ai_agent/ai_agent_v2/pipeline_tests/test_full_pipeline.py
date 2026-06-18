@@ -612,10 +612,12 @@ async def main():
     # --- Agent 2 ---
     if "agent2" in stages:
         agent2 = stages["agent2"]
+        techs = agent2.get("mitre_techniques_final", [])
         print(
-            f"   [OK] Agent 2 - severity={agent2.get('severity_level_id')}/4, "
-            f"threat={agent2.get('threat_type_id')}/11"
+            f"   [OK] Agent 2 - {len(techs)} MITRE techniques found"
         )
+        if techs:
+            print(f"       IDs: {[t.get('technique_id', '?') for t in techs]}")
 
     # --- YARA ---
     if "yara" in stages:
@@ -636,11 +638,13 @@ async def main():
     # --- Agent 3 ---
     if "agent3" in stages:
         agent3 = stages["agent3"]
+        incidents = agent3.get("incidents", [])
         print(
-            f"\n   [OK] Agent 3 (final) - severity={agent3.get('severity_level_id')}/4, "
-            f"threat={agent3.get('threat_type_id')}/11"
+            f"\n   [OK] Agent 3 (final) - overall_severity={agent3.get('overall_severity_level_id')}/4, "
+            f"incidents={len(incidents)}"
         )
-        print(f"       MITRE techniques: {agent3.get('mitre_techniques', [])}")
+        for inc in incidents[:5]:
+            print(f"       {inc.get('technique_id', '?')} - {inc.get('technique_name', '?')} [{inc.get('tactic', '?')}] sev={inc.get('severity_level_id', '?')}")
         print(f"       YARA rules: {agent3.get('yara_rules', [])}")
         print(f"       Sigma rules: {agent3.get('sigma_rules', [])}")
         print("\n   Report preview:")

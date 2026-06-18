@@ -59,14 +59,16 @@ async def main():
 
         if "agent2" in stages:
             agent2 = stages["agent2"]
+            techs = agent2.get("mitre_techniques_final", [])
             print(
-                f"[OK] Agent 2: severity={agent2.get('severity_level_id')}, threat={agent2.get('threat_type_id')}"
+                f"[OK] Agent 2: {len(techs)} MITRE techniques found"
             )
 
         if "agent3" in stages:
             agent3 = stages["agent3"]
+            incidents = agent3.get("incidents", [])
             print(
-                f"[OK] Agent 3 (final): severity={agent3.get('severity_level_id')}, threat={agent3.get('threat_type_id')}"
+                f"[OK] Agent 3 (final): overall_severity={agent3.get('overall_severity_level_id')}, incidents={len(incidents)}"
             )
             print("\nReport preview:")
             print(agent3.get("final_report", "")[:300])

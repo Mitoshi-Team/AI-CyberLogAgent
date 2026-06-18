@@ -49,12 +49,11 @@ def parse_metadata(report_text: str) -> dict:
         report_text: Full response text
 
     Returns:
-        Dictionary with severity, threat_type, mitre_techniques
+        Dictionary with overall_severity and incidents list
 
     """
-    severity_id = 3
-    threat_id = 11
-    mitre_techniques = []
+    overall_severity = 3
+    incidents = []
 
     try:
         if "---META---" in report_text:
@@ -62,45 +61,65 @@ def parse_metadata(report_text: str) -> dict:
             meta_end = report_text.index("---END---", meta_start)
             meta_section = report_text[meta_start + 10 : meta_end].strip()
 
-            for line in meta_section.split("\n"):
+            # Split by ---INCIDENT--- delimiter
+            parts = re.split(r"^---INCIDENT---$", meta_section, flags=re.MULTILINE)
+
+            # First part is global metadata
+            global_part = parts[0].strip() if parts else ""
+            for line in global_part.split("\n"):
                 line = line.strip()
                 if ":" not in line:
                     continue
-
                 key, value = line.split(":", 1)
                 key = key.strip()
                 value = value.strip()
-
-                if key == "severity_level_id":
+                if key == "overall_severity":
                     try:
-                        severity_id = int(value)
-                        if severity_id < 1 or severity_id > 4:
-                            severity_id = 3
+                        overall_severity = int(value)
+                        if overall_severity < 1 or overall_severity > 4:
+                            overall_severity = 3
                     except ValueError:
                         pass
 
-                elif key == "threat_type_id":
-                    try:
-                        threat_id = int(value)
-                        if threat_id < 1 or threat_id > 11:
-                            threat_id = 11
-                    except ValueError:
-                        pass
+            # Remaining parts are incidents
+            for incident_part in parts[1:]:
+                incident = {}
+                for line in incident_part.strip().split("\n"):
+                    line = line.strip()
+                    if ":" not in line:
+                        continue
+                    key, value = line.split(":", 1)
+                    key = key.strip()
+                    value = value.strip()
 
-                elif key == "mitre_techniques":
-                    mitre_techniques = re.findall(r'"([^"]+)"', value)
+                    if key == "description":
+                        incident["description"] = value
+                    elif key == "technique_id":
+                        incident["technique_id"] = value
+                    elif key == "technique_name":
+                        incident["technique_name"] = value
+                    elif key == "tactic":
+                        incident["tactic"] = value
+                    elif key == "severity_level_id":
+                        try:
+                            incident["severity_level_id"] = int(value)
+                        except ValueError:
+                            incident["severity_level_id"] = 3
+
+                if incident.get("technique_id"):
+                    incident.setdefault("severity_level_id", 3)
+                    incidents.append(incident)
 
             logger.debug(
-                f"Parsed metadata: severity={severity_id}, threat={threat_id}, mitre={mitre_techniques}"
+                f"Parsed metadata: overall_severity={overall_severity}, incidents={len(incidents)}"
             )
 
     except Exception as e:
         logger.warning(f"Failed to parse metadata: {e}")
 
     return {
-        "severity_level_id": severity_id,
-        "threat_type_id": threat_id,
-        "mitre_techniques": mitre_techniques,
+        "overall_severity": overall_severity,
+        "incidents": incidents,
     }
 
 
@@ -139,5 +158,6 @@ async def generate_final_report(
 
     return {
         "final_report": report_text,
-        **metadata,
+        "overall_severity": metadata.get("overall_severity", 3),
+        "incidents": metadata.get("incidents", []),
     }

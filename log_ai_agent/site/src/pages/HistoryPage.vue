@@ -9,7 +9,7 @@
       <!-- Фильтры -->
       <div class="mb-6 rounded-xl border border-[#2d313d] bg-[#252525] p-6">
         <div class="flex gap-4 items-start">
-          <div class="grid grid-cols-4 gap-4 flex-1">
+          <div class="grid grid-cols-3 gap-4 flex-1">
             <div>
               <label class="block text-sm font-medium text-[#949daf] mb-2">Начало периода</label>
               <input v-model="dateFrom" type="date" class="w-full px-4 py-2 bg-[#252525] border border-[#2d313d] text-[#d6dceb] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent placeholder-[#6d7588]" @change="loadHistory" />
@@ -24,15 +24,6 @@
                 <option value="">Все уровни</option>
                 <option v-for="level in severityLevels" :key="level.id" :value="level.id">
                   {{ level.name }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-[#949daf] mb-2">Тип угрозы</label>
-              <select v-model="filterThreatId" class="w-full px-4 py-2 bg-[#252525] border border-[#2d313d] text-[#d6dceb] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent" @change="loadHistory">
-                <option value="">Все типы</option>
-                <option v-for="threat in threatTypes" :key="threat.id" :value="threat.id">
-                  {{ threat.name }}
                 </option>
               </select>
             </div>
@@ -57,8 +48,9 @@
           <thead>
             <tr class="border-b border-[#2d313d]">
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Дата и время</th>
-              <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Тип угрозы</th>
+              <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Техники MITRE</th>
               <th class="text-left py-3 px-4 font-semibold text-[#949daf]">Уровень серьезности</th>
+              <th class="text-center py-3 px-4 font-semibold text-[#949daf]">Инциденты</th>
               <th class="text-right py-3 px-4 font-semibold text-[#949daf]">Действия</th>
             </tr>
           </thead>
@@ -69,11 +61,16 @@
               class="border-b border-[#2a2e3a] hover:bg-[#2f2f2f]/70 transition-colors"
             >
               <td class="py-3 px-4 text-sm text-[#858ea1]">{{ formatDateTime(report.created_at) }}</td>
-              <td class="py-3 px-4 text-sm text-[#858ea1]">{{ report.threat_name }}</td>
+              <td class="py-3 px-4 text-sm text-[#c3cadb] max-w-xs truncate" :title="report.mitre_summary">
+                {{ report.mitre_summary || '—' }}
+              </td>
               <td class="py-3 px-4">
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" :class="getSeverityBadgeClass(report.severity_name)">
                   {{ report.severity_name }}
                 </span>
+              </td>
+              <td class="py-3 px-4 text-center text-sm text-[#858ea1]">
+                {{ report.incident_count }}
               </td>
               <td class="py-3 px-4 text-right">
                 <button
@@ -140,10 +137,10 @@
       class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
       @click.self="closeModal"
     >
-      <div class="bg-[#252525] rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-[#2d313d]">
+      <div class="bg-[#252525] rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-[#2d313d]">
         <!-- Заголовок модального окна -->
         <div class="sticky top-0 bg-[#252525] border-b border-[#2d313d] px-6 py-4 flex items-center justify-between">
-          <h2 class="text-xl font-bold text-white">Детали инцидента</h2>
+          <h2 class="text-xl font-bold text-white">Детали отчета</h2>
           <button
             @click="closeModal"
             class="text-[#858ea1] hover:text-white transition-colors p-1"
@@ -165,21 +162,45 @@
             <p class="text-white">{{ formatDateTime(selectedReport.created_at) }}</p>
           </div>
 
-          <!-- Уровень серьезности -->
+          <!-- Общий уровень серьезности -->
           <div>
-            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Уровень серьезности</h3>
-            <p class="text-white">{{ selectedReport.severity_name }}</p>
+            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Общий уровень серьезности</h3>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" :class="getSeverityBadgeClass(selectedReport.severity_name)">
+              {{ selectedReport.severity_name }}
+            </span>
           </div>
 
-          <!-- Тип угрозы -->
+          <!-- Инциденты (MITRE техники) -->
           <div>
-            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Тип угрозы</h3>
-            <p class="text-white">{{ selectedReport.threat_name }}</p>
+            <h3 class="text-sm font-semibold text-[#7f8799] mb-3">Найденные инциденты (MITRE ATT&CK)</h3>
+            <div v-if="selectedReport.incidents && selectedReport.incidents.length > 0" class="space-y-3">
+              <div
+                v-for="incident in selectedReport.incidents"
+                :key="incident.id"
+                class="bg-[#1e1e1e] rounded-lg border border-[#2d313d] p-4"
+              >
+                <div class="flex items-start justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-mono font-bold text-[#8c84ff]">{{ incident.technique_id }}</span>
+                    <span class="text-sm text-white">{{ incident.technique_name }}</span>
+                    <span v-if="!incident.confirmed" class="text-xs px-2 py-0.5 rounded bg-[#ffbe76]/12 text-[#ffd09c] border border-[#ffbe76]/30">
+                      Не подтвержден
+                    </span>
+                  </div>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :class="getSeverityBadgeClass(incident.severity_name)">
+                    {{ incident.severity_name }}
+                  </span>
+                </div>
+                <div class="text-xs text-[#8a93a8] mb-1">{{ incident.tactic }}</div>
+                <p class="text-sm text-[#c3cadb]">{{ incident.description }}</p>
+              </div>
+            </div>
+            <p v-else class="text-[#7f8799] text-sm">Нет данных по инцидентам</p>
           </div>
 
-          <!-- Описание -->
+          <!-- Описание (полный отчет) -->
           <div>
-            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Описание</h3>
+            <h3 class="text-sm font-semibold text-[#7f8799] mb-2">Полный отчет</h3>
             <div class="text-white markdown-content" v-html="renderMarkdown(selectedReport.description)"></div>
           </div>
 
@@ -210,12 +231,10 @@ const appStore = useAppStore()
 const dateFrom = ref('')
 const dateTo = ref('')
 const filterSeverityId = ref('')
-const filterThreatId = ref('')
 
 const loading = ref(false)
 const historyData = ref([])
 const severityLevels = ref([])
-const threatTypes = ref([])
 
 // Пагинация
 const currentPage = ref(1)
@@ -240,7 +259,6 @@ async function loadFilters() {
   try {
     const response = await reports.filters()
     severityLevels.value = response.data.severity_levels
-    threatTypes.value = response.data.threat_types
   } catch (error) {
     console.error('Ошибка загрузки фильтров:', error)
   }
@@ -269,10 +287,6 @@ async function loadHistory() {
     
     if (filterSeverityId.value) {
       params.severity_level_id = filterSeverityId.value
-    }
-    
-    if (filterThreatId.value) {
-      params.threat_type_id = filterThreatId.value
     }
 
     const response = await reports.history(params)
@@ -313,12 +327,6 @@ const formatDateTime = (dateStr) => {
   return `${day}.${month}.${year} ${hours}:${minutes}`
 }
 
-// Обрезка описания до 50 символов
-const truncateDescription = (text) => {
-  if (!text) return ''
-  return text.length > 50 ? text.substring(0, 50) + '...' : text
-}
-
 // Получение класса для badge уровня серьезности
 const getSeverityBadgeClass = (severityName) => {
   const classes = {
@@ -335,7 +343,6 @@ const resetFilters = () => {
   dateFrom.value = ''
   dateTo.value = ''
   filterSeverityId.value = ''
-  filterThreatId.value = ''
   currentPage.value = 1
   loadHistory()
 }

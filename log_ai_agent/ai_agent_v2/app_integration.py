@@ -150,8 +150,8 @@ async def analyze_log_v2(
     Returns:
         Dictionary with:
         - description: Report text
-        - severity_level_id: 1-4
-        - threat_type_id: 1-11
+        - overall_severity_level_id: 1-4
+        - incidents: List of incident dicts with technique_id, technique_name, tactic, severity_level_id
         - mitre_techniques: List of technique IDs
         - events_found: Number of events detected by Agent 1
 
@@ -193,8 +193,9 @@ async def analyze_log_v2(
 
         result_dict = {
             "description": agent3.get("final_report", ""),
-            "severity_level_id": agent3.get("severity_level_id", 3),
-            "threat_type_id": agent3.get("threat_type_id", 11),
+            "overall_severity_level_id": agent3.get("overall_severity_level_id", 3),
+            "severity_level_id": agent3.get("overall_severity_level_id", 3),
+            "incidents": agent3.get("incidents", []),
             "mitre_techniques": agent3.get("mitre_techniques", []),
             "events_found": agent1.get("events_found", 0),
             "processing_time_ms": results.get("total_time_sec", 0) * 1000,
@@ -239,7 +240,8 @@ async def analyze_log_v2(
                     "Повторите анализ через 15-60 секунд."
                 ),
                 "severity_level_id": 3,
-                "threat_type_id": 11,
+                "overall_severity_level_id": 3,
+                "incidents": [],
                 "mitre_techniques": [],
                 "events_found": 0,
                 "error": error_msg,
@@ -248,7 +250,8 @@ async def analyze_log_v2(
         return {
             "description": f"⚠️ Ошибка анализа: {error_msg}",
             "severity_level_id": 3,
-            "threat_type_id": 11,
+            "overall_severity_level_id": 3,
+            "incidents": [],
             "mitre_techniques": [],
             "events_found": 0,
             "error": error_msg,

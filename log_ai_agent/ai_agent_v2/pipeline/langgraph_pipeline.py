@@ -213,6 +213,8 @@ class LogAnalysisPipeline:
             "search_query": "",
             "agent2_report": "",
             "mitre_techniques_final": [],
+            "incidents": [],
+            "overall_severity_level_id": 3,
             "yara_matches": [],
             "yara_rules_matched": [],
             "yara_context": "",
@@ -291,11 +293,14 @@ class LogAnalysisPipeline:
             results["stages"]["agent3"] = {
                 "success": True,
                 "final_report": final_state.get("final_report", ""),
-                "severity_level_id": final_state.get("severity_level_id", 3),
-                "threat_type_id": final_state.get("threat_type_id", 11),
+                "overall_severity_level_id": final_state.get("overall_severity_level_id", 3),
+                "severity_level_id": final_state.get("overall_severity_level_id", 3),
+                "incidents": final_state.get("incidents", []),
                 "mitre_techniques": final_state.get("mitre_techniques_final", []),
                 "yara_rules": final_state.get("yara_rules_matched", []),
                 "sigma_rules": final_state.get("sigma_rules_matched", []),
+                "confidence_level": final_state.get("confidence_level", "medium"),
+                "unconfirmed_events_count": final_state.get("unconfirmed_events_count", 0),
             }
 
             if progress_callback:
@@ -304,8 +309,9 @@ class LogAnalysisPipeline:
             results["success"] = True
             results["total_time_sec"] = elapsed
             results["final_report"] = final_state.get("final_report", "")
-            results["severity_level_id"] = final_state.get("severity_level_id", 3)
-            results["threat_type_id"] = final_state.get("threat_type_id", 11)
+            results["overall_severity_level_id"] = final_state.get("overall_severity_level_id", 3)
+            results["severity_level_id"] = final_state.get("overall_severity_level_id", 3)
+            results["incidents"] = final_state.get("incidents", [])
             results["mitre_techniques"] = final_state.get("mitre_techniques_final", [])
             results["events_found"] = final_state.get("events_found", 0)
 
@@ -318,7 +324,7 @@ class LogAnalysisPipeline:
 
             logger.info(
                 f"LangGraph pipeline complete in {elapsed:.1f}s: "
-                f"severity={results['severity_level_id']}, threat={results['threat_type_id']}"
+                f"severity={results['severity_level_id']}, incidents={len(results.get('incidents', []))}"
             )
 
         except Exception as e:

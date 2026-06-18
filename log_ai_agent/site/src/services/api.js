@@ -69,6 +69,11 @@ export const statistics = {
   timeline: (days = 30) => apiClient.get('/statistics/timeline', { params: { days } }),
   severity: (startDate, endDate) => apiClient.get('/statistics/severity', { params: { start_date: startDate, end_date: endDate } }),
   threats: (startDate, endDate) => apiClient.get('/statistics/threats', { params: { start_date: startDate, end_date: endDate } }),
+  mitreTactics: (startDate, endDate) => apiClient.get('/statistics/mitre_tactics', { params: { start_date: startDate, end_date: endDate } }),
+  mitreTechniques: (startDate, endDate, topN = 10) => 
+    apiClient.get('/statistics/mitre_techniques', { 
+      params: { start_date: startDate, end_date: endDate, top_n: topN } 
+    }),
   activity: (periodType, startDate, endDate) => 
     apiClient.get('/statistics/activity', { 
       params: { 

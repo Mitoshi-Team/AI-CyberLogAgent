@@ -542,7 +542,7 @@ class TestAnalyzeLogV2Integration:
             "stages": {
                 "agent1": {"groups": [make_group("g1")]},
                 "agent2": {"mitre_techniques": [make_technique("T1001")]},
-                "agent3": {"final_report": "test", "severity_level_id": 2, "threat_type_id": 5, "mitre_techniques": []},
+                "agent3": {"final_report": "test", "overall_severity_level_id": 2, "incidents": [{"technique_id": "T1001", "technique_name": "Test", "tactic": "Execution", "severity_level_id": 2}], "mitre_techniques": []},
                 "yara": {"rules_matched": []},
             },
         })
@@ -576,7 +576,7 @@ class TestAnalyzeLogV2Integration:
             "stages": {
                 "agent1": {"groups": []},
                 "agent2": {"mitre_techniques": [make_technique("T1001")]},
-                "agent3": {"final_report": "test", "severity_level_id": 2, "threat_type_id": 5, "mitre_techniques": []},
+                "agent3": {"final_report": "test", "overall_severity_level_id": 2, "incidents": [{"technique_id": "T1001", "technique_name": "Test", "tactic": "Execution", "severity_level_id": 2}], "mitre_techniques": []},
                 "yara": {"rules_matched": ["ExistingRule"]},
             },
         })
@@ -605,7 +605,7 @@ class TestAnalyzeLogV2Integration:
             "stages": {
                 "agent1": {"groups": []},
                 "agent2": {"mitre_techniques": []},
-                "agent3": {"final_report": "test", "severity_level_id": 2, "threat_type_id": 5, "mitre_techniques": []},
+                "agent3": {"final_report": "test", "overall_severity_level_id": 2, "incidents": [{"technique_id": "T1001", "technique_name": "Test", "tactic": "Execution", "severity_level_id": 2}], "mitre_techniques": []},
                 "yara": {"rules_matched": []},
             },
         })
