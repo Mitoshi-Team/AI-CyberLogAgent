@@ -1592,8 +1592,33 @@ const confirmNewChat = async () => {
   cursor: grabbing;
 }
 
+.wave-logo {
+  animation: wave-logo-in 10.0s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes wave-logo-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .wave-glow {
+  animation: wave-text-in 0.4s ease-out 0.2s both;
   text-shadow: 0 0 24px rgba(103, 124, 255, 0.95), 0 0 58px rgba(93, 118, 255, 0.65);
+}
+
+@keyframes wave-text-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .chat-composer {
