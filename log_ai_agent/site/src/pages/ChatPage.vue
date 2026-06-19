@@ -162,7 +162,7 @@
 
       <div
         :class="[
-          'mx-auto w-full max-w-3xl pb-6 shrink-0 transform',
+          'mx-auto w-full max-w-3xl pb-3 shrink-0 transform',
           (messages.length > 0 || isLoading) ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >
@@ -297,6 +297,12 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div v-if="messages.length > 0" class="mt-2 text-center select-none">
+          <span class="text-[#868a9a] text-xs leading-relaxed">
+            Wavescan assistant может допускать ошибки, рекомендуем перепроверять важную информацию.
+          </span>
         </div>
 
         <div v-if="messages.length === 0 && (!isHistoryLoaded || !isLoading)" class="flex flex-wrap justify-center gap-3 mt-5">
@@ -1592,8 +1598,33 @@ const confirmNewChat = async () => {
   cursor: grabbing;
 }
 
+.wave-logo {
+  animation: wave-logo-in 10.0s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes wave-logo-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .wave-glow {
+  animation: wave-text-in 0.4s ease-out 0.2s both;
   text-shadow: 0 0 24px rgba(103, 124, 255, 0.95), 0 0 58px rgba(93, 118, 255, 0.65);
+}
+
+@keyframes wave-text-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .chat-composer {
