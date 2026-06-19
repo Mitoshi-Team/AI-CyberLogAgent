@@ -162,7 +162,7 @@
 
       <div
         :class="[
-          'mx-auto w-full max-w-3xl pb-6 shrink-0 transform',
+          'mx-auto w-full max-w-3xl pb-3 shrink-0 transform',
           (messages.length > 0 || isLoading) ? 'translate-y-0 pt-2' : '-translate-y-[24vh]'
         ]"
       >
@@ -297,6 +297,12 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div v-if="messages.length > 0" class="mt-2 text-center select-none">
+          <span class="text-[#868a9a] text-xs leading-relaxed">
+            Wavescan assistant может допускать ошибки, рекомендуем перепроверять важную информацию.
+          </span>
         </div>
 
         <div v-if="messages.length === 0 && (!isHistoryLoaded || !isLoading)" class="flex flex-wrap justify-center gap-3 mt-5">
