@@ -550,8 +550,9 @@ AI-CyberLogAgent/
 Почта - nikitaletskolyuk@gmail.com    
 Telegram - @sser1to
 
-## Copyright
 
-Copyright © 2025 Mitoshi Team. All rights reserved.
+## License & Copyright
 
-This repository and its contents are the intellectual property of Mitoshi Team. Unauthorized copying, modification, distribution, or use of this software, in whole or in part, is prohibited without prior written permission from the authors.
+Copyright © 2025 Mitoshi Team.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
