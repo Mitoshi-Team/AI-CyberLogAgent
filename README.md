@@ -96,7 +96,7 @@ flowchart TD
 
 - Docker
 - Ollama с LLM (любая модель, например llama3.2:latest)
-- 8+ GB RAM
+- 16+ GB RAM
 
 
 ## Начало работы
