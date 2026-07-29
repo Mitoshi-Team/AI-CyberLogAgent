@@ -13,7 +13,7 @@
               <button
                 @click="createSigmaFile"
                 class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
-                title="Добавить файл Sigma"
+                title="Добавить Sigma файл"
               >
                 <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
               </button>
@@ -73,9 +73,10 @@
             </div>
             <textarea
               v-model="sigmaEditorContent"
-              class="w-full h-[420px] resize-none rounded-lg border border-[#2d313d] bg-[#1A1A1A] p-3 text-[#d6dceb] font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent"
+              :disabled="!selectedSigmaFile"
+              class="w-full h-[420px] resize-none rounded-lg border border-[#2d313d] bg-[#1A1A1A] p-3 text-[#d6dceb] font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50"
               spellcheck="false"
-              placeholder="Выберите файл Sigma для редактирования"
+              placeholder="Выберите Sigma файл для редактирования"
             />
           </div>
         </div>
@@ -88,7 +89,7 @@
               <button
                 @click="createYaraFile"
                 class="w-9 h-9 rounded-lg bg-[#252525] hover:bg-[#2f2f2f] border border-[#2d313d] transition-colors flex items-center justify-center"
-                title="Добавить файл Yara"
+                title="Добавить Yara файл"
               >
                 <img src="/plus_icon.svg" alt="add" class="w-4 h-4" />
               </button>
@@ -148,9 +149,10 @@
             </div>
             <textarea
               v-model="yaraEditorContent"
-              class="w-full h-[420px] resize-none rounded-lg border border-[#2d313d] bg-[#1A1A1A] p-3 text-[#d6dceb] font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent"
+              :disabled="!selectedYaraFile"
+              class="w-full h-[420px] resize-none rounded-lg border border-[#2d313d] bg-[#1A1A1A] p-3 text-[#d6dceb] font-mono text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-[#7971F0] focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50"
               spellcheck="false"
-              placeholder="Выберите файл Yara для редактирования"
+              placeholder="Выберите Yara файл для редактирования"
             />
           </div>
         </div>
