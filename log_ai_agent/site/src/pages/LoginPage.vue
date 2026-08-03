@@ -162,10 +162,14 @@ const handleLogin = async () => {
   flex-direction: column;
   justify-content: flex-start;
   align-items: center;
-  background: rgba(37, 37, 37, 0.85);
-  border-right: 1px solid rgba(60, 60, 60, 0.5);
-  backdrop-filter: blur(8px);
+  background: rgba(37, 37, 37, 0.65);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  backdrop-filter: blur(28px) saturate(150%);
+  box-shadow: 24px 0 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
 }
+
 
 .brand-block {
   width: min(340px, 100%);
